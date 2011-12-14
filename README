@@ -1,9 +1,16 @@
 ### Compile
 
-gcc -c utils.c
-gcc -c f3write.c
-gcc -c f3read.c
+gcc -Wall -c utils.c
+gcc -Wall -c f3write.c
+gcc -Wall -c f3read.c
 gcc -o f3write utils.o f3write.o
 gcc -o f3read utils.o f3read.o
+
+### Use example
+
+./f3write /media/5EBD-5C80/
+./f3read /media/5EBD-5C80/
+
+Please replace "/media/5EBD-5C80/" with appropriate path.
 
 ### For more information see http://oss.digirati.com.br/f3/

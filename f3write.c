@@ -116,8 +116,8 @@ static void fill_fs(const char *path)
 
   /* Obtain initial free_space, and block_size. */
   assert(statvfs(path, &fs) == 0);
-  free_space1 = (double)fs.f_bsize * (double)fs.f_bfree;
-  block_size = fs.f_bsize;
+  block_size = fs.f_frsize;
+  free_space1 = (double)block_size * (double)fs.f_bfree;
   f = free_space1;
   unit = adjust_unit(&f);
   printf("Free space: %.2f %s\n", f, unit);
@@ -135,7 +135,7 @@ static void fill_fs(const char *path)
 
   /* Final report. */
   assert(statvfs(path, &fs) == 0);
-  free_space2 = (double)fs.f_bsize * (double)fs.f_bfree;
+  free_space2 = (double)block_size * (double)fs.f_bfree;
   f = free_space2;
   unit = adjust_unit(&f);
   printf("Free space: %.2f %s\n", f, unit);
