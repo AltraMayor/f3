@@ -11,10 +11,9 @@
 #include <time.h>
 #include <err.h>
 
-#define SECTOR_SIZE 512
-#define GIGABYTES   (1024 * 1024 * 1024)
+#include "utils.h"
 
-int is_my_file (const char *filename)
+static int is_my_file(const char *filename)
 {
   return
     (strlen(filename) == 8) &&
@@ -28,7 +27,7 @@ int is_my_file (const char *filename)
     (filename[7] == 'f');
 }
 
-uint64_t offset_from_filename (const char *filename)
+static uint64_t offset_from_filename(const char *filename)
 {
   char str[5];
   uint64_t number;
@@ -44,7 +43,7 @@ uint64_t offset_from_filename (const char *filename)
 
 #define TOLERANCE 2
 
-void validate_file (const char *path, const char *filename,
+static void validate_file(const char *path, const char *filename,
   uint64_t *ptr_ok, uint64_t *ptr_corrupted, uint64_t *ptr_changed,
   uint64_t *ptr_overwritten, uint64_t *ptr_size, int *read_all)
 {
@@ -105,29 +104,14 @@ void validate_file (const char *path, const char *filename,
   fclose(f);
 }
 
-char *adjust_unit (double *ptr_bytes)
-{
-  char *units[] = {"Byte", "KB", "MB", "GB", "TB"};
-  int i = 0;
-  double final = *ptr_bytes;
-  
-  while (i < 5 && final >= 1024)
-  {
-    final /= 1024;
-    i++;
-  }
-  *ptr_bytes = final;
-  return units[i];
-}
-
-void report (const char *prefix, uint64_t i)
+static void report(const char *prefix, uint64_t i)
 {
   double f = (double)(i * SECTOR_SIZE);
-  char *unit = adjust_unit(&f); 
+  const char *unit = adjust_unit(&f); 
   printf("%s %.2f %s (%" PRIu64 " sectors)\n", prefix, f, unit, i);
 }
 
-void iterate_path (const char *path)
+static void iterate_path(const char *path)
 {
   DIR *ptr_dir;
   struct dirent *entry;
@@ -194,7 +178,7 @@ void iterate_path (const char *path)
   printf("Reading speed: %.2f %s/s\n", read_speed, unit);
 }
 
-int main (int argc, char *argv[])
+int main(int argc, char *argv[])
 {
   if (argc != 2)
   {

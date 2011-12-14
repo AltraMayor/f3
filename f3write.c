@@ -13,10 +13,9 @@
 #include <unistd.h>
 #include <err.h>
 
-#define SECTOR_SIZE 512
-#define GIGABYTES   (1024 * 1024 * 1024)
+#include "utils.h"
 
-uint64_t fill_buffer (void *buf, size_t size, uint64_t offset)
+static uint64_t fill_buffer(void *buf, size_t size, uint64_t offset)
 {
   uint8_t *p, *ptr_next_sector, *ptr_end;
   struct drand48_data state;
@@ -41,8 +40,8 @@ uint64_t fill_buffer (void *buf, size_t size, uint64_t offset)
   return offset;
 }
 
-int create_and_fill_file (const char *path, int number,
-                           size_t block_size, size_t size)
+static int create_and_fill_file(const char *path, int number,
+                         size_t block_size, size_t size)
 {
   char filename[PATH_MAX];
   int fd, fine;
@@ -105,22 +104,7 @@ int create_and_fill_file (const char *path, int number,
   return fine;
 }
 
-char *adjust_unit (double *ptr_bytes)
-{
-  char *units[] = {"Byte", "KB", "MB", "GB", "TB"};
-  int i = 0;
-  double final = *ptr_bytes;
-  
-  while (i < 5 && final >= 1024)
-  {
-    final /= 1024;
-    i++;
-  }
-  *ptr_bytes = final;
-  return units[i];
-}
-
-void fill_fs (const char *path)
+static void fill_fs(const char *path)
 {
   struct statvfs fs;
   double free_space1, free_space2;
@@ -128,7 +112,7 @@ void fill_fs (const char *path)
   int i, fine;
   size_t block_size;
   double f, write_speed;
-  char *unit;
+  const char *unit;
 
   /* Obtain initial free_space, and block_size. */
   assert(statvfs(path, &fs) == 0);
@@ -165,7 +149,7 @@ void fill_fs (const char *path)
   printf("Writing speed: %.2f %s/s\n", write_speed, unit);
 }
 
-int main (int argc, char *argv[])
+int main(int argc, char *argv[])
 {
   if (argc != 2)
   {

@@ -1,0 +1,9 @@
+### Compile
+
+gcc -c utils.c
+gcc -c f3write.c
+gcc -c f3read.c
+gcc -o f3write utils.o f3write.o
+gcc -o f3read utils.o f3read.o
+
+### For more information see http://oss.digirati.com.br/f3/
