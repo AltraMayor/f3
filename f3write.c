@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <sys/statvfs.h>
 #include <errno.h>
+#include <time.h>
 
 #define SECTOR_SIZE 512
 #define GIGABYTES   (1024 * 1024 * 1024)
@@ -58,7 +59,14 @@ int create_and_fill_file (const char *path, int number,
   fflush(stdout);
   fd = open(filename, O_CREAT|O_WRONLY|O_TRUNC, S_IRUSR|S_IWUSR);
   if (fd < 0)
+  {
+    if (errno == ENOSPC)
+    {
+      printf(" No space left.\n");
+      return 0;
+    }
     err(errno, "Can't create file %s", filename);
+  }
   assert(fd >= 0);
   
   /* Obtain the buffer. */
@@ -67,7 +75,7 @@ int create_and_fill_file (const char *path, int number,
 
   /* Write content. */
   fine = 1;
-  offset = number * GIGABYTES;
+  offset = (uint64_t)number * GIGABYTES;
   while (size > 0)
   {
     offset = fill_buffer(buf, block_size, offset);
@@ -95,18 +103,41 @@ int create_and_fill_file (const char *path, int number,
   return fine;
 }
 
+char *adjust_unit (double *ptr_bytes)
+{
+  char *units[] = {"Byte", "KB", "MB", "GB", "TB"};
+  int i = 0;
+  double final = *ptr_bytes;
+  
+  while (i < 5 && final >= 1024)
+  {
+    final /= 1024;
+    i++;
+  }
+  *ptr_bytes = final;
+  return units[i];
+}
+
 void fill_fs (const char *path)
 {
   struct statvfs fs;
-  uint64_t free_space;
+  double free_space1, free_space2;
+  time_t t1, t2, dt;
   int i, fine;
   size_t block_size;
+  double f, write_speed;
+  char *unit;
 
   /* Obtain initial free_space, and block_size. */
   assert(statvfs(path, &fs) == 0);
-  free_space = (uint64_t)fs.f_bsize * (uint64_t)fs.f_bfree;
+  free_space1 = (double)fs.f_bsize * (double)fs.f_bfree;
   block_size = fs.f_bsize;
-  printf("Free space: %lli\n", free_space);
+  f = free_space1;
+  unit = adjust_unit(&f);
+  printf("Free space: %.2f %s\n", f, unit);
+
+  /* Obtain initial time. */
+  t1 = time(NULL);
 
   i = 0;
   fine = 1;
@@ -118,8 +149,18 @@ void fill_fs (const char *path)
 
   /* Final report. */
   assert(statvfs(path, &fs) == 0);
-  free_space = (uint64_t)fs.f_bsize * (uint64_t)fs.f_bfree;
-  printf("Free space: %lli\n", free_space);
+  free_space2 = (double)fs.f_bsize * (double)fs.f_bfree;
+  f = free_space2;
+  unit = adjust_unit(&f);
+  printf("Free space: %.2f %s\n", f, unit);
+
+  /* Writing speed. */
+  t2 = time(NULL);
+  dt = t2 - t1;
+  dt = dt > 0 ? dt : 1;
+  write_speed = (free_space1 - free_space2) / (double)dt;
+  unit = adjust_unit(&write_speed);
+  printf("Writing speed: %.2f %s/s\n", write_speed, unit);
 }
 
 int main (int argc, char *argv[])
