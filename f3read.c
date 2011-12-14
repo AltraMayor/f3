@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdint.h>
+#include <inttypes.h>
 #include <sys/types.h>
 #include <dirent.h>
 #include <stdio.h>
@@ -123,7 +124,7 @@ void report (const char *prefix, uint64_t i)
 {
   double f = (double)(i * SECTOR_SIZE);
   char *unit = adjust_unit(&f); 
-  printf("%s %.2f %s (%llu sectors)\n", prefix, f, unit, i);
+  printf("%s %.2f %s (%" PRIu64 " sectors)\n", prefix, f, unit, i);
 }
 
 void iterate_path (const char *path)
@@ -162,8 +163,8 @@ void iterate_path (const char *path)
         &sec_changed, &sec_overwritten, &file_size, &read_all);
       and_read_all = and_read_all && read_all;
       tail_msg = read_all ? "" : " - NOT fully read";
-      printf(" %llu/%llu/%llu/%llu%s\n", sec_ok, sec_corrupted,
-        sec_changed, sec_overwritten, tail_msg);
+      printf(" %" PRIu64 "/%" PRIu64 "/%" PRIu64 "/%" PRIu64 "%s\n",
+        sec_ok, sec_corrupted, sec_changed, sec_overwritten, tail_msg);
       tot_ok += sec_ok;
       tot_corrupted += sec_corrupted;
       tot_changed += sec_changed;
