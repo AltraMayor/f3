@@ -10,23 +10,25 @@
 #include <sys/statvfs.h>
 #include <errno.h>
 #include <time.h>
+#include <unistd.h>
+#include <err.h>
 
 #define SECTOR_SIZE 512
 #define GIGABYTES   (1024 * 1024 * 1024)
 
 uint64_t fill_buffer (void *buf, size_t size, uint64_t offset)
 {
-  void *p, *ptr_next_sector, *ptr_end;
+  uint8_t *p, *ptr_next_sector, *ptr_end;
   struct drand48_data state;
 
-  /* Assumed that size is a sector-size multiple. */
+  /* Assumed that size is not zero and a sector-size multiple. */
   assert(size % SECTOR_SIZE == 0);
 
   p = buf;
-  ptr_end = buf + size;
+  ptr_end = p + size;
   while (p < ptr_end)
   {
-    memmove(p, (void *)&offset, sizeof(offset));
+    memmove(p, &offset, sizeof(offset));
     srand48_r(offset, &state);
     ptr_next_sector = p + SECTOR_SIZE;
     p += sizeof(offset);

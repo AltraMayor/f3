@@ -7,6 +7,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <time.h>
+#include <err.h>
 
 #define SECTOR_SIZE 512
 #define GIGABYTES   (1024 * 1024 * 1024)
