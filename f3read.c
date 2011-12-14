@@ -45,7 +45,7 @@ uint64_t offset_from_filename (const char *filename)
 
 void validate_file (const char *path, const char *filename,
   uint64_t *ptr_ok, uint64_t *ptr_corrupted, uint64_t *ptr_changed,
-  uint64_t *ptr_overwritten, uint64_t *ptr_size)
+  uint64_t *ptr_overwritten, uint64_t *ptr_size, int *read_all)
 {
   uint8_t sector[SECTOR_SIZE], *p, *ptr_end;
   FILE *f;
@@ -97,7 +97,8 @@ void validate_file (const char *path, const char *filename,
     else
       (*ptr_corrupted)++;
   }
-  assert(feof(f));
+  *read_all = feof(f);
+  assert(*read_all || errno == EIO);
   *ptr_size += ftell(f);
 
   fclose(f);
@@ -133,6 +134,8 @@ void iterate_path (const char *path)
   uint64_t tot_ok, tot_corrupted, tot_changed, tot_overwritten, tot_size;
   time_t t1, t2, dt;
   double read_speed;
+  int read_all, and_read_all;
+  char *tail_msg;
 
   ptr_dir = opendir(path);
   if (!ptr_dir)
@@ -144,6 +147,7 @@ void iterate_path (const char *path)
 
   entry = readdir(ptr_dir);
   tot_ok = tot_corrupted = tot_changed = tot_overwritten = tot_size = 0;
+  and_read_all = 1;
   printf("                     SECTORS ok/corrupted/changed/overwritten\n");
   while (entry)
   {
@@ -155,9 +159,11 @@ void iterate_path (const char *path)
       fflush(stdout);
       sec_ok = sec_corrupted = sec_changed = sec_overwritten = file_size = 0;
       validate_file(path, filename, &sec_ok, &sec_corrupted,
-        &sec_changed, &sec_overwritten, &file_size);
-      printf(" %llu/%llu/%llu/%llu\n", sec_ok, sec_corrupted,
-        sec_changed, sec_overwritten);
+        &sec_changed, &sec_overwritten, &file_size, &read_all);
+      and_read_all = and_read_all && read_all;
+      tail_msg = read_all ? "" : " - NOT fully read";
+      printf(" %llu/%llu/%llu/%llu%s\n", sec_ok, sec_corrupted,
+        sec_changed, sec_overwritten, tail_msg);
       tot_ok += sec_ok;
       tot_corrupted += sec_corrupted;
       tot_changed += sec_changed;
@@ -176,6 +182,8 @@ void iterate_path (const char *path)
   report("\t       Corrupted:", tot_corrupted);
   report("\tSlightly changed:", tot_changed);
   report("\t     Overwritten:", tot_overwritten);
+  if (!and_read_all)
+    printf("WARNING: Not all data was read due to I/O error(s)\n");
   
   /* Reading speed. */
   dt = t2 - t1;
