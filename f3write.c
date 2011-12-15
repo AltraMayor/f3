@@ -107,6 +107,8 @@ static int create_and_fill_file(const char *path, int number,
 				fflush(stdout);
 				pt1 = pt2;
 			}
+			/* Help the progress to go smoothly. */
+			assert(!fdatasync(fd));
 		}
 	}
 	assert(!fine || size == 0);

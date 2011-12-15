@@ -8,6 +8,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <err.h>
 
 #include "utils.h"
@@ -44,6 +46,7 @@ static void validate_file(const char *path, const char *filename,
 {
 	uint8_t sector[SECTOR_SIZE], *p, *ptr_end;
 	FILE *f;
+	int fd;
 	int offset_match, error_count;
 	size_t sectors_read;
 	uint64_t offset, expected_offset;
@@ -56,9 +59,21 @@ static void validate_file(const char *path, const char *filename,
 	f = fopen(full_fn, "rb");
 	if (!f)
 		err(errno, "Can't open file %s", full_fn);
+	fd = fileno(f);
+	assert(fd >= 0);
+
+	/* If the kernel follows our advice, f3read won't ever read from cache
+	 * even when testing small memory cards without a remount, and
+	 * we should have better reading speed measurement.
+	 */
+	assert(!fdatasync(fd));
+	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
 
 	/* Obtain initial time. */
 	assert(!gettimeofday(&t1, NULL));
+	/* Help the kernel to help us. */
+	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL));
+
 	ptr_end = sector + SECTOR_SIZE;
 	sectors_read = fread(sector, SECTOR_SIZE, 1, f);
 	expected_offset = offset_from_filename(filename);
