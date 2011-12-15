@@ -43,7 +43,7 @@ static uint64_t fill_buffer(void *buf, size_t size, uint64_t offset)
 #define CLEAR2	(CLEAR BLANK CLEAR)
 
 static int create_and_fill_file(const char *path, int number,
-	size_t block_size, size_t size, int progress, struct timeval *ptr_dt)
+	size_t block_size, size_t size, struct timeval *ptr_dt, int progress)
 {
 	char filename[PATH_MAX];
 	int fd, fine;
@@ -51,9 +51,9 @@ static int create_and_fill_file(const char *path, int number,
 	uint64_t offset;
 	size_t to_write;
 	ssize_t written;
+	struct timeval t1, t2;
 	/* Progress time. */
 	struct timeval pt1 = { .tv_sec = -1000, .tv_usec = 0 };
-	struct timeval t1, t2;
 
 	/* Assumed that sizes are sector-size multiples. */
 	assert(block_size % SECTOR_SIZE == 0);
@@ -98,11 +98,9 @@ static int create_and_fill_file(const char *path, int number,
 		size -= written;
 		if (progress) {
 			struct timeval pt2;
-			int delay_ms;
 			assert(!gettimeofday(&pt2, NULL));
-			delay_ms =	(pt2.tv_sec  - pt1.tv_sec)  * 1000 +
-					(pt2.tv_usec - pt1.tv_usec) / 1000;
-			if (delay_ms >= 200) { /* Avoid often printouts. */
+			/* Avoid often printouts. */
+			if (delay_ms(&pt1, &pt2) >= 200) {
 				printf(CLEAR "%10lu", size);
 				fflush(stdout);
 				pt1 = pt2;
@@ -147,7 +145,7 @@ static int fill_fs(const char *path, int progress)
 	fine = 1;
 	do {
 		fine = create_and_fill_file(path, i, block_size,
-			GIGABYTES, progress, &tot_dt);
+			GIGABYTES, &tot_dt, progress);
 		i++;
 	} while (fine);
 

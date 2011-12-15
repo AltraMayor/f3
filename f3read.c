@@ -37,12 +37,20 @@ static uint64_t offset_from_filename(const char *filename)
 	return number * GIGABYTES;
 }
 
-#define TOLERANCE 2
+#define TOLERANCE	2
+
+#define PRINT_STATUS(s)	printf("%s%7" PRIu64 "/%9" PRIu64 "/%7" PRIu64 "/%7" \
+	PRIu64 "%s", (s), *ptr_ok, *ptr_corrupted, *ptr_changed, \
+	*ptr_overwritten, tail_msg)
+
+#define BLANK	"                                 "
+#define CLEAR	("\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b" \
+		 "\b\b\b\b\b\b\b\b\b\b\b\b\b")
 
 static void validate_file(const char *path, const char *filename,
 	uint64_t *ptr_ok, uint64_t *ptr_corrupted, uint64_t *ptr_changed,
 	uint64_t *ptr_overwritten, uint64_t *ptr_size, int *read_all,
-	struct timeval *ptr_dt)
+	struct timeval *ptr_dt, int progress)
 {
 	uint8_t sector[SECTOR_SIZE], *p, *ptr_end;
 	FILE *f;
@@ -53,8 +61,16 @@ static void validate_file(const char *path, const char *filename,
 	struct drand48_data state;
 	long int rand_int;
 	char full_fn[PATH_MAX];
+	char *tail_msg = "";
 	struct timeval t1, t2;
+	/* Progress time. */
+	struct timeval pt1 = { .tv_sec = -1000, .tv_usec = 0 };
 
+	*ptr_ok = *ptr_corrupted = *ptr_changed = *ptr_overwritten =
+		*ptr_size = 0;
+
+	printf("Validating file %s ... %s", filename, progress ? BLANK : "");
+	fflush(stdout);
 	snprintf(full_fn, PATH_MAX, "%s/%s", path, filename);
 	f = fopen(full_fn, "rb");
 	if (!f)
@@ -106,6 +122,17 @@ static void validate_file(const char *path, const char *filename,
 			(*ptr_overwritten)++;
 		else
 			(*ptr_corrupted)++;
+
+		if (progress) {
+			struct timeval pt2;
+			assert(!gettimeofday(&pt2, NULL));
+			/* Avoid often printouts. */
+			if (delay_ms(&pt1, &pt2) >= 200) {
+				PRINT_STATUS(CLEAR);
+				fflush(stdout);
+				pt1 = pt2;
+			}
+		}
 	}
 	assert(!gettimeofday(&t2, NULL));
 	update_dt(ptr_dt, &t1, &t2);
@@ -113,8 +140,11 @@ static void validate_file(const char *path, const char *filename,
 	*read_all = feof(f);
 	assert(*read_all || errno == EIO);
 	*ptr_size += ftell(f);
-
 	fclose(f);
+
+	tail_msg = read_all ? "" : " - NOT fully read";
+	PRINT_STATUS(progress ? CLEAR : "");
+	printf("\n");
 }
 
 static void report(const char *prefix, uint64_t i)
@@ -124,7 +154,7 @@ static void report(const char *prefix, uint64_t i)
 	printf("%s %.2f %s (%" PRIu64 " sectors)\n", prefix, f, unit, i);
 }
 
-static void iterate_path(const char *path)
+static int iterate_path(const char *path, int progress)
 {
 	DIR *ptr_dir;
 	struct dirent *entry;
@@ -132,8 +162,7 @@ static void iterate_path(const char *path)
 	uint64_t tot_ok, tot_corrupted, tot_changed, tot_overwritten, tot_size;
 	struct timeval tot_dt = { .tv_sec = 0, .tv_usec = 0 };
 	double read_speed;
-	int read_all, and_read_all;
-	char *tail_msg;
+	int and_read_all;
 
 	ptr_dir = opendir(path);
 	if (!ptr_dir)
@@ -149,23 +178,16 @@ static void iterate_path(const char *path)
 		if (is_my_file(filename)) {
 			uint64_t sec_ok, sec_corrupted, sec_changed,
 				sec_overwritten, file_size;
-			printf("Validating file %s ...", filename);
-			fflush(stdout);
-			sec_ok = sec_corrupted = sec_changed =
-				sec_overwritten = file_size = 0;
+			int read_all;
 			validate_file(path, filename, &sec_ok, &sec_corrupted,
 				&sec_changed, &sec_overwritten,
-				&file_size, &read_all, &tot_dt);
-			and_read_all = and_read_all && read_all;
-			tail_msg = read_all ? "" : " - NOT fully read";
-			printf(" %7" PRIu64 "/%9" PRIu64 "/%7" PRIu64 "/%7"
-				PRIu64 "%s\n", sec_ok, sec_corrupted,
-				sec_changed, sec_overwritten, tail_msg);
+				&file_size, &read_all, &tot_dt, progress);
 			tot_ok += sec_ok;
 			tot_corrupted += sec_corrupted;
 			tot_changed += sec_changed;
 			tot_overwritten += sec_overwritten;
 			tot_size += file_size;
+			and_read_all = and_read_all && read_all;
 		}
 		entry = readdir(ptr_dir);
 	}
@@ -185,14 +207,16 @@ static void iterate_path(const char *path)
 	read_speed = (double)tot_size / dt_to_s(&tot_dt);
 	unit = adjust_unit(&read_speed);
 	printf("Reading speed: %.2f %s/s\n", read_speed, unit);
+	return 0;
 }
 
 int main(int argc, char *argv[])
 {
-	if (argc != 2) {
-		fprintf(stderr, "Usage: f3read <PATH>\n");
-		return 1;
+	if (argc == 2) {
+		/* If stdout isn't a terminal, supress progress. */
+		return iterate_path(argv[1], isatty(STDOUT_FILENO));
 	}
-	iterate_path(argv[1]);
-	return 0;
+
+	fprintf(stderr, "Usage: f3read <PATH>\n");
+	return 1;
 }

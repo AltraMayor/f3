@@ -28,6 +28,12 @@ static inline double dt_to_s(struct timeval *dt)
 	return ret > 0. ? ret : 1.;
 }
 
+static inline long delay_ms(const struct timeval *t1, const struct timeval *t2)
+{
+	return	(t2->tv_sec  - t1->tv_sec)  * 1000 +
+		(t2->tv_usec - t1->tv_usec) / 1000;
+}
+
 #ifndef __GLIBC__
 
 /*
