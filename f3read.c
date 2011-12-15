@@ -8,7 +8,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
-#include <time.h>
 #include <err.h>
 
 #include "utils.h"
@@ -39,8 +38,9 @@ static uint64_t offset_from_filename(const char *filename)
 #define TOLERANCE 2
 
 static void validate_file(const char *path, const char *filename,
-	uint64_t * ptr_ok, uint64_t * ptr_corrupted, uint64_t * ptr_changed,
-	uint64_t * ptr_overwritten, uint64_t * ptr_size, int *read_all)
+	uint64_t *ptr_ok, uint64_t *ptr_corrupted, uint64_t *ptr_changed,
+	uint64_t *ptr_overwritten, uint64_t *ptr_size, int *read_all,
+	struct timeval *ptr_dt)
 {
 	uint8_t sector[SECTOR_SIZE], *p, *ptr_end;
 	FILE *f;
@@ -50,12 +50,15 @@ static void validate_file(const char *path, const char *filename,
 	struct drand48_data state;
 	long int rand_int;
 	char full_fn[PATH_MAX];
+	struct timeval t1, t2;
 
 	snprintf(full_fn, PATH_MAX, "%s/%s", path, filename);
 	f = fopen(full_fn, "rb");
 	if (!f)
 		err(errno, "Can't open file %s", full_fn);
 
+	/* Obtain initial time. */
+	assert(!gettimeofday(&t1, NULL));
 	ptr_end = sector + SECTOR_SIZE;
 	sectors_read = fread(sector, SECTOR_SIZE, 1, f);
 	expected_offset = offset_from_filename(filename);
@@ -89,6 +92,9 @@ static void validate_file(const char *path, const char *filename,
 		else
 			(*ptr_corrupted)++;
 	}
+	assert(!gettimeofday(&t2, NULL));
+	update_dt(ptr_dt, &t1, &t2);
+
 	*read_all = feof(f);
 	assert(*read_all || errno == EIO);
 	*ptr_size += ftell(f);
@@ -109,7 +115,7 @@ static void iterate_path(const char *path)
 	struct dirent *entry;
 	const char *filename, *unit;
 	uint64_t tot_ok, tot_corrupted, tot_changed, tot_overwritten, tot_size;
-	time_t t1, t2, dt;
+	struct timeval tot_dt = { .tv_sec = 0, .tv_usec = 0 };
 	double read_speed;
 	int read_all, and_read_all;
 	char *tail_msg;
@@ -117,10 +123,6 @@ static void iterate_path(const char *path)
 	ptr_dir = opendir(path);
 	if (!ptr_dir)
 		err(errno, "Can't open path %s", path);
-	assert(ptr_dir);
-
-	/* Obtain initial time. */
-	t1 = time(NULL);
 
 	entry = readdir(ptr_dir);
 	tot_ok = tot_corrupted = tot_changed = tot_overwritten = tot_size = 0;
@@ -138,7 +140,7 @@ static void iterate_path(const char *path)
 				sec_overwritten = file_size = 0;
 			validate_file(path, filename, &sec_ok, &sec_corrupted,
 				&sec_changed, &sec_overwritten,
-				&file_size, &read_all);
+				&file_size, &read_all, &tot_dt);
 			and_read_all = and_read_all && read_all;
 			tail_msg = read_all ? "" : " - NOT fully read";
 			printf(" %7" PRIu64 "/%9" PRIu64 "/%7" PRIu64 "/%7"
@@ -152,7 +154,6 @@ static void iterate_path(const char *path)
 		}
 		entry = readdir(ptr_dir);
 	}
-	t2 = time(NULL);
 	closedir(ptr_dir);
 	assert(tot_size / SECTOR_SIZE ==
 		(tot_ok + tot_corrupted + tot_changed + tot_overwritten));
@@ -166,9 +167,7 @@ static void iterate_path(const char *path)
 		printf("WARNING: Not all data was read due to I/O error(s)\n");
 
 	/* Reading speed. */
-	dt = t2 - t1;
-	dt = dt > 0 ? dt : 1;
-	read_speed = (double)tot_size / (double)dt;
+	read_speed = (double)tot_size / dt_to_s(&tot_dt);
 	unit = adjust_unit(&read_speed);
 	printf("Reading speed: %.2f %s/s\n", read_speed, unit);
 }

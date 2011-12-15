@@ -9,8 +9,6 @@
 #include <fcntl.h>
 #include <sys/statvfs.h>
 #include <errno.h>
-#include <time.h>
-#include <sys/time.h>
 #include <unistd.h>
 #include <err.h>
 
@@ -45,7 +43,7 @@ static uint64_t fill_buffer(void *buf, size_t size, uint64_t offset)
 #define CLEAR2	(CLEAR BLANK CLEAR)
 
 static int create_and_fill_file(const char *path, int number,
-	size_t block_size, size_t size, int progress)
+	size_t block_size, size_t size, int progress, struct timeval *ptr_dt)
 {
 	char filename[PATH_MAX];
 	int fd, fine;
@@ -53,7 +51,9 @@ static int create_and_fill_file(const char *path, int number,
 	uint64_t offset;
 	size_t to_write;
 	ssize_t written;
-	struct timeval t1 = { .tv_sec = -1000, .tv_usec = 0 };
+	/* Progress time. */
+	struct timeval pt1 = { .tv_sec = -1000, .tv_usec = 0 };
+	struct timeval t1, t2;
 
 	/* Assumed that sizes are sector-size multiples. */
 	assert(block_size % SECTOR_SIZE == 0);
@@ -81,6 +81,8 @@ static int create_and_fill_file(const char *path, int number,
 	/* Write content. */
 	fine = 1;
 	offset = (uint64_t) number *GIGABYTES;
+	/* Obtain initial time. */
+	assert(!gettimeofday(&t1, NULL));
 	while (size > 0) {
 		offset = fill_buffer(buf, block_size, offset);
 		to_write = block_size <= size ? block_size : size;
@@ -95,19 +97,24 @@ static int create_and_fill_file(const char *path, int number,
 		assert(written == to_write);
 		size -= written;
 		if (progress) {
-			struct timeval t2;
+			struct timeval pt2;
 			int delay_ms;
-			assert(!gettimeofday(&t2, NULL));
-			delay_ms =	(t2.tv_sec  - t1.tv_sec)  * 1000 +
-					(t2.tv_usec - t1.tv_usec) / 1000;
+			assert(!gettimeofday(&pt2, NULL));
+			delay_ms =	(pt2.tv_sec  - pt1.tv_sec)  * 1000 +
+					(pt2.tv_usec - pt1.tv_usec) / 1000;
 			if (delay_ms >= 200) { /* Avoid often printouts. */
 				printf(CLEAR "%10lu", size);
 				fflush(stdout);
-				t1 = t2;
+				pt1 = pt2;
 			}
 		}
 	}
 	assert(!fine || size == 0);
+
+	/* Improve writing speed measurement avoiding system cache. */
+	assert(!fdatasync(fd));
+	assert(!gettimeofday(&t2, NULL));
+	update_dt(ptr_dt, &t1, &t2);
 
 	/* Release resources. */
 	free(buf);
@@ -120,7 +127,7 @@ static int fill_fs(const char *path, int progress)
 {
 	struct statvfs fs;
 	double free_space1, free_space2;
-	time_t t1, t2, dt;
+	struct timeval tot_dt = { .tv_sec = 0, .tv_usec = 0 };
 	int i, fine;
 	size_t block_size;
 	double f, write_speed;
@@ -134,14 +141,11 @@ static int fill_fs(const char *path, int progress)
 	unit = adjust_unit(&f);
 	printf("Free space: %.2f %s\n", f, unit);
 
-	/* Obtain initial time. */
-	t1 = time(NULL);
-
 	i = 0;
 	fine = 1;
 	do {
 		fine = create_and_fill_file(path, i, block_size,
-			GIGABYTES, progress);
+			GIGABYTES, progress, &tot_dt);
 		i++;
 	} while (fine);
 
@@ -153,10 +157,7 @@ static int fill_fs(const char *path, int progress)
 	printf("Free space: %.2f %s\n", f, unit);
 
 	/* Writing speed. */
-	t2 = time(NULL);
-	dt = t2 - t1;
-	dt = dt > 0 ? dt : 1;
-	write_speed = (free_space1 - free_space2) / (double)dt;
+	write_speed = (free_space1 - free_space2) / dt_to_s(&tot_dt);
 	unit = adjust_unit(&write_speed);
 	printf("Writing speed: %.2f %s/s\n", write_speed, unit);
 	return 0;
