@@ -125,8 +125,8 @@ static void iterate_path(const char *path)
 	entry = readdir(ptr_dir);
 	tot_ok = tot_corrupted = tot_changed = tot_overwritten = tot_size = 0;
 	and_read_all = 1;
-	printf("                     SECTORS"
-		" ok/corrupted/changed/overwritten\n");
+	printf("                     SECTORS "
+		"     ok/corrupted/changed/overwritten\n");
 	while (entry) {
 		filename = entry->d_name;
 		if (is_my_file(filename)) {
@@ -141,7 +141,7 @@ static void iterate_path(const char *path)
 				&file_size, &read_all);
 			and_read_all = and_read_all && read_all;
 			tail_msg = read_all ? "" : " - NOT fully read";
-			printf(" %" PRIu64 "/%" PRIu64 "/%" PRIu64 "/%"
+			printf(" %7" PRIu64 "/%9" PRIu64 "/%7" PRIu64 "/%7"
 				PRIu64 "%s\n", sec_ok, sec_corrupted,
 				sec_changed, sec_overwritten, tail_msg);
 			tot_ok += sec_ok;
