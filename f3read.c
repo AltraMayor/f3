@@ -14,15 +14,6 @@
 
 #include "utils.h"
 
-static int is_my_file(const char *filename)
-{
-	return	(strlen(filename) == 8)	&& isdigit(filename[0])	&&
-		isdigit(filename[1])	&& isdigit(filename[2])	&&
-		isdigit(filename[3])	&& (filename[4] == '.')	&&
-		(filename[5] == 'f')	&& (filename[6] == 'f')	&&
-		(filename[7] == 'f');
-}
-
 static uint64_t offset_from_filename(const char *filename)
 {
 	char str[5];
@@ -71,7 +62,7 @@ static void validate_file(const char *path, const char *filename,
 
 	printf("Validating file %s ... %s", filename, progress ? BLANK : "");
 	fflush(stdout);
-	snprintf(full_fn, PATH_MAX, "%s/%s", path, filename);
+	get_full_fn(full_fn, sizeof(full_fn), path, filename);
 	f = fopen(full_fn, "rb");
 	if (!f)
 		err(errno, "Can't open file %s", full_fn);
@@ -206,7 +197,7 @@ static int iterate_path(const char *path, int progress)
 	/* Reading speed. */
 	read_speed = (double)tot_size / dt_to_s(&tot_dt);
 	unit = adjust_unit(&read_speed);
-	printf("Reading speed: %.2f %s/s\n", read_speed, unit);
+	printf("Average reading speed: %.2f %s/s\n", read_speed, unit);
 	return 0;
 }
 
