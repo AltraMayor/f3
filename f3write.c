@@ -218,13 +218,19 @@ static void measure(int fd, struct flow *fw)
 	}
 
 	if (fw->progress) {
-		double percent = (double)fw->total_written * 100 /
-			fw->total_size;
 		/* Instantaneous speed. */
 		double inst_speed =
 			(double)fw->blocks_per_delay * fw->block_size * 1000 /
 			fw->delay_ms;
 		const char *unit = adjust_unit(&inst_speed);
+		double percent;
+		/* The following shouldn't be necessary, but sometimes
+		 * the initial free space isn't exactly reported
+		 * by the kernel; this issue has been seen on Macs.
+		 */
+		if (fw->total_size < fw->total_written)
+			fw->total_size = fw->total_written;
+		percent = (double)fw->total_written * 100 / fw->total_size;
 		erase(fw->erase);
 		fw->erase = printf("%.2f%% -- %.2f %s/s",
 			percent, inst_speed, unit);
@@ -330,21 +336,19 @@ static int fill_fs(const char *path, int progress)
 	int i, fine;
 
 	free_space = get_freespace(path);
+	pr_freespace(free_space);
 	if (free_space <= 0) {
 		printf("No space!\n");
 		return 1;
 	}
-	pr_freespace(free_space);
 
 	init_flow(&fw, free_space, progress);
 	i = 0;
 	fine = 1;
-	while (fine && free_space > 0) {
-		size_t size = free_space >= GIGABYTES ? GIGABYTES : free_space;
-		fine = create_and_fill_file(path, i, size, &fw);
-		free_space -= size;
+	do {
+		fine = create_and_fill_file(path, i, GIGABYTES, &fw);
 		i++;
-	}
+	} while (fine);
 
 	/* Final report. */
 	pr_freespace(get_freespace(path));

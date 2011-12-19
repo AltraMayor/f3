@@ -3,7 +3,6 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <features.h>
 #include <ctype.h>
 #include <assert.h>
 #include <sys/time.h>
@@ -52,7 +51,22 @@ static inline long delay_ms(const struct timeval *t1, const struct timeval *t2)
 		(t2->tv_usec - t1->tv_usec) / 1000;
 }
 
-#ifndef __GLIBC__
+#ifdef APPLE_MAC
+
+/* For PATH_MAX. */
+#include <limits.h>
+
+#include <fcntl.h>
+static inline int fdatasync(int fd)
+{
+	/* It isn't exactly the same thing, but it's the best available on
+	 * Macs, and it's enough to work.
+	 */
+	return fcntl(fd, F_FULLFSYNC);
+}
+
+/* Mac's kernel doesn't take advices from applications. */
+#define posix_fadvise(fd, offset, len, advice)	0
 
 /*
  * The following functions were copied from GNU Library C to make F3
@@ -79,6 +93,6 @@ extern int srand48_r(long int __seedval, struct drand48_data *__buffer)
 extern int lrand48_r(struct drand48_data *__restrict __buffer,
 	long int *__restrict __result) __attribute__ ((nonnull(1, 2)));
 
-#endif	/* __GLIBC__ */
+#endif	/* APPLE_MAC */
 
 #endif	/* HEADER_UTILS_H */

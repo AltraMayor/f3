@@ -14,7 +14,7 @@ const char *adjust_unit(double *ptr_bytes)
 	return units[i];
 }
 
-#ifndef __GLIBC__
+#ifndef APPLE_MAC
 
 #include <stdio.h>
 #include <stdint.h>
@@ -89,4 +89,4 @@ int lrand48_r(struct drand48_data *buffer, long int *result)
 	return __nrand48_r(buffer->__x, buffer, result);
 }
 
-#endif	/* __GLIBC__ */
+#endif	/* APPLE_MAC */

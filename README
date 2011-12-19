@@ -1,8 +1,16 @@
-### Compile
+### Compile on Linux
 
 gcc -Wall -c utils.c
 gcc -Wall -c f3write.c
 gcc -Wall -c f3read.c
+gcc -o f3write utils.o f3write.o -lm
+gcc -o f3read utils.o f3read.o
+
+### Compile on Mac
+
+gcc -Wall -DAPPLE_MAC -c utils.c
+gcc -Wall -DAPPLE_MAC -c f3write.c
+gcc -Wall -DAPPLE_MAC -c f3read.c
 gcc -o f3write utils.o f3write.o -lm
 gcc -o f3read utils.o f3read.o
 
@@ -11,6 +19,7 @@ gcc -o f3read utils.o f3read.o
 ./f3write /media/5EBD-5C80/
 ./f3read /media/5EBD-5C80/
 
-Please replace "/media/5EBD-5C80/" with appropriate path.
+Please replace "/media/5EBD-5C80/" with the appropriate path.
+USB devices are mounted in "/Volumes" on Macs.
 
 ### For more information see http://oss.digirati.com.br/f3/
