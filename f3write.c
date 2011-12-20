@@ -22,7 +22,7 @@ static uint64_t fill_buffer(void *buf, size_t size, uint64_t offset)
 	uint8_t *p, *ptr_next_sector, *ptr_end;
 	struct drand48_data state;
 
-	/* Assumed that size is not zero and a sector-size multiple. */
+	assert(size > 0);
 	assert(size % SECTOR_SIZE == 0);
 
 	p = buf;
@@ -33,7 +33,7 @@ static uint64_t fill_buffer(void *buf, size_t size, uint64_t offset)
 		ptr_next_sector = p + SECTOR_SIZE;
 		p += sizeof(offset);
 		for (; p < ptr_next_sector; p += sizeof(long int))
-			lrand48_r(&state, (long int *) p);
+			lrand48_r(&state, (long int *)p);
 		assert(p == ptr_next_sector);
 		offset += SECTOR_SIZE;
 	}
@@ -48,7 +48,7 @@ struct flow {
 	uint64_t	total_written;
 	/* If true, show progress. */
 	int		progress;
-	/* Writing rate. */
+	/* Writing rate in bytes. */
 	int		block_size;
 	/* Blocks to write before measurement. */
 	int		blocks_per_delay;
@@ -87,6 +87,7 @@ static inline void init_flow(struct flow *fw, uint64_t total_size, int progress)
 	fw->measured_blocks	= 0;
 	fw->state		= FW_START;
 	fw->erase		= 0;
+	assert(fw->block_size > 0);
 	assert(fw->block_size % SECTOR_SIZE == 0);
 }
 
@@ -113,6 +114,7 @@ static void erase(int count)
 	repeat_ch('\b',	count);
 }
 
+/* Average writing speed in byte/s. */
 static inline double get_avg_speed(struct flow *fw)
 {
 	return	(double)(fw->measured_blocks * fw->block_size * 1000) /
@@ -178,7 +180,15 @@ static void measure(int fd, struct flow *fw)
 			fw->bpd1 = fw->blocks_per_delay / 2;
 			fw->bpd2 = fw->blocks_per_delay;
 			fw->blocks_per_delay = (fw->bpd1 + fw->bpd2) / 2;
-			assert(fw->bpd1 > 0);
+			assert(fw->bpd1 >= 0);
+			/* The following should be true only when the kernel
+			 * is already too busy with the device.
+			 */
+			if (fw->bpd1 == 0) {
+				fw->bpd1++;
+				fw->bpd2++;
+				fw->blocks_per_delay++;
+			}
 			fw->state = FW_SEARCH;
 		} else if (delay < fw->delay_ms) {
 			fw->blocks_per_delay *= 2;
@@ -318,7 +328,7 @@ static int create_and_fill_file(const char *path, int number, size_t size,
 static inline uint64_t get_freespace(const char *path)
 {
 	struct statvfs fs;
-	assert(statvfs(path, &fs) == 0);
+	assert(!statvfs(path, &fs));
 	return (uint64_t)fs.f_frsize * (uint64_t)fs.f_bfree;
 }
 
@@ -341,6 +351,15 @@ static int fill_fs(const char *path, int progress)
 		printf("No space!\n");
 		return 1;
 	}
+
+	/* This sync is just to minimize the chance we'll misestimate
+	 * the writting speed, especially at beginning that can slow down
+	 * the whole process.
+	 * This issue was spotted on a large pen drive in which all fff files
+	 * were removed by function unlink_old_files, but the metadata
+	 * wasn't properly flushed before reaching here.
+	 */
+	sync();
 
 	init_flow(&fw, free_space, progress);
 	i = 0;

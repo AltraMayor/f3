@@ -2,11 +2,11 @@
 
 const char *adjust_unit(double *ptr_bytes)
 {
-	char *units[] = { "Byte", "KB", "MB", "GB", "TB" };
+	const char *units[] = { "Byte", "KB", "MB", "GB", "TB", "PB", "EB" };
 	int i = 0;
 	double final = *ptr_bytes;
 
-	while (i < 5 && final >= 1024) {
+	while (i < 7 && final >= 1024) {
 		final /= 1024;
 		i++;
 	}
@@ -14,7 +14,7 @@ const char *adjust_unit(double *ptr_bytes)
 	return units[i];
 }
 
-#ifndef APPLE_MAC
+#ifdef APPLE_MAC
 
 #include <stdio.h>
 #include <stdint.h>

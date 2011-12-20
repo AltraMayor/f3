@@ -4,7 +4,6 @@
 #include <sys/types.h>
 #include <dirent.h>
 #include <stdio.h>
-#include <ctype.h>
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -26,6 +25,17 @@ static uint64_t offset_from_filename(const char *filename)
 	number = (uint64_t) strtol(str, NULL, 10) - 1;
 
 	return number * GIGABYTES;
+}
+
+static inline void update_dt(struct timeval *dt, const struct timeval *t1,
+	const struct timeval *t2)
+{
+	dt->tv_sec  += t2->tv_sec  - t1->tv_sec;
+	dt->tv_usec += t2->tv_usec - t1->tv_usec;
+	if (dt->tv_usec >= 1000000) {
+		dt->tv_sec++;
+		dt->tv_usec -= 1000000;
+	}
 }
 
 #define TOLERANCE	2
@@ -57,8 +67,7 @@ static void validate_file(const char *path, const char *filename,
 	/* Progress time. */
 	struct timeval pt1 = { .tv_sec = -1000, .tv_usec = 0 };
 
-	*ptr_ok = *ptr_corrupted = *ptr_changed = *ptr_overwritten =
-		*ptr_size = 0;
+	*ptr_ok = *ptr_corrupted = *ptr_changed = *ptr_overwritten = 0;
 
 	printf("Validating file %s ... %s", filename, progress ? BLANK : "");
 	fflush(stdout);
@@ -130,7 +139,8 @@ static void validate_file(const char *path, const char *filename,
 
 	*read_all = feof(f);
 	assert(*read_all || errno == EIO);
-	*ptr_size += ftell(f);
+	*ptr_size = ftell(f);
+	assert(*ptr_size >= 0);
 	fclose(f);
 
 	tail_msg = read_all ? "" : " - NOT fully read";
@@ -143,6 +153,13 @@ static void report(const char *prefix, uint64_t i)
 	double f = (double) (i * SECTOR_SIZE);
 	const char *unit = adjust_unit(&f);
 	printf("%s %.2f %s (%" PRIu64 " sectors)\n", prefix, f, unit, i);
+}
+
+static inline double dt_to_s(struct timeval *dt)
+{
+	double ret = (double)dt->tv_sec + ((double)dt->tv_usec / 1000000.);
+	assert(ret >= 0);
+	return ret > 0 ? ret : 1;
 }
 
 static int iterate_path(const char *path, int progress)
