@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <assert.h>
 #include <sys/time.h>
+#include <limits.h>
 
 #define SECTOR_SIZE (512)
 #define GIGABYTES   (1024 * 1024 * 1024)
@@ -35,20 +36,32 @@ static inline long delay_ms(const struct timeval *t1, const struct timeval *t2)
 
 #ifdef APPLE_MAC
 
-/* For PATH_MAX. */
-#include <limits.h>
-
+/* For function fcntl. */
 #include <fcntl.h>
+/* For type off_t. */
+#include <unistd.h>
+
+/* This function is a _rough_ approximation of fdatasync(2). */
 static inline int fdatasync(int fd)
 {
-	/* It isn't exactly the same thing, but it's the best available on
-	 * Macs, and it's enough to work.
-	 */
 	return fcntl(fd, F_FULLFSYNC);
 }
 
-/* Mac's kernel doesn't take advices from applications. */
-#define posix_fadvise(fd, offset, len, advice)	0
+#define POSIX_FADV_SEQUENTIAL	2 /* Expect sequential page references.	*/
+#define POSIX_FADV_DONTNEED	4 /* Don't need these pages.		*/
+
+/* This function is a _rough_ approximation of posix_fadvise(2). */
+static inline int posix_fadvise(int fd, off_t offset, off_t len, int advice)
+{
+	switch (advice) {
+	case POSIX_FADV_SEQUENTIAL:
+		return fcntl(fd, F_RDAHEAD, 1);
+	case POSIX_FADV_DONTNEED:
+		return fcntl(fd, F_NOCACHE, 1);
+	default:
+		assert(0);
+	}
+}
 
 /*
  * The following functions were copied from GNU Library C to make F3
