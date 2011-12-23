@@ -269,7 +269,8 @@ static inline void end_measurement(int fd, struct flow *fw)
 static int create_and_fill_file(const char *path, int number, size_t size,
 	struct flow *fw)
 {
-	char filename[PATH_MAX];
+	char full_fn[PATH_MAX];
+	const char *filename;
 	int fd, fine;
 	void *buf;
 	size_t remaining;
@@ -280,17 +281,17 @@ static int create_and_fill_file(const char *path, int number, size_t size,
 	assert(size % fw->block_size == 0);
 
 	/* Create the file. */
-	assert(snprintf(filename, sizeof(filename), "%s/%04i.fff",
-		path, number + 1) < sizeof(filename));
-	printf("Creating file %04i.fff ... ", number + 1);
+	
+	full_fn_from_number(full_fn, &filename, path, number);
+	printf("Creating file %s ... ", filename);
 	fflush(stdout);
-	fd = open(filename, O_CREAT | O_WRONLY | O_TRUNC, S_IRUSR | S_IWUSR);
+	fd = open(full_fn, O_CREAT | O_WRONLY | O_TRUNC, S_IRUSR | S_IWUSR);
 	if (fd < 0) {
 		if (errno == ENOSPC) {
 			printf("No space left.\n");
 			return 0;
 		}
-		err(errno, "Can't create file %s", filename);
+		err(errno, "Can't create file %s", full_fn);
 	}
 	assert(fd >= 0);
 
@@ -311,7 +312,7 @@ static int create_and_fill_file(const char *path, int number, size_t size,
 				fine = 0;
 				break;
 			} else
-				err(errno, "Write to file %s failed", filename);
+				err(errno, "Write to file %s failed", full_fn);
 		}
 		assert(written == fw->block_size);
 		remaining -= written;
@@ -397,7 +398,8 @@ static void unlink_old_files(const char *path)
 		filename = entry->d_name;
 		if (is_my_file(filename)) {
 			char full_fn[PATH_MAX];
-			get_full_fn(full_fn, sizeof(full_fn), path, filename);
+			assert(snprintf(full_fn, sizeof(full_fn), "%s/%s",
+				path, filename) < sizeof(full_fn));	
 			printf("Removing old file %s ...\n", filename);
 			if (unlink(full_fn))
 				err(errno, "Can't remove file %s", full_fn);

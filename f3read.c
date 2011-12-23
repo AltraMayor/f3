@@ -13,20 +13,6 @@
 
 #include "utils.h"
 
-static uint64_t offset_from_filename(const char *filename)
-{
-	char str[5];
-	uint64_t number;
-
-	/* Obtain number. */
-	assert(is_my_file(filename));
-	strncpy(str, filename, 4);
-	str[4] = '\0';
-	number = (uint64_t) strtol(str, NULL, 10) - 1;
-
-	return number * GIGABYTES;
-}
-
 static inline void update_dt(struct timeval *dt, const struct timeval *t1,
 	const struct timeval *t2)
 {
@@ -48,11 +34,13 @@ static inline void update_dt(struct timeval *dt, const struct timeval *t1,
 #define CLEAR	("\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b" \
 		 "\b\b\b\b\b\b\b\b\b\b\b\b\b")
 
-static void validate_file(const char *path, const char *filename,
+static void validate_file(const char *path, int number,
 	uint64_t *ptr_ok, uint64_t *ptr_corrupted, uint64_t *ptr_changed,
 	uint64_t *ptr_overwritten, uint64_t *ptr_size, int *read_all,
 	struct timeval *ptr_dt, int progress)
 {
+	char full_fn[PATH_MAX];
+	const char *filename;
 	uint8_t sector[SECTOR_SIZE], *p, *ptr_end;
 	FILE *f;
 	int fd;
@@ -61,7 +49,6 @@ static void validate_file(const char *path, const char *filename,
 	uint64_t offset, expected_offset;
 	struct drand48_data state;
 	long int rand_int;
-	char full_fn[PATH_MAX];
 	char *tail_msg = "";
 	struct timeval t1, t2;
 	/* Progress time. */
@@ -69,9 +56,9 @@ static void validate_file(const char *path, const char *filename,
 
 	*ptr_ok = *ptr_corrupted = *ptr_changed = *ptr_overwritten = 0;
 
+	full_fn_from_number(full_fn, &filename, path, number);
 	printf("Validating file %s ... %s", filename, progress ? BLANK : "");
 	fflush(stdout);
-	get_full_fn(full_fn, sizeof(full_fn), path, filename);
 	f = fopen(full_fn, "rb");
 	if (!f)
 		err(errno, "Can't open file %s", full_fn);
@@ -92,7 +79,7 @@ static void validate_file(const char *path, const char *filename,
 
 	ptr_end = sector + SECTOR_SIZE;
 	sectors_read = fread(sector, SECTOR_SIZE, 1, f);
-	expected_offset = offset_from_filename(filename);
+	expected_offset = (uint64_t)number * GIGABYTES;
 	while (sectors_read > 0) {
 		assert(sectors_read == 1);
 		offset = *((uint64_t *) sector);
@@ -162,44 +149,45 @@ static inline double dt_to_s(struct timeval *dt)
 	return ret > 0 ? ret : 1;
 }
 
-static int iterate_path(const char *path, int progress)
+static void iterate_files(const char *path, const int *files, int progress)
 {
-	DIR *ptr_dir;
-	struct dirent *entry;
-	const char *filename, *unit;
 	uint64_t tot_ok, tot_corrupted, tot_changed, tot_overwritten, tot_size;
 	struct timeval tot_dt = { .tv_sec = 0, .tv_usec = 0 };
 	double read_speed;
-	int and_read_all;
+	const char *unit;
+	int and_read_all = 1;
+	int or_missing_file = 0;
+	int number = 0;
 
-	ptr_dir = opendir(path);
-	if (!ptr_dir)
-		err(errno, "Can't open path %s", path);
-
-	entry = readdir(ptr_dir);
 	tot_ok = tot_corrupted = tot_changed = tot_overwritten = tot_size = 0;
-	and_read_all = 1;
 	printf("                     SECTORS "
 		"     ok/corrupted/changed/overwritten\n");
-	while (entry) {
-		filename = entry->d_name;
-		if (is_my_file(filename)) {
-			uint64_t sec_ok, sec_corrupted, sec_changed,
-				sec_overwritten, file_size;
-			int read_all;
-			validate_file(path, filename, &sec_ok, &sec_corrupted,
-				&sec_changed, &sec_overwritten,
-				&file_size, &read_all, &tot_dt, progress);
-			tot_ok += sec_ok;
-			tot_corrupted += sec_corrupted;
-			tot_changed += sec_changed;
-			tot_overwritten += sec_overwritten;
-			tot_size += file_size;
-			and_read_all = and_read_all && read_all;
+
+	while (*files >= 0) {
+		uint64_t sec_ok, sec_corrupted, sec_changed,
+			sec_overwritten, file_size;
+		int read_all;
+
+		or_missing_file = or_missing_file || (*files != number);
+		for (; number < *files; number++) {
+			char full_fn[PATH_MAX];
+			const char *filename;
+			full_fn_from_number(full_fn, &filename, "", number);
+			printf("Missing file %s\n", filename);
 		}
-		entry = readdir(ptr_dir);
+		number++;
+
+		validate_file(path, *files, &sec_ok, &sec_corrupted,
+			&sec_changed, &sec_overwritten,
+			&file_size, &read_all, &tot_dt, progress);
+		tot_ok += sec_ok;
+		tot_corrupted += sec_corrupted;
+		tot_changed += sec_changed;
+		tot_overwritten += sec_overwritten;
+		tot_size += file_size;
+		and_read_all = and_read_all && read_all;
+		files++;
 	}
-	closedir(ptr_dir);
 	assert(tot_size / SECTOR_SIZE ==
 		(tot_ok + tot_corrupted + tot_changed + tot_overwritten));
 
@@ -208,6 +196,8 @@ static int iterate_path(const char *path, int progress)
 	report("\t       Corrupted:", tot_corrupted);
 	report("\tSlightly changed:", tot_changed);
 	report("\t     Overwritten:", tot_overwritten);
+	if (or_missing_file)
+		printf("WARNING: Not all F3 files are available\n");
 	if (!and_read_all)
 		printf("WARNING: Not all data was read due to I/O error(s)\n");
 
@@ -215,14 +205,79 @@ static int iterate_path(const char *path, int progress)
 	read_speed = (double)tot_size / dt_to_s(&tot_dt);
 	unit = adjust_unit(&read_speed);
 	printf("Average reading speed: %.2f %s/s\n", read_speed, unit);
-	return 0;
+}
+
+static int number_from_filename(const char *filename)
+{
+	char str[FILENAME_NUM_DIGITS + 1];
+	assert(is_my_file(filename));
+	strncpy(str, filename, FILENAME_NUM_DIGITS);
+	str[FILENAME_NUM_DIGITS] = '\0';
+	return strtol(str, NULL, 10) - 1;
+}
+
+/* Don't call this function directly, use ls_my_files instead. */
+static int *__ls_my_files(DIR *dir, int *pcount, int *pindex)
+{
+	struct dirent *entry;
+	const char *filename;
+
+	entry = readdir(dir);
+	if (!entry) {
+		int *ret = malloc(sizeof(const int) * (*pcount + 1));
+		*pindex = *pcount - 1;
+		ret[*pcount] = -1;
+		closedir(dir);
+		return ret;
+	}
+
+	filename = entry->d_name;
+	if (is_my_file(filename)) {
+		int my_index;
+		int *ret;
+		(*pcount)++;
+		ret = __ls_my_files(dir, pcount, &my_index);
+		ret[my_index] = number_from_filename(filename);
+		*pindex = my_index - 1;
+		return ret;
+	}
+	
+	return __ls_my_files(dir, pcount, pindex);
+}
+
+/* To be used with qsort(3). */
+static int cmpintp(const void *p1, const void *p2)
+{
+	return *(const int *)p1 - *(const int *)p2;
+}
+
+static const int *ls_my_files(const char *path)
+{
+	DIR *dir = opendir(path);
+	int my_count;
+	int my_index;
+	int *ret;
+
+	if (!dir)
+		err(errno, "Can't open path %s", path);
+
+	my_count = 0;
+	ret = __ls_my_files(dir, &my_count, &my_index);
+	assert(my_index == -1);
+	qsort(ret, my_count, sizeof(*ret), cmpintp);
+	return ret;
 }
 
 int main(int argc, char *argv[])
 {
 	if (argc == 2) {
+		const char *path = argv[1];
+		const int *files = ls_my_files(path);
 		/* If stdout isn't a terminal, supress progress. */
-		return iterate_path(argv[1], isatty(STDOUT_FILENO));
+		int progress = isatty(STDOUT_FILENO);
+		iterate_files(path, files, progress);
+		free((void *)files);
+		return 0;
 	}
 
 	fprintf(stderr, "Usage: f3read <PATH>\n");

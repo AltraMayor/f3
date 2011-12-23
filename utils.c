@@ -14,6 +14,19 @@ const char *adjust_unit(double *ptr_bytes)
 	return units[i];
 }
 
+void full_fn_from_number(char *full_fn, const char **filename,
+	const char *path, int num)
+{
+	static char format[32] = "";
+	if (!format[0]) {
+		assert(FILENAME_NUM_DIGITS >  0);
+		assert(FILENAME_NUM_DIGITS < 10);
+		sprintf(format, "%%s/%%%02ii.fff", FILENAME_NUM_DIGITS);
+	}
+	assert(snprintf(full_fn, PATH_MAX, format, path, num + 1) < PATH_MAX);
+	*filename = full_fn + strlen(path) + 1;
+}
+
 #ifdef APPLE_MAC
 
 #include <stdio.h>
