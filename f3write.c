@@ -50,6 +50,8 @@ struct flow {
 	int		progress;
 	/* Writing rate in bytes. */
 	int		block_size;
+	/* Increment to apply to @blocks_per_delay. */
+	int		step;
 	/* Blocks to write before measurement. */
 	int		blocks_per_delay;
 	/* Delay in miliseconds. */
@@ -59,7 +61,7 @@ struct flow {
 	/* Number of measured blocks. */
 	uint64_t	measured_blocks;
 	/* State. */
-	enum {FW_START, FW_SEARCH, FW_STEADY} state;
+	enum {FW_INC, FW_DEC, FW_SEARCH, FW_STEADY} state;
 	/* Number of characters to erase before printing out progress. */
 	int		erase;
 
@@ -75,7 +77,13 @@ struct flow {
 	struct timeval	t1, t2;
 };
 
-static inline void init_flow(struct flow *fw, uint64_t total_size, int progress)
+static inline void move_to_inc_at_start(struct flow *fw)
+{
+	fw->step = 1;
+	fw->state = FW_INC;
+}
+
+static void init_flow(struct flow *fw, uint64_t total_size, int progress)
 {
 	fw->total_size		= total_size;
 	fw->total_written	= 0;
@@ -85,10 +93,11 @@ static inline void init_flow(struct flow *fw, uint64_t total_size, int progress)
 	fw->delay_ms		= 1000;	/* 1s		*/
 	fw->measurements	= 0;
 	fw->measured_blocks	= 0;
-	fw->state		= FW_START;
 	fw->erase		= 0;
 	assert(fw->block_size > 0);
 	assert(fw->block_size % SECTOR_SIZE == 0);
+
+	move_to_inc_at_start(fw);
 }
 
 static inline void start_measurement(struct flow *fw)
@@ -158,6 +167,62 @@ static int pr_time(double sec)
 	return tot + c;
 }
 
+static inline void update_mean(struct flow *fw)
+{
+	fw->measurements++;
+	fw->measured_blocks += fw->written_blocks;
+}
+
+static inline void move_to_steady(struct flow *fw)
+{
+	update_mean(fw);
+	fw->state = FW_STEADY;
+}
+
+static void move_to_search(struct flow *fw, int bpd1, int bpd2)
+{
+	assert(bpd1 > 0);
+	assert(bpd2 >= bpd1);
+
+	fw->blocks_per_delay = (bpd1 + bpd2) / 2;
+	if (bpd2 - bpd1 <= 3) {
+		move_to_steady(fw);
+		return;
+	}
+
+	fw->bpd1 = bpd1;
+	fw->bpd2 = bpd2;
+	fw->state = FW_SEARCH;
+}
+
+static inline void dec_step(struct flow *fw)
+{
+	if (fw->blocks_per_delay - fw->step > 0) {
+		fw->blocks_per_delay -= fw->step;
+		fw->step *= 2;
+	} else
+		move_to_search(fw, 1, fw->blocks_per_delay + fw->step / 2);
+}
+
+static inline void inc_step(struct flow *fw)
+{
+	fw->blocks_per_delay += fw->step;
+	fw->step *= 2;
+}
+
+static inline void move_to_inc(struct flow *fw)
+{
+	move_to_inc_at_start(fw);
+	inc_step(fw);
+}
+
+static inline void move_to_dec(struct flow *fw)
+{
+	fw->step = 1;
+	fw->state = FW_DEC;
+	dec_step(fw);
+}
+
 static void measure(int fd, struct flow *fw)
 {
 	long delay;
@@ -175,30 +240,30 @@ static void measure(int fd, struct flow *fw)
 	delay = delay_ms(&fw->t1, &fw->t2);
 
 	switch (fw->state) {
-	case FW_START:
+	case FW_INC:
 		if (delay > fw->delay_ms) {
-			fw->bpd1 = fw->blocks_per_delay / 2;
-			fw->bpd2 = fw->blocks_per_delay;
-			fw->blocks_per_delay = (fw->bpd1 + fw->bpd2) / 2;
-			assert(fw->bpd1 >= 0);
-			/* The following should be true only when the kernel
-			 * is already too busy with the device.
-			 */
-			if (fw->bpd1 == 0) {
-				fw->bpd1++;
-				fw->bpd2++;
-				fw->blocks_per_delay++;
-			}
-			fw->state = FW_SEARCH;
+			move_to_search(fw,
+				fw->blocks_per_delay - fw->step / 2,
+				fw->blocks_per_delay);
 		} else if (delay < fw->delay_ms) {
-			fw->blocks_per_delay *= 2;
+			inc_step(fw);
 		} else
-			fw->state = FW_STEADY;
+			move_to_steady(fw);
+		break;
+
+	case FW_DEC:
+		if (delay > fw->delay_ms) {
+			dec_step(fw);
+		} else if (delay < fw->delay_ms) {
+			move_to_search(fw, fw->blocks_per_delay,
+				fw->blocks_per_delay + fw->step / 2);
+		} else
+			move_to_steady(fw);
 		break;
 
 	case FW_SEARCH:
 		if (fw->bpd2 - fw->bpd1 <= 3) {
-			fw->state = FW_STEADY;
+			move_to_steady(fw);
 			break;
 		}
 
@@ -209,18 +274,18 @@ static void measure(int fd, struct flow *fw)
 			fw->bpd1 = fw->blocks_per_delay;
 			fw->blocks_per_delay = (fw->bpd1 + fw->bpd2) / 2;
 		} else
-			fw->state = FW_STEADY;
+			move_to_steady(fw);
 		break;
 
 	case FW_STEADY:
-		fw->measurements++;
-		fw->measured_blocks += fw->written_blocks;
+		update_mean(fw);
 
-		if (delay > fw->delay_ms) {
-			if (fw->blocks_per_delay > 0)
-				fw->blocks_per_delay--;
-		} else if (delay < fw->delay_ms)
-			fw->blocks_per_delay++;
+		if (delay <= fw->delay_ms) {
+			move_to_inc(fw);
+		}
+		else if (fw->blocks_per_delay > 1) {
+			move_to_dec(fw);
+		}
 		break;
 
 	default:
@@ -352,15 +417,6 @@ static int fill_fs(const char *path, int progress)
 		printf("No space!\n");
 		return 1;
 	}
-
-	/* This sync is just to minimize the chance we'll misestimate
-	 * the writting speed, especially at beginning that can slow down
-	 * the whole process.
-	 * This issue was spotted on a large pen drive in which all fff files
-	 * were removed by function unlink_old_files, but the metadata
-	 * wasn't properly flushed before reaching here.
-	 */
-	sync();
 
 	init_flow(&fw, free_space, progress);
 	i = 0;
