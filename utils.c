@@ -1,3 +1,9 @@
+#include <stdlib.h>
+#include <sys/types.h>
+#include <dirent.h>
+#include <errno.h>
+#include <err.h>
+
 #include "utils.h"
 
 const char *adjust_unit(double *ptr_bytes)
@@ -25,6 +31,67 @@ void full_fn_from_number(char *full_fn, const char **filename,
 	}
 	assert(snprintf(full_fn, PATH_MAX, format, path, num + 1) < PATH_MAX);
 	*filename = full_fn + strlen(path) + 1;
+}
+
+static int number_from_filename(const char *filename)
+{
+	char str[FILENAME_NUM_DIGITS + 1];
+	assert(is_my_file(filename));
+	strncpy(str, filename, FILENAME_NUM_DIGITS);
+	str[FILENAME_NUM_DIGITS] = '\0';
+	return strtol(str, NULL, 10) - 1;
+}
+
+/* Don't call this function directly, use ls_my_files instead. */
+static int *__ls_my_files(DIR *dir, int *pcount, int *pindex)
+{
+	struct dirent *entry;
+	const char *filename;
+
+	entry = readdir(dir);
+	if (!entry) {
+		int *ret = malloc(sizeof(const int) * (*pcount + 1));
+		*pindex = *pcount - 1;
+		ret[*pcount] = -1;
+		closedir(dir);
+		return ret;
+	}
+
+	filename = entry->d_name;
+	if (is_my_file(filename)) {
+		int my_index;
+		int *ret;
+		(*pcount)++;
+		ret = __ls_my_files(dir, pcount, &my_index);
+		ret[my_index] = number_from_filename(filename);
+		*pindex = my_index - 1;
+		return ret;
+	}
+	
+	return __ls_my_files(dir, pcount, pindex);
+}
+
+/* To be used with qsort(3). */
+static int cmpintp(const void *p1, const void *p2)
+{
+	return *(const int *)p1 - *(const int *)p2;
+}
+
+const int *ls_my_files(const char *path)
+{
+	DIR *dir = opendir(path);
+	int my_count;
+	int my_index;
+	int *ret;
+
+	if (!dir)
+		err(errno, "Can't open path %s", path);
+
+	my_count = 0;
+	ret = __ls_my_files(dir, &my_count, &my_index);
+	assert(my_index == -1);
+	qsort(ret, my_count, sizeof(*ret), cmpintp);
+	return ret;
 }
 
 #ifdef APPLE_MAC

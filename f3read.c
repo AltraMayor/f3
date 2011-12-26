@@ -1,8 +1,6 @@
 #include <assert.h>
 #include <stdint.h>
 #include <inttypes.h>
-#include <sys/types.h>
-#include <dirent.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -205,67 +203,6 @@ static void iterate_files(const char *path, const int *files, int progress)
 	read_speed = (double)tot_size / dt_to_s(&tot_dt);
 	unit = adjust_unit(&read_speed);
 	printf("Average reading speed: %.2f %s/s\n", read_speed, unit);
-}
-
-static int number_from_filename(const char *filename)
-{
-	char str[FILENAME_NUM_DIGITS + 1];
-	assert(is_my_file(filename));
-	strncpy(str, filename, FILENAME_NUM_DIGITS);
-	str[FILENAME_NUM_DIGITS] = '\0';
-	return strtol(str, NULL, 10) - 1;
-}
-
-/* Don't call this function directly, use ls_my_files instead. */
-static int *__ls_my_files(DIR *dir, int *pcount, int *pindex)
-{
-	struct dirent *entry;
-	const char *filename;
-
-	entry = readdir(dir);
-	if (!entry) {
-		int *ret = malloc(sizeof(const int) * (*pcount + 1));
-		*pindex = *pcount - 1;
-		ret[*pcount] = -1;
-		closedir(dir);
-		return ret;
-	}
-
-	filename = entry->d_name;
-	if (is_my_file(filename)) {
-		int my_index;
-		int *ret;
-		(*pcount)++;
-		ret = __ls_my_files(dir, pcount, &my_index);
-		ret[my_index] = number_from_filename(filename);
-		*pindex = my_index - 1;
-		return ret;
-	}
-	
-	return __ls_my_files(dir, pcount, pindex);
-}
-
-/* To be used with qsort(3). */
-static int cmpintp(const void *p1, const void *p2)
-{
-	return *(const int *)p1 - *(const int *)p2;
-}
-
-static const int *ls_my_files(const char *path)
-{
-	DIR *dir = opendir(path);
-	int my_count;
-	int my_index;
-	int *ret;
-
-	if (!dir)
-		err(errno, "Can't open path %s", path);
-
-	my_count = 0;
-	ret = __ls_my_files(dir, &my_count, &my_index);
-	assert(my_index == -1);
-	qsort(ret, my_count, sizeof(*ret), cmpintp);
-	return ret;
 }
 
 int main(int argc, char *argv[])

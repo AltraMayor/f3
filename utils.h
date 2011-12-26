@@ -35,6 +35,8 @@ static inline long delay_ms(const struct timeval *t1, const struct timeval *t2)
 		(t2->tv_usec - t1->tv_usec) / 1000;
 }
 
+const int *ls_my_files(const char *path);
+
 #ifdef APPLE_MAC
 
 /* For function fcntl. */

@@ -4,7 +4,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <limits.h>
-#include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/statvfs.h>
@@ -13,7 +12,6 @@
 #include <err.h>
 #include <alloca.h>
 #include <math.h>
-#include <dirent.h>
 
 #include "utils.h"
 
@@ -441,28 +439,18 @@ static int fill_fs(const char *path, int progress)
 
 static void unlink_old_files(const char *path)
 {
-	DIR *ptr_dir;
-	struct dirent *entry;
-	const char *filename;
-
-	ptr_dir = opendir(path);
-	if (!ptr_dir)
-		err(errno, "Can't open path %s", path);
-
-	entry = readdir(ptr_dir);
-	while (entry) {
-		filename = entry->d_name;
-		if (is_my_file(filename)) {
-			char full_fn[PATH_MAX];
-			assert(snprintf(full_fn, sizeof(full_fn), "%s/%s",
-				path, filename) < sizeof(full_fn));	
-			printf("Removing old file %s ...\n", filename);
-			if (unlink(full_fn))
-				err(errno, "Can't remove file %s", full_fn);
-		}
-		entry = readdir(ptr_dir);
+	const int *files = ls_my_files(path);
+	const int *number = files;
+	while (*number >= 0) {
+		char full_fn[PATH_MAX];
+		const char *filename;
+		full_fn_from_number(full_fn, &filename, path, *number);
+		printf("Removing old file %s ...\n", filename);
+		if (unlink(full_fn))
+			err(errno, "Can't remove file %s", full_fn);
+		number++;
 	}
-	closedir(ptr_dir);
+	free((void *)files);
 }
 
 int main(int argc, char *argv[])
