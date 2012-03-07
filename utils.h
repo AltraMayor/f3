@@ -37,6 +37,8 @@ static inline long delay_ms(const struct timeval *t1, const struct timeval *t2)
 
 const int *ls_my_files(const char *path);
 
+void print_header(FILE *f, char *name);
+
 #ifdef APPLE_MAC
 
 /* For function fcntl. */

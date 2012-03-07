@@ -462,6 +462,7 @@ int main(int argc, char *argv[])
 		return fill_fs(path, isatty(STDOUT_FILENO));
 	}
 
+	print_header(stderr, "write");
 	fprintf(stderr, "Usage: f3write <PATH>\n");
 	return 1;
 }

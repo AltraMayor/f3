@@ -217,6 +217,7 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 
+	print_header(stderr, "read");
 	fprintf(stderr, "Usage: f3read <PATH>\n");
 	return 1;
 }
