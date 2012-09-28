@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 #include <sys/types.h>
 #include <dirent.h>
 #include <errno.h>
@@ -42,7 +43,7 @@ static int number_from_filename(const char *filename)
 	return strtol(str, NULL, 10) - 1;
 }
 
-/* Don't call this function directly, use ls_my_files instead. */
+/* Don't call this function directly, use ls_my_files() instead. */
 static int *__ls_my_files(DIR *dir, int *pcount, int *pindex)
 {
 	struct dirent *entry;
@@ -51,6 +52,7 @@ static int *__ls_my_files(DIR *dir, int *pcount, int *pindex)
 	entry = readdir(dir);
 	if (!entry) {
 		int *ret = malloc(sizeof(const int) * (*pcount + 1));
+		assert(ret);
 		*pindex = *pcount - 1;
 		ret[*pcount] = -1;
 		closedir(dir);
