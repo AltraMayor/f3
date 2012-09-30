@@ -61,11 +61,12 @@ static int *__ls_my_files(DIR *dir, int *pcount, int *pindex)
 
 	filename = entry->d_name;
 	if (is_my_file(filename)) {
-		int my_index;
-		int *ret;
+		int number, my_index, *ret;
+		/* Cache @number because @entry may go away. */
+		number = number_from_filename(filename);
 		(*pcount)++;
 		ret = __ls_my_files(dir, pcount, &my_index);
-		ret[my_index] = number_from_filename(filename);
+		ret[my_index] = number;
 		*pindex = my_index - 1;
 		return ret;
 	}
