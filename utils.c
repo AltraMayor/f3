@@ -135,7 +135,7 @@ const int *ls_my_files(const char *path, int start_at)
 void print_header(FILE *f, char *name)
 {
 	fprintf(f,
-	"F3 %s 2.1\n"
+	"F3 %s 2.2\n"
 	"Copyright (C) 2010 Digirati Internet LTDA.\n"
 	"This is free software; see the source for copying conditions.\n"
 	"\n", name);
