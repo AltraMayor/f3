@@ -147,7 +147,8 @@ static inline double dt_to_s(struct timeval *dt)
 	return ret > 0 ? ret : 1;
 }
 
-static void iterate_files(const char *path, const int *files, int progress)
+static void iterate_files(const char *path, const int *files, int start_at,
+	int progress)
 {
 	uint64_t tot_ok, tot_corrupted, tot_changed, tot_overwritten, tot_size;
 	struct timeval tot_dt = { .tv_sec = 0, .tv_usec = 0 };
@@ -155,7 +156,7 @@ static void iterate_files(const char *path, const int *files, int progress)
 	const char *unit;
 	int and_read_all = 1;
 	int or_missing_file = 0;
-	int number = 0;
+	int number = start_at;
 
 	tot_ok = tot_corrupted = tot_changed = tot_overwritten = tot_size = 0;
 	printf("                  SECTORS "
@@ -196,6 +197,9 @@ static void iterate_files(const char *path, const int *files, int progress)
 	report("\t     Overwritten:", tot_overwritten);
 	if (or_missing_file)
 		printf("WARNING: Not all F3 files are available\n");
+	if (start_at > 0)
+		printf("WARNING: Not all F3 files were tested due to parameter %s%i\n",
+		START_AT_TEXT, start_at + 1);
 	if (!and_read_all)
 		printf("WARNING: Not all data was read due to I/O error(s)\n");
 
@@ -207,17 +211,37 @@ static void iterate_files(const char *path, const int *files, int progress)
 
 int main(int argc, char *argv[])
 {
-	if (argc == 2) {
-		const char *path = argv[1];
-		const int *files = ls_my_files(path);
-		/* If stdout isn't a terminal, supress progress. */
-		int progress = isatty(STDOUT_FILENO);
-		iterate_files(path, files, progress);
-		free((void *)files);
-		return 0;
+	int start_at;
+	const char *path;
+	const int *files;
+	int progress;
+
+	switch (argc) {
+	case 2:
+		start_at = 0;
+		path = argv[1];
+		break;
+
+	case 3:
+		start_at = parse_start_at_param(argv[1]);
+		if (start_at < 0)
+			goto error;
+		path = argv[2];
+		break;
+
+	default:
+		goto error;
 	}
 
+	files = ls_my_files(path, start_at);
+	/* If stdout isn't a terminal, supress progress. */
+	progress = isatty(STDOUT_FILENO);
+	iterate_files(path, files, start_at, progress);
+	free((void *)files);
+	return 0;
+
+error:
 	print_header(stderr, "read");
-	fprintf(stderr, "Usage: f3read <PATH>\n");
+	fprintf(stderr, "Usage: f3read [%sNUM] <PATH>\n", START_AT_TEXT);
 	return 1;
 }

@@ -403,7 +403,7 @@ static inline void pr_freespace(uint64_t fs)
 	printf("Free space: %.2f %s\n", f, unit);
 }
 
-static int fill_fs(const char *path, int progress)
+static int fill_fs(const char *path, int start_at, int progress)
 {
 	uint64_t free_space;
 	struct flow fw;
@@ -417,7 +417,7 @@ static int fill_fs(const char *path, int progress)
 	}
 
 	init_flow(&fw, free_space, progress);
-	i = 0;
+	i = start_at;
 	fine = 1;
 	do {
 		fine = create_and_fill_file(path, i, GIGABYTES, &fw);
@@ -437,9 +437,9 @@ static int fill_fs(const char *path, int progress)
 	return 0;
 }
 
-static void unlink_old_files(const char *path)
+static void unlink_old_files(const char *path, int start_at)
 {
-	const int *files = ls_my_files(path);
+	const int *files = ls_my_files(path, start_at);
 	const int *number = files;
 	while (*number >= 0) {
 		char full_fn[PATH_MAX];
@@ -455,14 +455,34 @@ static void unlink_old_files(const char *path)
 
 int main(int argc, char *argv[])
 {
-	if (argc == 2) {
-		const char *path = argv[1];
-		unlink_old_files(path);
-		/* If stdout isn't a terminal, supress progress. */
-		return fill_fs(path, isatty(STDOUT_FILENO));
+	int start_at;
+	const char *path;
+	int progress;
+
+	switch (argc) {
+	case 2:
+		start_at = 0;
+		path = argv[1];
+		break;
+
+	case 3:
+		start_at = parse_start_at_param(argv[1]);
+		if (start_at < 0)
+			goto error;
+		path = argv[2];
+		break;
+
+	default:
+		goto error;
 	}
 
+	unlink_old_files(path, start_at);
+	/* If stdout isn't a terminal, supress progress. */
+	progress = isatty(STDOUT_FILENO);
+	return fill_fs(path, start_at, progress);
+
+error:
 	print_header(stderr, "write");
-	fprintf(stderr, "Usage: f3write <PATH>\n");
+	fprintf(stderr, "Usage: f3write [%sNUM] <PATH>\n", START_AT_TEXT);
 	return 1;
 }
