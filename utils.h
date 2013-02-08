@@ -7,21 +7,13 @@
 #include <sys/time.h>
 #include <limits.h>
 
-#define FILENAME_NUM_DIGITS	4
-
 #define SECTOR_SIZE (512)
 #define GIGABYTES   (1024 * 1024 * 1024)
 
 const char *adjust_unit(double *ptr_bytes);
 
-static inline int is_my_file(const char *filename)
-{
-	return	isdigit(filename[0])	&& isdigit(filename[1])	&&
-		isdigit(filename[2])	&& isdigit(filename[3])	&&
-		(filename[4] == '.')	&& (filename[5] == 'f')	&&
-		(filename[6] == 'f')	&& (filename[7] == 'f') &&
-		(filename[8] == '\0');
-}
+/* Return true if @filename matches the regex /^[0-9]+\.fff$/ */
+int is_my_file(const char *filename);
 
 /* @filename should be PATH_MAX long. */
 void full_fn_from_number(char *full_fn, const char **filename,

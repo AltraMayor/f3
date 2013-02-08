@@ -21,26 +21,45 @@ const char *adjust_unit(double *ptr_bytes)
 	return units[i];
 }
 
+int is_my_file(const char *filename)
+{
+	const char *p = filename;
+
+	if (!p || !isdigit(*p))
+		return 0;
+
+	/* Skip digits. */
+	do {
+		p++;
+	} while (isdigit(*p));
+
+	return	(p[0] == '.') && (p[1] == 'f') && (p[2] == 'f') &&
+		(p[3] == 'f') && (p[4] == '\0');
+}
+
 void full_fn_from_number(char *full_fn, const char **filename,
 	const char *path, int num)
 {
-	static char format[32] = "";
-	if (!format[0]) {
-		assert(FILENAME_NUM_DIGITS >  0);
-		assert(FILENAME_NUM_DIGITS < 10);
-		sprintf(format, "%%s/%%%02ii.fff", FILENAME_NUM_DIGITS);
-	}
-	assert(snprintf(full_fn, PATH_MAX, format, path, num + 1) < PATH_MAX);
+	assert(snprintf(full_fn, PATH_MAX, "%s/%i.fff", path, num + 1) <
+		PATH_MAX);
 	*filename = full_fn + strlen(path) + 1;
 }
 
 static int number_from_filename(const char *filename)
 {
-	char str[FILENAME_NUM_DIGITS + 1];
+	const char *p;
+	int num;
+
 	assert(is_my_file(filename));
-	strncpy(str, filename, FILENAME_NUM_DIGITS);
-	str[FILENAME_NUM_DIGITS] = '\0';
-	return strtol(str, NULL, 10) - 1;
+
+	p = filename;
+	num = 0;
+	do {
+		num = num * 10 + (*p - '0');
+		p++;
+	} while (isdigit(*p));
+
+	return num - 1;
 }
 
 /* Don't call this function directly, use ls_my_files() instead. */

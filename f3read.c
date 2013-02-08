@@ -158,7 +158,7 @@ static void iterate_files(const char *path, const int *files, int progress)
 	int number = 0;
 
 	tot_ok = tot_corrupted = tot_changed = tot_overwritten = tot_size = 0;
-	printf("                     SECTORS "
+	printf("                  SECTORS "
 		"     ok/corrupted/changed/overwritten\n");
 
 	while (*files >= 0) {
