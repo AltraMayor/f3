@@ -1,0 +1,51 @@
+***
+*** CHANGELOG. PLEASE, SEE /usr/share/doc/f3/README.source.
+***
+
+Version 2.2 - Feb 8, 2013
+
+    * add option parameter --start-at=NUM to F3.
+    * remove arbitrary limit on filenames.
+    * fix bug first reported by Martin Theiss.
+    * minor code refinements.
+
+Version 2.1 - Mar 7, 2012
+
+    * report version and copyright in help message.
+    * made f3write remove old F3 files in order.
+    * refined flow control algorithm of f3write.
+    * verify that "all" F3 files are present.
+    * added a rough approximation of posix_fadvise for Macs.
+
+Version 2.0 - Dec 20, 2011
+
+    * added a very simple Makefile.
+    * reviewed code.
+    * added support for Macs.
+    * f3write now reports proper progress.
+    * added progress printout in f3read.
+    * improved precision of speed measurements.
+    * formated code following Linux's coding style.
+
+Version 1.1.3 - Sep 21, 2010
+
+    * fixes some warning issued by GCC when compiling f3read.c on 64bits
+      machines. Nicolai Abruzzese was the first one to report this issue.
+
+Version 1.1.2 - Aug 31, 2010
+
+    * handles an I/O error reported by Misha Aizatulin.
+
+Version 1.1.1 - Aug 16, 2010
+
+    * fixes some warnings issued by gcc when the parameter -Wall is used
+      to compile the source.
+
+Version 1.1 - Aug 10, 2010
+
+    * adds a nice report at the end of the output of f3read.
+    * works fine with large memory cards.
+
+Version 1.0 - Aug 02, 2010
+
+    * Initial release.
