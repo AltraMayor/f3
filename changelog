@@ -2,6 +2,13 @@
 *** CHANGELOG. PLEASE, SEE /usr/share/doc/f3/README.source.
 ***
 
+Version 3.0 - May 14, 2014
+
+    * fix bug first reported by John Lussmyer.
+    * add support for Windows/Cygwin.
+    * add a change log (this) and a man page.
+    * adopt h2testw's file format.
+
 Version 2.2 - Feb 8, 2013
 
     * add option parameter --start-at=NUM to F3.
