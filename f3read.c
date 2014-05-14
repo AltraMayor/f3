@@ -44,8 +44,6 @@ static void validate_file(const char *path, int number,
 	int offset_match, error_count;
 	size_t sectors_read;
 	uint64_t offset, expected_offset;
-	struct drand48_data state;
-	long int rand_int;
 	int final_errno;
 	struct timeval t1, t2;
 	/* Progress time. */
@@ -79,17 +77,19 @@ static void validate_file(const char *path, int number,
 	final_errno = errno;
 	expected_offset = (uint64_t)number * GIGABYTES;
 	while (sectors_read > 0) {
+		uint64_t rn;
+
 		assert(sectors_read == 1);
 		offset = *((uint64_t *) sector);
 		offset_match = offset == expected_offset;
 
-		srand48_r(offset, &state);
+		rn = offset;
 		p = sector + sizeof(offset);
 		error_count = 0;
 		for (; error_count <= TOLERANCE && p < ptr_end;
-			p += sizeof(long int)) {
-			lrand48_r(&state, &rand_int);
-			if (rand_int != *((long int *) p))
+			p += sizeof(rn)) {
+			rn = random_number(rn);
+			if (rn != *((typeof(rn) *) p))
 				error_count++;
 		}
 

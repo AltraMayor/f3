@@ -6,13 +6,14 @@
 #include <assert.h>
 #include <sys/time.h>
 #include <limits.h>
+#include <stdint.h>
 
 #define SECTOR_SIZE (512)
 #define GIGABYTES   (1024 * 1024 * 1024)
 
 const char *adjust_unit(double *ptr_bytes);
 
-/* Return true if @filename matches the regex /^[0-9]+\.fff$/ */
+/* Return true if @filename matches the regex /^[0-9]+\.h2w$/ */
 int is_my_file(const char *filename);
 
 /* @filename should be PATH_MAX long. */
@@ -34,6 +35,11 @@ int parse_start_at_param(const char *param);
 const int *ls_my_files(const char *path, int start_at);
 
 void print_header(FILE *f, char *name);
+
+static inline uint64_t random_number(uint64_t prv_number)
+{
+	return prv_number * 4294967311ULL + 17;
+}
 
 #ifdef APPLE_MAC
 
@@ -65,34 +71,5 @@ static inline int posix_fadvise(int fd, off_t offset, off_t len, int advice)
 }
 
 #endif	/* APPLE_MAC */
-
-#if defined(APPLE_MAC) || defined(CYGWIN)
-
-/*
- * The following functions were copied from GNU Library C to make F3
- * more portable.
- */
-
-/* Data structure for communication with thread safe versions.  This
- * type is to be regarded as opaque.  It's only exported because users
- * have to allocate objects of this type.
- */
-struct drand48_data {
-	unsigned short int __x[3];	/* Current state.		    */
-	unsigned short int __old_x[3];	/* Old state.			    */
-	unsigned short int __c;	/* Additive const. in congruential formula. */
-	unsigned short int __init;	/* Flag for initializing.	    */
-	unsigned long long int __a;	/* Factor in congruential formula.  */
-};
-
-/* Seed random number generator.  */
-extern int srand48_r(long int __seedval, struct drand48_data *__buffer)
-	__attribute__ ((nonnull(2)));
-
-/* Return non-negative, long integer in [0,2^31).  */
-extern int lrand48_r(struct drand48_data *__restrict __buffer,
-	long int *__restrict __result) __attribute__ ((nonnull(1, 2)));
-
-#endif	/* APPLE_MAC or CYGWIN */
 
 #endif	/* HEADER_UTILS_H */

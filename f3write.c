@@ -18,20 +18,24 @@
 static uint64_t fill_buffer(void *buf, size_t size, uint64_t offset)
 {
 	uint8_t *p, *ptr_next_sector, *ptr_end;
-	struct drand48_data state;
+	uint64_t rn;
 
 	assert(size > 0);
 	assert(size % SECTOR_SIZE == 0);
+	assert(SECTOR_SIZE >= sizeof(offset) + sizeof(rn));
+	assert((SECTOR_SIZE - sizeof(offset)) % sizeof(rn) == 0);
 
 	p = buf;
 	ptr_end = p + size;
 	while (p < ptr_end) {
+		rn = offset;
 		memmove(p, &offset, sizeof(offset));
-		srand48_r(offset, &state);
 		ptr_next_sector = p + SECTOR_SIZE;
 		p += sizeof(offset);
-		for (; p < ptr_next_sector; p += sizeof(long int))
-			lrand48_r(&state, (long int *)p);
+		for (; p < ptr_next_sector; p += sizeof(rn)) {
+			rn = random_number(rn);
+			memmove(p, &rn, sizeof(rn));
+		}
 		assert(p == ptr_next_sector);
 		offset += SECTOR_SIZE;
 	}
