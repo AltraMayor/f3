@@ -12,5 +12,12 @@ mac:
 	gcc -o f3write utils.o f3write.o -lm
 	gcc -o f3read utils.o f3read.o
 
+cygwin:
+	gcc -Wall -Wno-char-subscripts -DCYGWIN -c utils.c
+	gcc -Wall -Wno-char-subscripts -DCYGWIN -c f3write.c
+	gcc -Wall -Wno-char-subscripts -DCYGWIN -c f3read.c
+	gcc -o f3write utils.o f3write.o -lm
+	gcc -o f3read utils.o f3read.o
+
 clean:
 	rm -f *.o f3write f3read

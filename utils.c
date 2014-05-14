@@ -141,7 +141,7 @@ void print_header(FILE *f, char *name)
 	"\n", name);
 }
 
-#ifdef APPLE_MAC
+#if defined(APPLE_MAC) || defined (CYGWIN)
 
 #include <stdio.h>
 #include <stdint.h>
@@ -216,4 +216,4 @@ int lrand48_r(struct drand48_data *buffer, long int *result)
 	return __nrand48_r(buffer->__x, buffer, result);
 }
 
-#endif	/* APPLE_MAC */
+#endif	/* APPLE_MAC or CYGWIN */

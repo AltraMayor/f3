@@ -64,6 +64,10 @@ static inline int posix_fadvise(int fd, off_t offset, off_t len, int advice)
 	}
 }
 
+#endif	/* APPLE_MAC */
+
+#if defined(APPLE_MAC) || defined(CYGWIN)
+
 /*
  * The following functions were copied from GNU Library C to make F3
  * more portable.
@@ -89,6 +93,6 @@ extern int srand48_r(long int __seedval, struct drand48_data *__buffer)
 extern int lrand48_r(struct drand48_data *__restrict __buffer,
 	long int *__restrict __result) __attribute__ ((nonnull(1, 2)));
 
-#endif	/* APPLE_MAC */
+#endif	/* APPLE_MAC or CYGWIN */
 
 #endif	/* HEADER_UTILS_H */

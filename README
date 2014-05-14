@@ -6,6 +6,10 @@ make linux
 
 make mac
 
+### Compile on Windows with Cygwin
+
+make cygwin
+
 ### Use example
 
 ./f3write /media/5EBD-5C80/
