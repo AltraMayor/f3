@@ -26,6 +26,7 @@ changelog	- Change log for package maintainers.
 f3read.1	- Man page for f3read and f3write.
 		  In order to read run 'man ./f3read.1', and to install run
 		  'install --owner=root --group=root --mode=644 f3read.1 /usr/share/man/man1'.
+f3write.h2w	- Bash script to create files exactly like H2testw.
 LICENSE		- GPLv3.
 Makefile	- make(1) file.
 README		- This file.

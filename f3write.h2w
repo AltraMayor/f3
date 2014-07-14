@@ -1,0 +1,4 @@
+#!/bin/bash
+PATH=$1
+f3write $PATH && \
+truncate --size=/1M "$PATH/*.h2w"
