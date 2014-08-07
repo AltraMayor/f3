@@ -54,7 +54,7 @@ static void validate_file(const char *path, int number,
 	full_fn_from_number(full_fn, &filename, path, number);
 	printf("Validating file %s ... %s", filename, progress ? BLANK : "");
 	fflush(stdout);
-#ifdef CYGWIN
+#ifdef __CYGWIN__
 	/* We don't need write access, but some kernels require that
 	 * the file descriptor passed to fdatasync(2) to be writable.
 	 */
