@@ -13,7 +13,7 @@ f3write: utils.o f3write.o
 f3read: utils.o f3read.o
 	$(CC) -o $@ $^
 
-f3probe: f3probe.o
+f3probe: libprobe.o f3probe.o
 	$(CC) -o $@ $^
 
 -include *.d

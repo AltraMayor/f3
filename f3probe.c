@@ -3,8 +3,10 @@
 #include <string.h>
 #include <argp.h>
 #include <stdbool.h>
+#include <assert.h>
 
 #include "version.h"
+#include "libprobe.h"
 
 /* Argp's global variables. */
 const char *argp_program_version = "F3 Probe " F3_STR_VERSION;
@@ -33,16 +35,13 @@ static char doc[] = "F3 Probe -- probe a block device for "
  */
 
 static struct argp_option options[] = {
-	{"debug-file",	'd',	"SIZE_GB",	OPTION_HIDDEN,
+	{"debug-file-size",	'd',	"SIZE_GB",	OPTION_HIDDEN,
 		"Enable debuging with a regular file",	1},
-	{"debug-type",	't',	"TYPE",		OPTION_HIDDEN,
+	{"debug-fake-size",	'f',	"SIZE_GB",	OPTION_HIDDEN,
+		"Fake size of the emulated flash",	0},
+	{"debug-type",		't',	"TYPE",		OPTION_HIDDEN,
 		"Set the type of the fake flash",	0},
 	{ 0 }
-};
-
-enum fake_type {
-	FKTY_LIMBO,
-	FKTY_WRAPAROUND,
 };
 
 struct args {
@@ -53,6 +52,7 @@ struct args {
 	enum fake_type	fake_type;
 	/* 2 bytes free. */
 	int		file_size_gb;
+	int		fake_size_gb;
 };
 
 static long arg_to_long(const struct argp_state *state, const char *arg)
@@ -79,14 +79,25 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		args->debug = true;
 		break;
 
+	case 'f':
+		args->fake_size_gb = arg_to_long(state, arg);
+		if (args->fake_size_gb < 1)
+			argp_error(state,
+				"Fake size of the emulated flash must be at least 1GB");
+		args->debug = true;
+		break;
+
 	case 't':
-		if (!strcmp(arg, "limbo"))
+		if (!strcmp(arg, "good"))
+			args->fake_type = FKTY_GOOD;
+		else if (!strcmp(arg, "limbo"))
 			args->fake_type = FKTY_LIMBO;
 		else if (!strcmp(arg, "wraparound"))
 			args->fake_type = FKTY_WRAPAROUND;
 		else
 			argp_error(state,
-				"Fake type must be either `limbo' or `wraparound'");
+				"Fake type must be either `good', `limbo' or `wraparound'");
+		args->debug = true;
 		break;
 
 	case ARGP_KEY_INIT:
@@ -121,43 +132,40 @@ int main(int argc, char **argv)
 		.debug		= false,
 		.fake_type	= FKTY_LIMBO,
 		.file_size_gb	= 1,
+		.fake_size_gb	= 2,
 	};
+	struct device *dev;
+	enum fake_type fake_type;
+	int real_size_gb;
 
 	/* Read parameters. */
 	argp_parse(&argp, argc, argv, 0, NULL, &args);
 
-	/* XXX Test if it's a device, or a partition.
-	 * If a partition, warn user, and ask for confirmation before
-	 * going ahead.
-	 * Suggest how to call f3probe with the correct device name if
-	 * the block device is a partition.
-	 */
+	dev = args.debug
+		? create_file_device(args.filename, args.file_size_gb,
+			args.fake_size_gb, args.fake_type)
+		: create_block_device(args.filename);
+	assert(dev);
 
- 	/* XXX Test for write access of the block device to give
-	 * a nice error message.
-	 * If it fails, suggest running f3probe as root.
-	 */
+	fake_type = test_device(dev, &real_size_gb);
+	switch (fake_type) {
+	case FKTY_GOOD:
+		printf("Nice! The device `%s' is the real thing, and its size is %iGB\n",
+			args.filename, real_size_gb);
+		break;
 
-	/* TODO */
-	printf("File = %s\n", args.filename);
-	printf("Debug = %i\n", args.debug);
-	printf("Fake type = %i\n", args.fake_type);
-	printf("File size = %i GB\n", args.file_size_gb);
+	case FKTY_LIMBO:
+	case FKTY_WRAPAROUND:
+		printf("Bad news: The device `%s' is a counterfeit of type %s, and its *real* size is %iGB\n",
+			args.filename, fake_type_to_name(fake_type),
+			real_size_gb);
+		break;
 
-	/* XXX Don't write at the very beginning of the card to avoid
-	 * losing the partition table.
-	 * But write at a random locations to make harder for fake chips
-	 * to become "smarter".
-	 */
+	default:
+		assert(0);
+		break;
+	}
 
-	/* XXX Write random data for testing.
-	 * There would be a random seed, and all the other blocks would be
-	 * this seed XOR'd with the number of the test.
-	 */
-
-	/* XXX Finish testing the last block, and the next one that should fail.
-	 * Then report the last block, so user can create the largest partition.
-	 */
-
+	free_device(dev);
 	return 0;
 }
