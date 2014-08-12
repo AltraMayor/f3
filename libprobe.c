@@ -13,7 +13,8 @@
 
 #include "libprobe.h"
 
-static const char const *ftype_to_name[] = {"good", "limbo", "wraparound"};
+static const char const *ftype_to_name[] =
+	{"good", "limbo", "wraparound", "max"};
 
 const char *fake_type_to_name(enum fake_type fake_type)
 {
@@ -136,6 +137,10 @@ static char *strdup(const char *str)
 	return strcpy(new, str);
 }
 
+/* XXX Validate parameters.
+ * For example, if @fake_type == FKTY_GOOD, then @fake_size_gb and
+ * fake_size_gb must be equal.
+ */
 struct device *create_file_device(const char *filename,
 	int file_size_gb, int fake_size_gb, enum fake_type fake_type)
 {
@@ -204,7 +209,7 @@ void free_device(struct device *dev)
 /* XXX Finish testing the last block, and the next one that should fail.
  * Then report the last block, so user can create the largest partition.
  */
-enum fake_type test_device(struct device *dev, int *preal_size_gb)
+enum fake_type probe_device(struct device *dev, int *preal_size_gb)
 {
 	/* TODO */
 	*preal_size_gb = 0;
