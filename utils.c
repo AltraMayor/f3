@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <err.h>
 
+#include "version.h"
 #include "utils.h"
 
 const char *adjust_unit(double *ptr_bytes)
@@ -209,7 +210,7 @@ const long *ls_my_files(const char *path, long start_at, long end_at)
 void print_header(FILE *f, const char *name)
 {
 	fprintf(f,
-	"F3 %s 4.0\n"
+	"F3 %s " F3_STR_VERSION "\n"
 	"Copyright (C) 2010 Digirati Internet LTDA.\n"
 	"This is free software; see the source for copying conditions.\n"
 	"\n", name);

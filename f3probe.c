@@ -4,8 +4,10 @@
 #include <argp.h>
 #include <stdbool.h>
 
+#include "version.h"
+
 /* Argp's global variables. */
-const char *argp_program_version = "F3 Probe 1.0";
+const char *argp_program_version = "F3 Probe " F3_STR_VERSION;
 
 /* Arguments. */
 static char adoc[] = "<BLOCK_DEV>";
