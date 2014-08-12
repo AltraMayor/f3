@@ -1,14 +1,6 @@
-### Compile on Linux
+### Compile on Linux, Apple Mac, and Windows/Cygwin
 
-make linux
-
-### Compile on Mac
-
-make mac
-
-### Compile on Windows with Cygwin
-
-make cygwin
+make
 
 ### Use example
 

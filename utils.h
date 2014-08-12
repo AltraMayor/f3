@@ -41,7 +41,7 @@ static inline uint64_t random_number(uint64_t prv_number)
 	return prv_number * 4294967311ULL + 17;
 }
 
-#ifdef APPLE_MAC
+#if __APPLE__ && __MACH__
 
 /* For function fcntl. */
 #include <fcntl.h>
@@ -70,6 +70,6 @@ static inline int posix_fadvise(int fd, off_t offset, off_t len, int advice)
 	}
 }
 
-#endif	/* APPLE_MAC */
+#endif	/* Apple Macintosh */
 
 #endif	/* HEADER_UTILS_H */
