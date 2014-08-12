@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -MMD
+CFLAGS = -std=c99 -Wall -Wextra -Wpedantic -MMD
 
 TARGETS = f3write f3read
 

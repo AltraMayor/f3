@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200112L
+
 #include <assert.h>
 #include <stdint.h>
 #include <string.h>
@@ -336,7 +338,7 @@ static inline void end_measurement(int fd, struct flow *fw)
 static int create_and_fill_file(const char *path, int number, size_t size,
 	struct flow *fw)
 {
-	char full_fn[PATH_MAX];
+	char *full_fn;
 	const char *filename;
 	int fd, fine;
 	void *buf;
@@ -349,14 +351,16 @@ static int create_and_fill_file(const char *path, int number, size_t size,
 
 	/* Create the file. */
 	
-	full_fn_from_number(full_fn, &filename, path, number);
+	fine = 0;
+	full_fn = full_fn_from_number(&filename, path, number);
+	assert(full_fn);
 	printf("Creating file %s ... ", filename);
 	fflush(stdout);
 	fd = open(full_fn, O_CREAT | O_WRONLY | O_TRUNC, S_IRUSR | S_IWUSR);
 	if (fd < 0) {
 		if (errno == ENOSPC) {
 			printf("No space left.\n");
-			return 0;
+			goto out;
 		}
 		err(errno, "Can't create file %s", full_fn);
 	}
@@ -390,6 +394,9 @@ static int create_and_fill_file(const char *path, int number, size_t size,
 	close(fd);
 	
 	printf("OK!\n");
+
+out:
+	free(full_fn);
 	return fine;
 }
 
@@ -446,13 +453,15 @@ static void unlink_old_files(const char *path, int start_at)
 	const int *files = ls_my_files(path, start_at);
 	const int *number = files;
 	while (*number >= 0) {
-		char full_fn[PATH_MAX];
+		char *full_fn;
 		const char *filename;
-		full_fn_from_number(full_fn, &filename, path, *number);
+		full_fn = full_fn_from_number(&filename, path, *number);
+		assert(full_fn);
 		printf("Removing old file %s ...\n", filename);
 		if (unlink(full_fn))
 			err(errno, "Can't remove file %s", full_fn);
 		number++;
+		free(full_fn);
 	}
 	free((void *)files);
 }

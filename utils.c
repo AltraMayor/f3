@@ -1,3 +1,6 @@
+#define _GNU_SOURCE
+
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
@@ -37,12 +40,12 @@ int is_my_file(const char *filename)
 		(p[3] == 'w') && (p[4] == '\0');
 }
 
-void full_fn_from_number(char *full_fn, const char **filename,
-	const char *path, int num)
+char *full_fn_from_number(const char **filename, const char *path, int num)
 {
-	assert(snprintf(full_fn, PATH_MAX, "%s/%i.h2w", path, num + 1) <
-		PATH_MAX);
-	*filename = full_fn + strlen(path) + 1;
+	char *str;
+	assert(asprintf(&str, "%s/%i.h2w", path, num + 1) > 0);
+	*filename = str + strlen(path) + 1;
+	return str;
 }
 
 int parse_start_at_param(const char *param)

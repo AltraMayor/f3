@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200112L
+
 #include <assert.h>
 #include <stdint.h>
 #include <inttypes.h>
@@ -36,7 +38,7 @@ static void validate_file(const char *path, int number,
 	uint64_t *ptr_overwritten, uint64_t *ptr_size, int *ptr_read_all,
 	struct timeval *ptr_dt, int progress)
 {
-	char full_fn[PATH_MAX];
+	char *full_fn;
 	const char *filename;
 	uint8_t sector[SECTOR_SIZE], *p, *ptr_end;
 	FILE *f;
@@ -51,7 +53,8 @@ static void validate_file(const char *path, int number,
 
 	*ptr_ok = *ptr_corrupted = *ptr_changed = *ptr_overwritten = 0;
 
-	full_fn_from_number(full_fn, &filename, path, number);
+	full_fn = full_fn_from_number(&filename, path, number);
+	assert(full_fn);
 	printf("Validating file %s ... %s", filename, progress ? BLANK : "");
 	fflush(stdout);
 #ifdef __CYGWIN__
@@ -96,7 +99,7 @@ static void validate_file(const char *path, int number,
 		for (; error_count <= TOLERANCE && p < ptr_end;
 			p += sizeof(rn)) {
 			rn = random_number(rn);
-			if (rn != *((typeof(rn) *) p))
+			if (rn != *((__typeof__(rn) *) p))
 				error_count++;
 		}
 
@@ -132,7 +135,6 @@ static void validate_file(const char *path, int number,
 
 	*ptr_read_all = feof(f);
 	*ptr_size = ftell(f);
-	assert(*ptr_size >= 0);
 
 	PRINT_STATUS(progress ? CLEAR : "");
 	if (!*ptr_read_all) {
@@ -143,6 +145,7 @@ static void validate_file(const char *path, int number,
 	printf("\n");
 
 	fclose(f);
+	free(full_fn);
 }
 
 static void report(const char *prefix, uint64_t i)
@@ -181,10 +184,12 @@ static void iterate_files(const char *path, const int *files, int start_at,
 
 		or_missing_file = or_missing_file || (*files != number);
 		for (; number < *files; number++) {
-			char full_fn[PATH_MAX];
+			char *full_fn;
 			const char *filename;
-			full_fn_from_number(full_fn, &filename, "", number);
+			full_fn = full_fn_from_number(&filename, "", number);
+			assert(full_fn);
 			printf("Missing file %s\n", filename);
+			free(full_fn);
 		}
 		number++;
 

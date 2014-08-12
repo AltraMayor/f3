@@ -1,7 +1,6 @@
 #ifndef HEADER_UTILS_H
 #define HEADER_UTILS_H
 
-#include <stdio.h>
 #include <ctype.h>
 #include <assert.h>
 #include <sys/time.h>
@@ -16,9 +15,8 @@ const char *adjust_unit(double *ptr_bytes);
 /* Return true if @filename matches the regex /^[0-9]+\.h2w$/ */
 int is_my_file(const char *filename);
 
-/* @filename should be PATH_MAX long. */
-void full_fn_from_number(char *full_fn, const char **filename,
-	const char *path, int num);
+/* Caller must free(3) the returned pointer. */
+char *full_fn_from_number(const char **filename, const char *path, int num);
 
 static inline long delay_ms(const struct timeval *t1, const struct timeval *t2)
 {
