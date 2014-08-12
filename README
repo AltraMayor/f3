@@ -24,11 +24,12 @@ USB devices are mounted in "/Volumes" on Macs.
 
 changelog	- Change log for package maintainers.
 f3read.1	- Man page for f3read and f3write.
-		  In order to read run 'man ./f3read.1', and to install run
+		  In order to read this manual page, run 'man ./f3read.1'.
+		  To install the page, run
 		  'install --owner=root --group=root --mode=644 f3read.1 /usr/share/man/man1'.
 f3write.h2w	- Bash script to create files exactly like H2testw.
-LICENSE		- GPLv3.
+LICENSE		- License (GPLv3).
 Makefile	- make(1) file.
 README		- This file.
 
-*.h and *.c	- C Code for f3write and f3read.
+*.h and *.c	- C code of F3.
