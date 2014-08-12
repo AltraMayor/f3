@@ -1,9 +1,19 @@
-all:
-	gcc -Wall -c utils.c
-	gcc -Wall -c f3write.c
-	gcc -Wall -c f3read.c
-	gcc -o f3write utils.o f3write.o -lm
-	gcc -o f3read utils.o f3read.o
+CC = gcc
+CFLAGS = -Wall -MMD
+
+TARGETS = f3write f3read
+
+all: $(TARGETS)
+
+f3write: utils.o f3write.o
+	$(CC) -o $@ $^ -lm
+
+f3read: utils.o f3read.o
+	$(CC) -o $@ $^
+
+-include *.d
+
+PHONY: clean
 
 clean:
-	rm -f *.o f3write f3read
+	rm -f *.o $(TARGETS)
