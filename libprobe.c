@@ -1,8 +1,11 @@
+#define _GNU_SOURCE
+#define _POSIX_C_SOURCE 200809L
 #define _FILE_OFFSET_BITS 64
 
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -10,19 +13,21 @@
 #include <stdint.h>
 #include <errno.h>
 #include <err.h>
+#include <linux/fs.h>
 
 #include "libprobe.h"
 
-static const char const *ftype_to_name[] =
-	{"good", "limbo", "wraparound", "max"};
+static const char const *ftype_to_name[] = {
+	[FKTY_GOOD]		= "good",
+	[FKTY_LIMBO]		= "limbo",
+	[FKTY_WRAPAROUND]	= "wraparound",
+	[FKTY_MAX]		= "max",
+};
 
 const char *fake_type_to_name(enum fake_type fake_type)
 {
 	return ftype_to_name[fake_type];
 }
-
-#define BLOCK_SIZE	(1 <<  9)
-#define GIGABYTE	(1 << 30)
 
 struct device {
 	int (*read_block)(struct device *dev, char *buf, uint64_t block);
@@ -48,6 +53,11 @@ static inline struct file_device *dev_fdev(struct device *dev)
 	return (struct file_device *)dev;
 }
 
+#define GIGABYTE	(1 << 30)
+
+/* XXX Replace expressions block * BLOCK_SIZE to block << BLOCK_SIZE_BITS,
+ * and do the same for expressions like GIGABYTE * variable.
+ */
 static int fdev_read_block(struct device *dev, char *buf, uint64_t block)
 {
 	struct file_device *fdev = dev_fdev(dev);
@@ -102,11 +112,11 @@ static int fdev_read_block(struct device *dev, char *buf, uint64_t block)
 	return 0;
 }
 
-static int write_all(int fd, void *buf, int count)
+static int write_all(int fd, char *buf, int count)
 {
 	int done = 0;
 	do {
-		ssize_t rc = write(fd, ((char *)buf) + done, count - done);
+		ssize_t rc = write(fd, buf + done, count - done);
 		assert(rc >= 0); /* Did the write() went right? */
 		done += rc;
 	} while (done < count);
@@ -153,14 +163,6 @@ static void fdev_free(struct device *dev)
 	fdev->filename = NULL;
 }
 
-static char *strdup(const char *str)
-{
-	char *new = malloc(strlen(str) + 1);
-	if (!new)
-		return NULL;
-	return strcpy(new, str);
-}
-
 /* XXX Validate parameters.
  * For example, if @fake_type == FKTY_GOOD, then @fake_size_gb and
  * fake_size_gb must be equal.
@@ -169,11 +171,12 @@ struct device *create_file_device(const char *filename,
 	int file_size_gb, int fake_size_gb, enum fake_type fake_type)
 {
 	struct file_device *fdev = malloc(sizeof(*fdev));
-	assert(fdev);
+	if (!fdev)
+		goto error;
 
 	fdev->filename = strdup(filename);
 	if (!fdev->filename)
-		goto error;
+		goto fdev;
 
 	fdev->fd = open(filename, O_RDWR | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR);
 	if (fdev->fd < 0) {
@@ -195,8 +198,63 @@ struct device *create_file_device(const char *filename,
 filename:
 	free((void *)fdev->filename);
 	fdev->filename = NULL;
+fdev:
+	free(fdev);
 error:
 	return NULL;
+}
+
+struct block_device {
+	/* This must be the first field. See dev_bdev() for details. */
+	struct device dev;
+
+	int fd;
+};
+
+static inline struct block_device *dev_bdev(struct device *dev)
+{
+	return (struct block_device *)dev;
+}
+
+static int read_all(int fd, char *buf, int count)
+{
+	int done = 0;
+	do {
+		ssize_t rc = read(fd, buf + done, count - done);
+		assert(rc >= 0); /* Did the read() went right? */
+		assert(rc != 0); /* We should never hit the end of the file. */
+		done += rc;
+	} while (done < count);
+	return 0;
+}
+
+static int bdev_read_block(struct device *dev, char *buf, uint64_t block)
+{
+	struct block_device *bdev = dev_bdev(dev);
+	off_t offset = block * BLOCK_SIZE;
+	assert(lseek(bdev->fd, offset, SEEK_SET) == offset);
+	return read_all(bdev->fd, buf, BLOCK_SIZE);
+}
+
+static int bdev_write_block(struct device *dev, char *buf, uint64_t block)
+{
+	struct block_device *bdev = dev_bdev(dev);
+	off_t offset = block * BLOCK_SIZE;
+	assert(lseek(bdev->fd, offset, SEEK_SET) == offset);
+	return write_all(bdev->fd, buf, BLOCK_SIZE);
+}
+
+static int bdev_get_size_gb(struct device *dev)
+{
+	uint64_t size_bytes;
+	assert(!ioctl(dev_bdev(dev)->fd, BLKGETSIZE64, &size_bytes));
+	/* XXX Support everything. Specially devices smaller than 1GB! */
+	return size_bytes >> 30;
+}
+
+static void bdev_free(struct device *dev)
+{
+	assert(!close(dev_bdev(dev)->fd));
 }
 
 /* XXX Test if it's a device, or a partition.
@@ -211,7 +269,26 @@ error:
  */
 struct device *create_block_device(const char *filename)
 {
-	/* TODO */
+	struct block_device *bdev = malloc(sizeof(*bdev));
+	if (!bdev)
+		goto error;
+
+	bdev->fd = open(filename, O_RDWR | O_DIRECT | O_SYNC);
+	if (bdev->fd < 0) {
+		err(errno, "Can't open device `%s'", filename);
+		goto bdev;
+	}
+
+	bdev->dev.read_block = bdev_read_block;
+	bdev->dev.write_block = bdev_write_block;
+	bdev->dev.get_size_gb = bdev_get_size_gb;
+	bdev->dev.free = bdev_free;
+
+	return &bdev->dev;
+
+bdev:
+	free(bdev);
+error:
 	return NULL;
 }
 
