@@ -52,6 +52,7 @@ static int fdev_read_block(struct device *dev, char *buf, uint64_t block)
 {
 	struct file_device *fdev = dev_fdev(dev);
 	off_t offset = block * BLOCK_SIZE;
+	int done;
 
 	switch (fdev->fake_type) {
 	case FKTY_LIMBO:
@@ -84,7 +85,31 @@ static int fdev_read_block(struct device *dev, char *buf, uint64_t block)
 	}
 
 	assert(lseek(fdev->fd, offset, SEEK_SET) == offset);
-	read(fdev->fd, buf, BLOCK_SIZE); /* TODO */
+
+	done = 0;
+	do {
+		ssize_t rc = read(fdev->fd, buf + done, BLOCK_SIZE - done);
+		assert(rc >= 0);
+		if (!rc) {
+			/* Tried to read beyond the end of the file. */
+			assert(!done);
+			memset(buf, 0, BLOCK_SIZE);
+			done += BLOCK_SIZE;
+		}
+		done += rc;
+	} while (done < BLOCK_SIZE);
+
+	return 0;
+}
+
+static int write_all(int fd, void *buf, int count)
+{
+	int done = 0;
+	do {
+		ssize_t rc = write(fd, ((char *)buf) + done, count - done);
+		assert(rc >= 0); /* Did the write() went right? */
+		done += rc;
+	} while (done < count);
 	return 0;
 }
 
@@ -111,8 +136,7 @@ static int fdev_write_block(struct device *dev, char *buf, uint64_t block)
 	}
 
 	assert(lseek(fdev->fd, offset, SEEK_SET) == offset);
-	write(fdev->fd, buf, BLOCK_SIZE); /* TODO */
-	return 0;
+	return write_all(fdev->fd, buf, BLOCK_SIZE);
 }
 
 static int fdev_get_size_gb(struct device *dev)
@@ -197,6 +221,21 @@ void free_device(struct device *dev)
 	free(dev);
 }
 
+static inline int dev_read_block(struct device *dev, char *buf, uint64_t block)
+{
+	return dev->read_block(dev, buf, block);
+}
+
+static inline int dev_write_block(struct device *dev, char *buf, uint64_t block)
+{
+	return dev->write_block(dev, buf, block);
+}
+
+static inline int dev_get_size_gb(struct device *dev)
+{
+	return dev->get_size_gb(dev);
+}
+
 /* XXX Don't write at the very beginning of the card to avoid
  * losing the partition table.
  * But write at a random locations to make harder for fake chips
@@ -211,7 +250,12 @@ void free_device(struct device *dev)
  */
 enum fake_type probe_device(struct device *dev, int *preal_size_gb)
 {
+	char buf[BLOCK_SIZE];
+
 	/* TODO */
-	*preal_size_gb = 0;
+	dev_read_block(dev, buf, 10);
+	dev_write_block(dev, buf, 10);
+
+	*preal_size_gb = dev_get_size_gb(dev);
 	return FKTY_GOOD;
 }
