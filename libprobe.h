@@ -2,9 +2,10 @@
 #define HEADER_LIBPROBE_H
 
 enum fake_type {
-	FKTY_GOOD,
-	FKTY_LIMBO,
-	FKTY_WRAPAROUND,
+	FKTY_GOOD,	/* Device is good.				*/
+	FKTY_BAD,	/* Device is at least partially damaged.	*/
+	FKTY_LIMBO,	/* Device discards data after a given limit.	*/
+	FKTY_WRAPAROUND,/* Device overwrites data after a given limit.	*/
 	FKTY_MAX,
 };
 
