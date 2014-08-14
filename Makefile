@@ -1,5 +1,5 @@
 CC ?= gcc
-CFLAGS += -std=c99 -Wall -Wextra -pedantic -MMD
+CFLAGS += -std=c99 -Wall -Wextra -pedantic -MMD -ggdb
 
 TARGETS = f3write f3read
 EXPERIMENTAL_TARGETS = f3probe
@@ -18,7 +18,10 @@ f3probe: libprobe.o f3probe.o
 
 -include *.d
 
-PHONY: clean
+PHONY: cscope clean
+
+cscope:
+	cscope -b *.c *.h
 
 clean:
-	rm -f *.o *.d $(TARGETS) $(EXPERIMENTAL_TARGETS)
+	rm -f *.o *.d cscope.out $(TARGETS) $(EXPERIMENTAL_TARGETS)

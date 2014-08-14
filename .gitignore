@@ -1,3 +1,6 @@
+cscope.out
+
+*.swp
 *.d
 *.o
 *~
