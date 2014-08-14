@@ -14,6 +14,7 @@
 #include <errno.h>
 #include <err.h>
 #include <linux/fs.h>
+#include <linux/usbdevice_fs.h>
 
 #include "libprobe.h"
 
@@ -33,6 +34,7 @@ const char *fake_type_to_name(enum fake_type fake_type)
 struct device {
 	int (*read_block)(struct device *dev, char *buf, uint64_t block);
 	int (*write_block)(struct device *dev, char *buf, uint64_t block);
+	int (*reset)(struct device *dev);
 	int (*get_size_gb)(struct device *dev);
 	void (*free)(struct device *dev);
 };
@@ -187,6 +189,7 @@ struct device *create_file_device(const char *filename,
 
 	fdev->dev.read_block = fdev_read_block;
 	fdev->dev.write_block = fdev_write_block;
+	fdev->dev.reset = NULL;
 	fdev->dev.get_size_gb = fdev_get_size_gb;
 	fdev->dev.free = fdev_free;
 
@@ -204,7 +207,9 @@ struct block_device {
 	/* This must be the first field. See dev_bdev() for details. */
 	struct device dev;
 
+	const char *filename;
 	int fd;
+	int hw_fd; /* Underlying hardware of the block device. */
 };
 
 static inline struct block_device *dev_bdev(struct device *dev)
@@ -240,6 +245,22 @@ static int bdev_write_block(struct device *dev, char *buf, uint64_t block)
 	return write_all(bdev->fd, buf, BLOCK_SIZE);
 }
 
+static inline int bdev_open(const char *filename)
+{
+	return open(filename, O_RDWR | O_DIRECT | O_SYNC);
+}
+
+static int bdev_reset(struct device *dev)
+{
+	struct block_device *bdev = dev_bdev(dev);
+	assert(!close(bdev->fd));
+	assert(!ioctl(bdev->hw_fd, USBDEVFS_RESET));
+	bdev->fd = bdev_open(bdev->filename);
+	if (bdev->fd < 0)
+		err(errno, "Can't REopen device `%s'", bdev->filename);
+	return 0;
+}
+
 static int bdev_get_size_gb(struct device *dev)
 {
 	uint64_t size_bytes;
@@ -250,7 +271,10 @@ static int bdev_get_size_gb(struct device *dev)
 
 static void bdev_free(struct device *dev)
 {
-	assert(!close(dev_bdev(dev)->fd));
+	struct block_device *bdev = dev_bdev(dev);
+	assert(!close(bdev->hw_fd));
+	assert(!close(bdev->fd));
+	free((void *)bdev->filename);
 }
 
 /* XXX Test if it's a device, or a partition.
@@ -265,23 +289,41 @@ static void bdev_free(struct device *dev)
  */
 struct device *create_block_device(const char *filename)
 {
+	/* TODO */
+	const char *usb_filename = "/dev/bus/usb/002/015";
+
 	struct block_device *bdev = malloc(sizeof(*bdev));
 	if (!bdev)
 		goto error;
 
-	bdev->fd = open(filename, O_RDWR | O_DIRECT | O_SYNC);
+	bdev->filename = strdup(filename);
+	if (!bdev->filename)
+		goto bdev;
+
+	bdev->fd = bdev_open(filename);
 	if (bdev->fd < 0) {
 		err(errno, "Can't open device `%s'", filename);
-		goto bdev;
+		goto filename;
+	}
+
+	bdev->hw_fd = open(usb_filename, O_WRONLY | O_NONBLOCK);
+	if (bdev->hw_fd < 0) {
+		err(errno, "Can't open device `%s'", usb_filename);
+		goto fd;
 	}
 
 	bdev->dev.read_block = bdev_read_block;
 	bdev->dev.write_block = bdev_write_block;
+	bdev->dev.reset	= bdev_reset;
 	bdev->dev.get_size_gb = bdev_get_size_gb;
 	bdev->dev.free = bdev_free;
 
 	return &bdev->dev;
 
+fd:
+	assert(!close(bdev->fd));
+filename:
+	free((void *)bdev->filename);
 bdev:
 	free(bdev);
 error:
@@ -301,7 +343,16 @@ static inline int dev_read_block(struct device *dev, char *buf, uint64_t block)
 
 static inline int dev_write_block(struct device *dev, char *buf, uint64_t block)
 {
-	return dev->write_block(dev, buf, block);
+	int rc = dev->write_block(dev, buf, block);
+	if (rc)
+		return rc;
+
+	/* XXX probe_device() should be smart enough to know when dev->reset()
+	 * must be called.
+	 */
+	if (dev->reset)
+		return dev->reset(dev);
+	return 0;
 }
 
 static inline int dev_get_size_gb(struct device *dev)
