@@ -14,7 +14,7 @@ f3read: utils.o f3read.o
 	$(CC) -o $@ $^
 
 f3probe: libprobe.o f3probe.o
-	$(CC) -o $@ $^
+	$(CC) -o $@ $^ -ludev
 
 -include *.d
 

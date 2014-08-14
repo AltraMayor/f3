@@ -4,6 +4,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include <assert.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
@@ -15,6 +16,7 @@
 #include <err.h>
 #include <linux/fs.h>
 #include <linux/usbdevice_fs.h>
+#include <libudev.h>
 
 #include "libprobe.h"
 
@@ -277,11 +279,87 @@ static void bdev_free(struct device *dev)
 	free((void *)bdev->filename);
 }
 
+static bool is_block_dev(int fd)
+{
+	struct stat stat;
+	assert(!fstat(fd, &stat));
+	return S_ISBLK(stat.st_mode);
+}
+
+static char *map_block_to_usb_dev(const char *block_dev)
+{
+	struct udev *udev;
+	struct udev_enumerate *enumerate;
+	struct udev_list_entry *devices, *dev_list_entry;
+	char *usb_dev_path = NULL;
+
+	udev = udev_new();
+	if (!udev)
+		err(errno, "Can't create udev");
+
+	/* XXX Avoid the enumeration using udev_device_new_from_devnum(). */
+	enumerate = udev_enumerate_new(udev);
+	assert(enumerate);
+	assert(!udev_enumerate_add_match_subsystem(enumerate, "block"));
+	assert(!udev_enumerate_scan_devices(enumerate));
+	devices = udev_enumerate_get_list_entry(enumerate);
+	assert(devices);
+
+	udev_list_entry_foreach(dev_list_entry, devices) {
+		const char *sys_path, *dev_path;
+		struct udev_device *dev, *parent_dev;
+
+		/* Get the filename of the /sys entry for the device,
+		 * and create a udev_device object (dev) representing it.
+		 */
+		sys_path = udev_list_entry_get_name(dev_list_entry);
+		dev = udev_device_new_from_syspath(udev, sys_path);
+
+		/* usb_device_get_devnode() returns the path to
+		 * the device node itself in /dev.
+		 */
+		dev_path = udev_device_get_devnode(dev);
+		if (strcmp(block_dev, dev_path)) {
+			assert(!udev_device_unref(dev));
+			continue;
+		}
+
+		/* The device pointed to by dev contains information about
+		 * the USB device.
+		 * In order to get information about the USB device,
+		 * get the parent device with the subsystem/devtype pair of
+		 * "usb"/"usb_device".
+		 * This will be several levels up the tree,
+		 * but the function will find it.
+		 */
+		parent_dev = udev_device_get_parent_with_subsystem_devtype(
+			dev, "usb", "usb_device");
+		if (!parent_dev)
+			err(errno, "Unable to find parent usb device of `%s'",
+				block_dev);
+
+		usb_dev_path = strdup(udev_device_get_devnode(parent_dev));
+		/* @parent_dev is not referenced, and will be freed when
+		 * the child (i.e. @dev) is freed.
+		 * See udev_device_get_parent_with_subsystem_devtype() for
+		 * details.
+		 */
+		assert(!udev_device_unref(dev));
+		break;
+	}
+	/* Free the enumerator object. */
+	assert(!udev_enumerate_unref(enumerate));
+
+	assert(!udev_unref(udev));
+	return usb_dev_path;
+}
+
 /* XXX Test if it's a device, or a partition.
  * If a partition, warn user, and ask for confirmation before
  * going ahead.
  * Suggest how to call f3probe with the correct device name if
  * the block device is a partition.
+ * Use udev to do these tests.
  */
 /* XXX Test for write access of the block device to give
  * a nice error message.
@@ -289,10 +367,10 @@ static void bdev_free(struct device *dev)
  */
 struct device *create_block_device(const char *filename)
 {
-	/* TODO */
-	const char *usb_filename = "/dev/bus/usb/002/015";
+	const char *usb_filename;
+	struct block_device *bdev;
 
-	struct block_device *bdev = malloc(sizeof(*bdev));
+	bdev = malloc(sizeof(*bdev));
 	if (!bdev)
 		goto error;
 
@@ -306,10 +384,23 @@ struct device *create_block_device(const char *filename)
 		goto filename;
 	}
 
+	if (!is_block_dev(bdev->fd)) {
+		err(EINVAL, "File `%s' is not a block device", filename);
+		goto fd;
+	}
+
+	/* XXX Add support for block devices backed by SCSI, SATA, and ATA. */
+	usb_filename = map_block_to_usb_dev(filename);
+	if (!usb_filename) {
+		err(EINVAL, "Block device `%s' is not backed by a USB device",
+			filename);
+		goto fd;
+	}
+
 	bdev->hw_fd = open(usb_filename, O_WRONLY | O_NONBLOCK);
 	if (bdev->hw_fd < 0) {
 		err(errno, "Can't open device `%s'", usb_filename);
-		goto fd;
+		goto usb_filename;
 	}
 
 	bdev->dev.read_block = bdev_read_block;
@@ -318,8 +409,11 @@ struct device *create_block_device(const char *filename)
 	bdev->dev.get_size_gb = bdev_get_size_gb;
 	bdev->dev.free = bdev_free;
 
+	free((void *)usb_filename);
 	return &bdev->dev;
 
+usb_filename:
+	free((void *)usb_filename);
 fd:
 	assert(!close(bdev->fd));
 filename:

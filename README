@@ -1,8 +1,27 @@
-### Compile on Linux, Apple Mac, Windows/Cygwin, and FreeBSD
+### Compile stable software on Linux, Apple Mac, Windows/Cygwin, and FreeBSD
 
 make
 
-### Use example
+
+### Compile experimental software on Linux
+
+make experimental
+
+NOTES:
+   - Experimental software might compile on non-Linux platforms, but
+     there is no guarantee given that they are only tested on Linux.
+   - Please do not e-mail me saying that you want an experimental software
+     to run on your platform; I already know that.
+   - If you want experimental software to run on your platform,
+     help to port them, or find someone that can port them for you.
+     If you do port the software, please send me a patch to help others.
+   - Currently, only f3probe is experimental.
+   - f3proble requires the library libudev to compile.
+     On Ubuntu, you can install this library with the following command:
+     sudo apt-get install libudev-dev
+
+
+### Use example of f3write/f3read
 
 ./f3write /media/5EBD-5C80/
 ./f3read /media/5EBD-5C80/
@@ -10,7 +29,8 @@ make
 Please replace "/media/5EBD-5C80/" with the appropriate path.
 USB devices are mounted in "/Volumes" on Macs.
 
-### For more information see http://oss.digirati.com.br/f3/
+For more information see http://oss.digirati.com.br/f3/
+
 
 ### Files
 
