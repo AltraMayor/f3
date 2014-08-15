@@ -39,7 +39,7 @@ static struct argp_option options[] = {
 		"Enable debuging with a regular file",	1},
 	{"debug-fake-size",	'f',	"SIZE_GB",	OPTION_HIDDEN,
 		"Fake size of the emulated flash",	0},
-	{"debug-type",		't',	"TYPE",		OPTION_HIDDEN,
+	{"debug-type",		't',	"N",		OPTION_HIDDEN,
 		"Set the type of the fake flash",	0},
 	{"debug-unit-test",	'u',	NULL,		OPTION_HIDDEN,
 		"Run a unit test; it ignores all other debug options",	0},
@@ -90,18 +90,16 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		args->debug = true;
 		break;
 
-	case 't':
-		if (!strcmp(arg, "good"))
-			args->fake_type = FKTY_GOOD;
-		else if (!strcmp(arg, "limbo"))
-			args->fake_type = FKTY_LIMBO;
-		else if (!strcmp(arg, "wraparound"))
-			args->fake_type = FKTY_WRAPAROUND;
-		else
+	case 't': {
+		long l = arg_to_long(state, arg);
+		if (l < FKTY_GOOD || l >= FKTY_MAX)
 			argp_error(state,
-				"Fake type must be either `good', `limbo' or `wraparound'");
+				"Fake type must be a number in the interval [%i, %i]",
+				FKTY_GOOD, FKTY_MAX);
+		args->fake_type = l;
 		args->debug = true;
 		break;
+	}
 
 	case 'u':
 		args->unit_test = true;
@@ -140,6 +138,7 @@ struct unit_test_item {
 
 static const struct unit_test_item ftype_to_params[] = {
 	{FKTY_GOOD,		1, 1},
+	{FKTY_BAD,		0, 1},
 	{FKTY_LIMBO,		1, 2},
 	{FKTY_WRAPAROUND,	1, 2},
 	{FKTY_WRAPAROUND,	2, 3},

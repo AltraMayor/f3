@@ -70,6 +70,10 @@ static int fdev_read_block(struct device *dev, char *buf, uint64_t block)
 	int done;
 
 	switch (fdev->fake_type) {
+	case FKTY_BAD:
+		memset(buf, 0, BLOCK_SIZE);
+		return 0;
+
 	case FKTY_LIMBO:
 		if (offset >= GIGABYTE * fdev->file_size_gb) {
 			memset(buf, 0, BLOCK_SIZE);
@@ -77,19 +81,11 @@ static int fdev_read_block(struct device *dev, char *buf, uint64_t block)
 		}
 		break;
 
-	/* XXX Support FKTY_TRUNCATE.
-	 * That is, it drops the highest bits, and addresses the real memory
-	 * with the resulting address.
-	 *
-	 * If @fake_size_gb % @file_size_gb == 0, it's identical to
-	 * FKTY_WRAPAROUND.
-	 */
-
 	case FKTY_WRAPAROUND:
 		offset %= GIGABYTE * fdev->file_size_gb;
 		/* Fall through. */
 
-	case  FKTY_GOOD:
+	case FKTY_GOOD:
 		break;
 
 	default:
@@ -131,6 +127,9 @@ static int fdev_write_block(struct device *dev, char *buf, uint64_t block)
 	off_t offset = block * BLOCK_SIZE;
 
 	switch (fdev->fake_type) {
+	case FKTY_BAD:
+		return 0;
+
 	case FKTY_LIMBO:
 		if (offset >= GIGABYTE * fdev->file_size_gb)
 			return 0;
