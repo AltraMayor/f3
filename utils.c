@@ -40,30 +40,99 @@ int is_my_file(const char *filename)
 		(p[3] == 'w') && (p[4] == '\0');
 }
 
-char *full_fn_from_number(const char **filename, const char *path, int num)
+char *full_fn_from_number(const char **filename, const char *path, long num)
 {
 	char *str;
-	assert(asprintf(&str, "%s/%i.h2w", path, num + 1) > 0);
+	assert(asprintf(&str, "%s/%li.h2w", path, num + 1) > 0);
 	*filename = str + strlen(path) + 1;
 	return str;
 }
 
-int parse_start_at_param(const char *param)
+/* Parse @param and return the start-at parameter.
+ * The string must be of the format "--start-at=NUM"; otherwise it returns -1.
+ */
+#define START_AT_TEXT "--start-at="
+#define   END_AT_TEXT   "--end-at="
+
+static inline int is_param(const char *text, const char *param)
 {
-	int text_len = strlen(START_AT_TEXT);
-	long start_at;
-
-	if (strncmp(param, START_AT_TEXT, text_len))
-		return -1;
-
-	start_at = strtol(param + text_len, NULL, 10);
-	return (start_at <= 0 || start_at == LONG_MAX) ? -1 : start_at - 1;
+	return !strncmp(param, text, strlen(text));
 }
 
-static int number_from_filename(const char *filename)
+static long parse_long_param(const char *param)
+{
+	char *endptr;
+	long value;
+
+	/* Skip text. */
+	while (*param != '=') {
+		if (*param == '\0')
+			return -1;
+		param++;
+	}
+	param++; /* Skip '='. */
+
+	value = strtol(param, &endptr, 10);
+	if (*endptr != '\0')
+		return -1;
+
+	return (value <= 0 || value == LONG_MAX) ? -1 : value - 1;
+}
+
+static int parse_param(const char *param, long *pstart_at, long *pend_at)
+{
+	if (is_param(START_AT_TEXT, param))
+		*pstart_at = parse_long_param(param);
+	else if (is_param(END_AT_TEXT, param))
+		*pend_at = parse_long_param(param);
+	else
+		return 1;
+	return 0;
+}
+
+int parse_args(const char *name, int argc, char **argv,
+	long *pstart_at, long *pend_at, const char **ppath)
+{
+	*pstart_at = 0;
+	*pend_at = LONG_MAX - 1;
+
+	switch (argc) {
+	case 2:
+		*ppath = argv[1];
+		break;
+
+	case 3:
+		if (parse_param(argv[1], pstart_at, pend_at))
+			goto error;
+		*ppath = argv[2];
+		break;
+
+	case 4:
+		if (parse_param(argv[1], pstart_at, pend_at))
+			goto error;
+		if (parse_param(argv[2], pstart_at, pend_at))
+			goto error;
+		*ppath = argv[3];
+		break;
+
+	default:
+		goto error;
+	}
+
+	if (*pstart_at >= 0 && *pend_at >= 0 && *pstart_at <= *pend_at)
+		return 0;
+
+error:
+	print_header(stderr, name);
+	fprintf(stderr, "Usage: f3%s [%sNUM] [%sNUM] <PATH>\n",
+		name, START_AT_TEXT, END_AT_TEXT);
+	return 1;
+}
+
+static long number_from_filename(const char *filename)
 {
 	const char *p;
-	int num;
+	long num;
 
 	assert(is_my_file(filename));
 
@@ -78,15 +147,17 @@ static int number_from_filename(const char *filename)
 }
 
 /* Don't call this function directly, use ls_my_files() instead. */
-static int *__ls_my_files(DIR *dir, int start_at, int *pcount, int *pindex)
+static long *__ls_my_files(DIR *dir, long start_at, long end_at,
+	int *pcount, int *pindex)
 {
 	struct dirent *entry;
 	const char *filename;
-	int number, my_index, *ret;
+	long number, *ret;
+	int my_index;
 
 	entry = readdir(dir);
 	if (!entry) {
-		int *ret = malloc(sizeof(const int) * (*pcount + 1));
+		ret = malloc(sizeof(long) * (*pcount + 1));
 		assert(ret);
 		*pindex = *pcount - 1;
 		ret[*pcount] = -1;
@@ -96,17 +167,17 @@ static int *__ls_my_files(DIR *dir, int start_at, int *pcount, int *pindex)
 
 	filename = entry->d_name;
 	if (!is_my_file(filename))
-		return __ls_my_files(dir, start_at, pcount, pindex);
+		return __ls_my_files(dir, start_at, end_at, pcount, pindex);
 
 	/* Cache @number because @entry may go away. */
 	number = number_from_filename(filename);
 
-	/* Ignore files before @start_at. */
-	if (number < start_at)
-		return __ls_my_files(dir, start_at, pcount, pindex);
+	/* Ignore files before @start_at and after @end_at. */
+	if (number < start_at || end_at < number)
+		return __ls_my_files(dir, start_at, end_at, pcount, pindex);
 
 	(*pcount)++;
-	ret = __ls_my_files(dir, start_at, pcount, &my_index);
+	ret = __ls_my_files(dir, start_at, end_at, pcount, &my_index);
 	ret[my_index] = number;
 	*pindex = my_index - 1;
 	return ret;
@@ -115,27 +186,27 @@ static int *__ls_my_files(DIR *dir, int start_at, int *pcount, int *pindex)
 /* To be used with qsort(3). */
 static int cmpintp(const void *p1, const void *p2)
 {
-	return *(const int *)p1 - *(const int *)p2;
+	return *(const long *)p1 - *(const long *)p2;
 }
 
-const int *ls_my_files(const char *path, int start_at)
+const long *ls_my_files(const char *path, long start_at, long end_at)
 {
 	DIR *dir = opendir(path);
 	int my_count;
 	int my_index;
-	int *ret;
+	long *ret;
 
 	if (!dir)
 		err(errno, "Can't open path %s", path);
 
 	my_count = 0;
-	ret = __ls_my_files(dir, start_at, &my_count, &my_index);
+	ret = __ls_my_files(dir, start_at, end_at, &my_count, &my_index);
 	assert(my_index == -1);
 	qsort(ret, my_count, sizeof(*ret), cmpintp);
 	return ret;
 }
 
-void print_header(FILE *f, char *name)
+void print_header(FILE *f, const char *name)
 {
 	fprintf(f,
 	"F3 %s 3.0\n"

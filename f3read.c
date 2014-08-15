@@ -162,8 +162,8 @@ static inline double dt_to_s(struct timeval *dt)
 	return ret > 0 ? ret : 1;
 }
 
-static void iterate_files(const char *path, const int *files, int start_at,
-	int progress)
+static void iterate_files(const char *path, const long *files,
+	long start_at, long end_at, int progress)
 {
 	uint64_t tot_ok, tot_corrupted, tot_changed, tot_overwritten, tot_size;
 	struct timeval tot_dt = { .tv_sec = 0, .tv_usec = 0 };
@@ -207,16 +207,18 @@ static void iterate_files(const char *path, const int *files, int start_at,
 	assert(tot_size / SECTOR_SIZE ==
 		(tot_ok + tot_corrupted + tot_changed + tot_overwritten));
 
+	/* Notice that not reporting `missing' files after the last file
+	 * in @files is important since @end_at could be very large.
+	 */
+
 	report("\n  Data OK:", tot_ok);
 	report("Data LOST:", tot_corrupted + tot_changed + tot_overwritten);
 	report("\t       Corrupted:", tot_corrupted);
 	report("\tSlightly changed:", tot_changed);
 	report("\t     Overwritten:", tot_overwritten);
 	if (or_missing_file)
-		printf("WARNING: Not all F3 files are available\n");
-	if (start_at > 0)
-		printf("WARNING: Not all F3 files were tested due to parameter %s%i\n",
-		START_AT_TEXT, start_at + 1);
+		printf("WARNING: Not all F3 files in the range %li to %li are available\n",
+			start_at + 1, end_at + 1);
 	if (!and_read_all)
 		printf("WARNING: Not all data was read due to I/O error(s)\n");
 
@@ -226,39 +228,22 @@ static void iterate_files(const char *path, const int *files, int start_at,
 	printf("Average reading speed: %.2f %s/s\n", read_speed, unit);
 }
 
-int main(int argc, char *argv[])
+int main(int argc, char **argv)
 {
-	int start_at;
+	long start_at, end_at;
 	const char *path;
-	const int *files;
+	const long *files;
 	int progress;
+	int rc;
 
-	switch (argc) {
-	case 2:
-		start_at = 0;
-		path = argv[1];
-		break;
+	rc = parse_args("read", argc, argv, &start_at, &end_at, &path);
+	if (rc)
+		return rc;
 
-	case 3:
-		start_at = parse_start_at_param(argv[1]);
-		if (start_at < 0)
-			goto error;
-		path = argv[2];
-		break;
-
-	default:
-		goto error;
-	}
-
-	files = ls_my_files(path, start_at);
+	files = ls_my_files(path, start_at, end_at);
 	/* If stdout isn't a terminal, supress progress. */
 	progress = isatty(STDOUT_FILENO);
-	iterate_files(path, files, start_at, progress);
+	iterate_files(path, files, start_at, end_at, progress);
 	free((void *)files);
 	return 0;
-
-error:
-	print_header(stderr, "read");
-	fprintf(stderr, "Usage: f3read [%sNUM] <PATH>\n", START_AT_TEXT);
-	return 1;
 }

@@ -5,8 +5,8 @@
 .SH SYNOPSIS
 .nf
 .fam C
-\fBf3write\fP [\fB--start-at\fP=NUM] <PATH>
-\fBf3read\fP  [\fB--start-at\fP=NUM] <PATH>
+\fBf3write\fP [\fB--start-at\fP=NUM] [\fB--end-at\fP=NUM] <PATH>
+\fBf3read\fP  [\fB--start-at\fP=NUM] [\fB--end-at\fP=NUM] <PATH>
 .fam T
 .fi
 .fam T
@@ -23,9 +23,11 @@ files named N.h2w, where N is a number (i.e. /[0-9]+/).
 WARNING: all data on the tested disk might be lost!
 .SH OPTIONS
 .TP
-.B
 \fB--start-at\fP=NUM
-Initial number to files names. Default value is 1.
+Initial number of file names. Default value is 1.
+.TP
+\fB--end-at\fP=NUM
+Final number of file names. Default value is "infinity".
 .SH EXAMPLE
 To write over a flash drive mounted at /media/TEST:
 .PP
@@ -44,4 +46,4 @@ To read this flash drive:
 .fi
 .SH AUTHOR
 F3 was written by Michel Machado <michel@digirati.com.br>.
-This manual page was written by Joao Eriberto Mota Filho <eriberto@eriberto.pro.br>.
+This manual page was first written by Joao Eriberto Mota Filho <eriberto@eriberto.pro.br>.

@@ -16,7 +16,7 @@ const char *adjust_unit(double *ptr_bytes);
 int is_my_file(const char *filename);
 
 /* Caller must free(3) the returned pointer. */
-char *full_fn_from_number(const char **filename, const char *path, int num);
+char *full_fn_from_number(const char **filename, const char *path, long num);
 
 static inline long delay_ms(const struct timeval *t1, const struct timeval *t2)
 {
@@ -24,15 +24,12 @@ static inline long delay_ms(const struct timeval *t1, const struct timeval *t2)
 		(t2->tv_usec - t1->tv_usec) / 1000;
 }
 
-/* Parse @param and return the start-at parameter.
- * The string must be of the format "--start-at=NUM"; otherwise it returns -1.
- */
-#define START_AT_TEXT "--start-at="
-int parse_start_at_param(const char *param);
+int parse_args(const char *name, int argc, char **argv,
+	long *pstart_at, long *pend_at, const char **ppath);
 
-const int *ls_my_files(const char *path, int start_at);
+const long *ls_my_files(const char *path, long start_at, long end_at);
 
-void print_header(FILE *f, char *name);
+void print_header(FILE *f, const char *name);
 
 static inline uint64_t random_number(uint64_t prv_number)
 {
