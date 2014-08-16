@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #define _FILE_OFFSET_BITS 64
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
@@ -25,6 +26,7 @@ static const char const *ftype_to_name[FKTY_MAX] = {
 	[FKTY_BAD]		= "bad",
 	[FKTY_LIMBO]		= "limbo",
 	[FKTY_WRAPAROUND]	= "wraparound",
+	[FKTY_CHAIN]		= "chain",
 };
 
 const char *fake_type_to_name(enum fake_type fake_type)
@@ -33,11 +35,50 @@ const char *fake_type_to_name(enum fake_type fake_type)
 	return ftype_to_name[fake_type];
 }
 
+int dev_param_valid(uint64_t real_size_byte,
+	uint64_t announced_size_byte, int wrap)
+{
+	/* Check general ranges. */
+	if (real_size_byte > announced_size_byte || wrap < 0 || wrap >= 64)
+		return false;
+
+	/* If good, @wrap must make sense. */
+	if (real_size_byte == announced_size_byte) {
+		uint64_t two_wrap = ((uint64_t)1) << wrap;
+		return announced_size_byte <= two_wrap;
+	}
+
+	return true;
+}
+
+enum fake_type dev_param_to_type(uint64_t real_size_byte,
+	uint64_t announced_size_byte, int wrap)
+{
+	uint64_t two_wrap;
+
+	assert(dev_param_valid(real_size_byte, announced_size_byte, wrap));
+
+	if (real_size_byte == announced_size_byte)
+		return FKTY_GOOD;
+
+	if (real_size_byte == 0)
+		return FKTY_BAD;
+
+	/* real_size_byte < announced_size_byte */
+
+	two_wrap = ((uint64_t)1) << wrap;
+	if (two_wrap <= real_size_byte)
+		return FKTY_WRAPAROUND;
+	if (two_wrap < announced_size_byte)
+		return FKTY_CHAIN;
+	return FKTY_LIMBO;
+}
+
 struct device {
 	int (*read_block)(struct device *dev, char *buf, uint64_t block);
-	int (*write_block)(struct device *dev, char *buf, uint64_t block);
+	int (*write_block)(struct device *dev, const char *buf, uint64_t block);
 	int (*reset)(struct device *dev);
-	int (*get_size_gb)(struct device *dev);
+	uint64_t (*get_size_byte)(struct device *dev);
 	void (*free)(struct device *dev);
 };
 
@@ -45,6 +86,9 @@ struct file_device {
 	/* This must be the first field. See dev_fdev() for details. */
 	struct device dev;
 
+	/* XXX Now the the file is unliked right after being created,
+	 * wouldn't it be a good idea to drop field @filename?
+	 */
 	const char *filename;
 	int fd;
 	int file_size_gb;
@@ -110,7 +154,7 @@ static int fdev_read_block(struct device *dev, char *buf, uint64_t block)
 	return 0;
 }
 
-static int write_all(int fd, char *buf, int count)
+static int write_all(int fd, const char *buf, int count)
 {
 	int done = 0;
 	do {
@@ -121,7 +165,7 @@ static int write_all(int fd, char *buf, int count)
 	return 0;
 }
 
-static int fdev_write_block(struct device *dev, char *buf, uint64_t block)
+static int fdev_write_block(struct device *dev, const char *buf, uint64_t block)
 {
 	struct file_device *fdev = dev_fdev(dev);
 	off_t offset = block * BLOCK_SIZE;
@@ -150,16 +194,15 @@ static int fdev_write_block(struct device *dev, char *buf, uint64_t block)
 	return write_all(fdev->fd, buf, BLOCK_SIZE);
 }
 
-static int fdev_get_size_gb(struct device *dev)
+static uint64_t fdev_get_size_byte(struct device *dev)
 {
-	return dev_fdev(dev)->fake_size_gb;
+	return (uint64_t)dev_fdev(dev)->fake_size_gb * GIGABYTE;
 }
 
 static void fdev_free(struct device *dev)
 {
 	struct file_device *fdev = dev_fdev(dev);
 	assert(!close(fdev->fd));
-	assert(!unlink(fdev->filename));
 	free((void *)fdev->filename);
 }
 
@@ -183,6 +226,10 @@ struct device *create_file_device(const char *filename,
 		err(errno, "Can't create file `%s'", filename);
 		goto filename;
 	}
+	/* Unlinking the file now guarantees that it won't exist if
+	 * there is a crash.
+	 */
+	assert(!unlink(filename));
 
 	fdev->file_size_gb = file_size_gb;
 	fdev->fake_size_gb = fake_size_gb;
@@ -191,7 +238,7 @@ struct device *create_file_device(const char *filename,
 	fdev->dev.read_block = fdev_read_block;
 	fdev->dev.write_block = fdev_write_block;
 	fdev->dev.reset = NULL;
-	fdev->dev.get_size_gb = fdev_get_size_gb;
+	fdev->dev.get_size_byte = fdev_get_size_byte;
 	fdev->dev.free = fdev_free;
 
 	return &fdev->dev;
@@ -238,7 +285,7 @@ static int bdev_read_block(struct device *dev, char *buf, uint64_t block)
 	return read_all(bdev->fd, buf, BLOCK_SIZE);
 }
 
-static int bdev_write_block(struct device *dev, char *buf, uint64_t block)
+static int bdev_write_block(struct device *dev, const char *buf, uint64_t block)
 {
 	struct block_device *bdev = dev_bdev(dev);
 	off_t offset = block * BLOCK_SIZE;
@@ -262,12 +309,11 @@ static int bdev_reset(struct device *dev)
 	return 0;
 }
 
-static int bdev_get_size_gb(struct device *dev)
+static uint64_t bdev_get_size_byte(struct device *dev)
 {
-	uint64_t size_bytes;
-	assert(!ioctl(dev_bdev(dev)->fd, BLKGETSIZE64, &size_bytes));
-	/* XXX Support everything. Specially devices smaller than 1GB! */
-	return size_bytes >> 30;
+	uint64_t size_byte;
+	assert(!ioctl(dev_bdev(dev)->fd, BLKGETSIZE64, &size_byte));
+	return size_byte;
 }
 
 static void bdev_free(struct device *dev)
@@ -405,7 +451,7 @@ struct device *create_block_device(const char *filename)
 	bdev->dev.read_block = bdev_read_block;
 	bdev->dev.write_block = bdev_write_block;
 	bdev->dev.reset	= bdev_reset;
-	bdev->dev.get_size_gb = bdev_get_size_gb;
+	bdev->dev.get_size_byte = bdev_get_size_byte;
 	bdev->dev.free = bdev_free;
 
 	free((void *)usb_filename);
@@ -434,32 +480,27 @@ static inline int dev_read_block(struct device *dev, char *buf, uint64_t block)
 	return dev->read_block(dev, buf, block);
 }
 
-static inline int dev_write_block(struct device *dev, char *buf, uint64_t block)
+static inline int dev_write_block(struct device *dev, const char *buf,
+	uint64_t block)
 {
-	int rc = dev->write_block(dev, buf, block);
-	if (rc)
-		return rc;
-
-	/* XXX probe_device() should be smart enough to know when dev->reset()
-	 * must be called.
-	 */
-	if (dev->reset)
-		return dev->reset(dev);
-	return 0;
+	return dev->write_block(dev, buf, block);
 }
 
-static inline int dev_get_size_gb(struct device *dev)
+static inline int dev_reset(struct device *dev)
 {
-	return dev->get_size_gb(dev);
+	return dev->reset ? dev->reset(dev) : 0;
 }
 
-/* XXX Write random data for testing.
- * There would be a random seed, and all the other blocks would be
- * this seed XOR'd with the number of the test.
- */
-static void fill_buffer(char *buf, int len, int signature)
+static inline int dev_write_and_reset(struct device *dev, const char *buf,
+	uint64_t block)
 {
-	memset(buf, signature, len);
+	int rc = dev_write_block(dev, buf, block);
+	return rc ? rc : dev_reset(dev);
+}
+
+static inline uint64_t dev_get_size_byte(struct device *dev)
+{
+	return dev->get_size_byte(dev);
 }
 
 static inline int equal_blk(const char *b1, const char *b2)
@@ -473,95 +514,183 @@ static inline void *align_512(void *p)
 	return (void *)(   (ip + 511) & ~511   );
 }
 
-/* XXX Don't write at the very beginning of the card to avoid
- * losing the partition table.
- * But write at a random locations to make harder for fake chips
- * to become "smarter".
+/* Minimum size of the memory chunk used to build flash drives.
+ * It must be a power of two.
  */
-/* XXX Finish testing the last block, and the next one that should fail.
- * Then report the last block, so user can create the largest partition.
- */
-/* XXX Properly handle read and write errors. */
-enum fake_type probe_device(struct device *dev, int *preal_size_gb)
-{
-	int device_size_gb = dev_get_size_gb(dev);
-	char stack[511 + 3 * BLOCK_SIZE];
-	char *first_blk, *stamp_blk, *probe_blk;
-	const int step = GIGABYTE / BLOCK_SIZE;
-	uint64_t first_pos = 10;
-	uint64_t pos = first_pos + step;
-	int i;
+#define	INITAIL_HIGH_BIT	(1 << 20)
 
-	assert(device_size_gb > 0);
+/* Caller must guarantee that the left bock is good, and written. */
+static int search_wrap(struct device *dev,
+	uint64_t left_pos, uint64_t *pright_pos,
+	const char *stamp_blk, char *probe_blk)
+{
+	uint64_t high_bit = INITAIL_HIGH_BIT;
+	uint64_t pos = high_bit + left_pos;
+
+	/* The left block must be in the first memory chunk. */
+	assert(left_pos < high_bit);
+
+	/* Check that the drive has at least one memory chunk. */
+	assert((high_bit - 1) <= *pright_pos);
+
+	while (pos < *pright_pos) {
+		if (dev_read_block(dev, probe_blk, pos) &&
+			dev_read_block(dev, probe_blk, pos))
+			return true;
+		/* XXX Deal with flipped bit on reception. */
+		if (equal_blk(stamp_blk, probe_blk)) {
+			/* XXX Test wraparound hypothesis. */
+			*pright_pos = high_bit - 1;
+			return false;
+		}
+		high_bit <<= 1;
+		pos = high_bit + left_pos;
+	}
+
+	return false;
+}
+
+/* XXX Should test if block if fully damaged, if so, avoid retrying. */
+/* Return true if the block @pos is damaged. */
+static int test_block(struct device *dev,
+	const char *stamp_blk, char *probe_blk, uint64_t pos)
+{
+	/* Write block. */
+	if (dev_write_block(dev, stamp_blk, pos) &&
+		dev_write_block(dev, stamp_blk, pos))
+		return true;
+
+	/* Reset. */
+	if (dev_reset(dev) && dev_reset(dev))
+		return true;
+
+	/* Test block. */
+	if (dev_read_block(dev, probe_blk, pos) &&
+		dev_read_block(dev, probe_blk, pos))
+		return true;
+	if (!equal_blk(stamp_blk, probe_blk)) {
+		/* The probe block seems to be damaged.
+		 * Trying a second time...
+		 */
+		return 	dev_write_and_reset(dev, stamp_blk, pos) ||
+			dev_read_block(dev, probe_blk, pos)  ||
+			!equal_blk(stamp_blk, probe_blk);
+	}
+	return false;
+}
+
+/* Caller must guarantee that the left bock is good, and written. */
+static int search_edge(struct device *dev,
+	uint64_t *pleft_pos, uint64_t right_pos,
+	const char *stamp_blk, char *probe_blk)
+{
+	uint64_t pos = right_pos;
+	do {
+		if (test_block(dev, stamp_blk, probe_blk, pos))
+			right_pos = pos;
+		else
+			*pleft_pos = pos;
+		pos = (*pleft_pos + right_pos) / 2;
+	} while (right_pos - *pleft_pos >= 2);
+	return  false;
+}
+
+/* XXX Write random data to make it harder for fake chips to become "smarter".
+ * There would be a random seed.
+ * Buffer cannot be all 0x00 or all 0xFF.
+ */
+static void fill_buffer(char *buf, int len)
+{
+	memset(buf, 0xAA, len);
+}
+
+/* Count the number of 1 bits. */
+static int pop(uint64_t x)
+{
+	int n = 0;
+	while (x) {
+		n++;
+		x = x & (x - 1);
+	}
+	return n;
+}
+
+static int ilog2(uint64_t x)
+{
+	x = x | (x >>  1);
+	x = x | (x >>  2);
+	x = x | (x >>  4);
+	x = x | (x >>  8);
+	x = x | (x >> 16);
+	x = x | (x >> 32);
+	return pop(x) - 1;
+}
+
+/* Least power of 2 greater than or equal to x. */
+static uint64_t clp2(uint64_t x)
+{
+	x = x - 1;
+	x = x | (x >>  1);
+	x = x | (x >>  2);
+	x = x | (x >>  4);
+	x = x | (x >>  8);
+	x = x | (x >> 16);
+	x = x | (x >> 32);
+	return x + 1;
+}
+
+static int ceiling_log2(uint64_t x)
+{
+	return ilog2(clp2(x));
+}
+
+/* XXX Properly handle read and write errors. */
+void probe_device(struct device *dev, uint64_t *preal_size_byte,
+	uint64_t *pannounced_size_byte, int *pwrap)
+{
+	uint64_t dev_size_byte = dev_get_size_byte(dev);
+	int dev_size_block = dev_size_byte >> BLOCK_SIZE_BITS;
+	char stack[511 + 2 * BLOCK_SIZE];
+	char *stamp_blk, *probe_blk;
+	/* XXX Don't write at the very beginning of the card to avoid
+	 * losing the partition table.
+	 * But write at a random locations to make harder for fake chips
+	 * to become "smarter".
+	 * And try a couple of blocks if they keep failing.
+	 */
+	uint64_t left_pos = 10, right_pos = dev_size_block - 1;
+
+	assert(dev_size_byte % BLOCK_SIZE == 0);
+	assert(left_pos < right_pos);
 
 	/* Aligning these pointers is necessary to directly read and write
 	 * the block device.
 	 * For the file device, this is superfluous.
 	 */
-	first_blk = align_512(stack);
-	stamp_blk = first_blk + BLOCK_SIZE;
+	stamp_blk = align_512(stack);
 	probe_blk = stamp_blk + BLOCK_SIZE;
 
-	/* Base case. */
-	fill_buffer(first_blk, BLOCK_SIZE, 1);
-	dev_write_block(dev, first_blk, first_pos);
-	dev_read_block(dev, probe_blk, first_pos);
-	if (!equal_blk(first_blk, probe_blk)) {
-		/* There is a block before the first 1GB that seems to
-		 * be damaged. Trying a second time...
-		 */
-		dev_write_block(dev, first_blk, first_pos);
-		dev_read_block(dev, probe_blk, first_pos);
-		if (!equal_blk(first_blk, probe_blk)) {
-			/* Okay, this device is damaged. */
-			goto bad;
-		}
-	}
+	fill_buffer(stamp_blk, BLOCK_SIZE);
 
-	/* Inductive step. */
-	fill_buffer(stamp_blk, BLOCK_SIZE, 2);
-	for (i = 1; i < device_size_gb; i++) {
-		dev_write_block(dev, stamp_blk, pos);
+	/* Make sure that there is at least a good block at the beginning
+	 * of the drive.
+	 */
+	if (test_block(dev, stamp_blk, probe_blk, left_pos))
+		goto bad;
 
-		dev_read_block(dev, probe_blk, first_pos);
-		if (!equal_blk(first_blk, probe_blk)) {
-			/* Wrapping around? */
-			if (equal_blk(stamp_blk, probe_blk)) {
-				/* yes. */
-				*preal_size_gb = i;
-				return FKTY_WRAPAROUND;
-			}
+	if (search_wrap(dev, left_pos, &right_pos, stamp_blk, probe_blk))
+		goto bad;
 
-			/* The block at @first_pos changed to a value
-			 * different from the one written.
-			 * Trying a second time...
-			 */
-			dev_write_block(dev, first_blk, first_pos);
-			dev_write_block(dev, stamp_blk, pos);
-			dev_read_block(dev, probe_blk, first_pos);
-			if (!equal_blk(first_blk, probe_blk)) {
-				if (equal_blk(stamp_blk, probe_blk)) {
-					*preal_size_gb = i;
-					return FKTY_WRAPAROUND;
-				}
-				/* Okay, this device is damaged. */
-				goto bad;
-			}
-		}
+	if (search_edge(dev, &left_pos, right_pos, stamp_blk, probe_blk))
+		goto bad;
 
-		dev_read_block(dev, probe_blk, pos);
-		if (!equal_blk(stamp_blk, probe_blk)) {
-			*preal_size_gb = i;
-			return FKTY_LIMBO;
-		}
-
-		pos += step;
-	}
-
-	*preal_size_gb = device_size_gb;
-	return FKTY_GOOD;
+	*preal_size_byte = (left_pos + 1) << BLOCK_SIZE_BITS;
+	*pannounced_size_byte = dev_size_byte;
+	*pwrap = ceiling_log2(right_pos * BLOCK_SIZE);
+	return;
 
 bad:
-	*preal_size_gb = 0;
-	return FKTY_BAD;
+	*preal_size_byte = 0;
+	*pannounced_size_byte = dev_size_byte;
+	*pwrap = ceiling_log2(dev_size_byte);
 }

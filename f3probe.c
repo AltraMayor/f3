@@ -4,6 +4,7 @@
 #include <argp.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <inttypes.h>
 
 #include "version.h"
 #include "libprobe.h"
@@ -152,14 +153,17 @@ static int unit_test(const char *filename)
 	int i, success = 0;
 	for (i = 0; i < UNIT_TEST_N_CASES; i++) {
 		enum fake_type fake_type;
-		int real_size_gb, good = 0;
+		uint64_t real_size_byte, announced_size_byte;
+		int wrap, good = 0;
 		struct device *dev = create_file_device(filename,
 			ftype_to_params[i].file_size_gb,
 			ftype_to_params[i].fake_size_gb,
 			ftype_to_params[i].fake_type);
 		assert(dev);
-		fake_type = probe_device(dev, &real_size_gb);
+		probe_device(dev, &real_size_byte, &announced_size_byte, &wrap);
 		free_device(dev);
+		fake_type = dev_param_to_type(real_size_byte,
+			announced_size_byte, wrap);
 
 		/* Report */
 		printf("Test %i (type %s, file-size=%iGB, fake-size=%iGB): ",
@@ -167,21 +171,26 @@ static int unit_test(const char *filename)
 			ftype_to_params[i].file_size_gb,
 			ftype_to_params[i].fake_size_gb);
 		if (fake_type == ftype_to_params[i].fake_type) {
-			if (real_size_gb == ftype_to_params[i].file_size_gb) {
+			if (real_size_byte ==
+				(uint64_t)ftype_to_params[i].file_size_gb <<
+				30) {
 				good = 1;
 				success++;
 				printf("Perfect!\n");
 			} else {
 				printf("Correct type, wrong size\n");
 			}
-		} else if (real_size_gb == ftype_to_params[i].file_size_gb) {
+		} else if (real_size_byte ==
+				(uint64_t)ftype_to_params[i].file_size_gb <<
+				30) {
 			printf("Wrong type, correct size\n");
 		} else {
 			printf("Got it all wrong\n");
 		}
 		if (!good)
-			printf("\tFound type %s and real size %iGB\n",
-				fake_type_to_name(fake_type), real_size_gb);
+			printf("\tFound type %s, real size %" PRIu64 " Bytes, fake size %" PRIu64 " Bytes, and wrap 2^%i\n",
+				fake_type_to_name(fake_type), real_size_byte,
+				announced_size_byte, wrap);
 		printf("\n");
 	}
 
@@ -198,26 +207,31 @@ static int test_device(struct args *args)
 {
 	struct device *dev;
 	enum fake_type fake_type;
-	int real_size_gb;
+	uint64_t real_size_byte, announced_size_byte;
+	int wrap;
 
 	dev = args->debug
 		? create_file_device(args->filename, args->file_size_gb,
 			args->fake_size_gb, args->fake_type)
 		: create_block_device(args->filename);
 	assert(dev);
+	probe_device(dev, &real_size_byte, &announced_size_byte, &wrap);
+	free_device(dev);
 
-	fake_type = probe_device(dev, &real_size_gb);
+	fake_type = dev_param_to_type(real_size_byte, announced_size_byte,
+		wrap);
 	switch (fake_type) {
 	case FKTY_GOOD:
-		printf("Nice! The device `%s' is the real thing, and its size is %iGB\n",
-			args->filename, real_size_gb);
+		printf("Good news: The device `%s' is the real thing\n",
+			args->filename);
 		break;
 
+	case FKTY_BAD:
 	case FKTY_LIMBO:
 	case FKTY_WRAPAROUND:
-		printf("Bad news: The device `%s' is a counterfeit of type %s, and its *real* size is %iGB\n",
-			args->filename, fake_type_to_name(fake_type),
-			real_size_gb);
+	case FKTY_CHAIN:
+		printf("Bad news: The device `%s' is a counterfeit of type %s\n",
+			args->filename, fake_type_to_name(fake_type));
 		break;
 
 	default:
@@ -225,7 +239,11 @@ static int test_device(struct args *args)
 		break;
 	}
 
-	free_device(dev);
+	/* XXX Add user friendly values, and sectors. */
+	printf("\nDevice geometry:\n");
+	printf("\t   *Real* size: %" PRIu64 " Bytes\n", real_size_byte);
+	printf("\tAnnounced size: %" PRIu64 " Bytes\n", announced_size_byte);
+	printf("\t          Wrap: 2^%i\n\n", wrap);
 	return 0;
 }
 
