@@ -508,12 +508,6 @@ static inline int equal_blk(const char *b1, const char *b2)
 	return !memcmp(b1, b2, BLOCK_SIZE);
 }
 
-static inline void *align_512(void *p)
-{
-	uintptr_t ip = (uintptr_t)p;
-	return (void *)(   (ip + 511) & ~511   );
-}
-
 /* Minimum size of the memory chunk used to build flash drives.
  * It must be a power of two.
  */
@@ -550,7 +544,23 @@ static int search_wrap(struct device *dev,
 	return false;
 }
 
-/* XXX Should test if block if fully damaged, if so, avoid retrying. */
+/* Return true if @b1 and b2 are at most @tolerance_byte bytes different. */
+static int similar_blk(const char *b1, const char *b2, int tolerance_byte)
+{
+	int i;
+
+	for (i = 0; i < BLOCK_SIZE; i++) {
+		if (*b1 != *b2) {
+			tolerance_byte--;
+			if (tolerance_byte <= 0)
+				return false;
+		}
+		b1++;
+		b2++;
+	}
+	return true;
+}
+
 /* Return true if the block @pos is damaged. */
 static int test_block(struct device *dev,
 	const char *stamp_blk, char *probe_blk, uint64_t pos)
@@ -564,19 +574,29 @@ static int test_block(struct device *dev,
 	if (dev_reset(dev) && dev_reset(dev))
 		return true;
 
-	/* Test block. */
+	/*
+	 *	Test block.
+	 */
+
 	if (dev_read_block(dev, probe_blk, pos) &&
 		dev_read_block(dev, probe_blk, pos))
 		return true;
-	if (!equal_blk(stamp_blk, probe_blk)) {
-		/* The probe block seems to be damaged.
-		 * Trying a second time...
-		 */
-		return 	dev_write_and_reset(dev, stamp_blk, pos) ||
-			dev_read_block(dev, probe_blk, pos)  ||
-			!equal_blk(stamp_blk, probe_blk);
+
+	if (equal_blk(stamp_blk, probe_blk))
+		return false;
+
+	/* Save time with certainly damaged blocks. */
+	if (!similar_blk(stamp_blk, probe_blk, 8)) {
+		/* The probe block is damaged. */
+		return true;
 	}
-	return false;
+
+	/* The probe block seems to be damaged.
+	 * Trying a second time...
+	 */
+	return 	dev_write_and_reset(dev, stamp_blk, pos) ||
+		dev_read_block(dev, probe_blk, pos)  ||
+		!equal_blk(stamp_blk, probe_blk);
 }
 
 /* Caller must guarantee that the left bock is good, and written. */
@@ -642,6 +662,12 @@ static uint64_t clp2(uint64_t x)
 static int ceiling_log2(uint64_t x)
 {
 	return ilog2(clp2(x));
+}
+
+static inline void *align_512(void *p)
+{
+	uintptr_t ip = (uintptr_t)p;
+	return (void *)(   (ip + 511) & ~511   );
 }
 
 /* XXX Properly handle read and write errors. */
