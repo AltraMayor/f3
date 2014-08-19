@@ -5,9 +5,13 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <inttypes.h>
+#include <sys/time.h>
 
 #include "version.h"
 #include "libprobe.h"
+
+/* XXX Refactor utils library since f3probe barely uses it. */
+#include "utils.h"
 
 /* Argp's global variables. */
 const char *argp_program_version = "F3 Probe " F3_STR_VERSION;
@@ -203,8 +207,19 @@ static int unit_test(const char *filename)
 	return 0;
 }
 
+static void report(const char *prefix, uint64_t bytes)
+{
+	double f = (double)bytes;
+	const char *unit = adjust_unit(&f);
+	assert(bytes % SECTOR_SIZE == 0);
+	printf("%s %.2f %s (%" PRIu64 " sectors)\n", prefix, f, unit,
+		bytes / SECTOR_SIZE);
+}
+
 static int test_device(struct args *args)
 {
+	struct timeval t1, t2;
+	double time_s;
 	struct device *dev;
 	enum fake_type fake_type;
 	uint64_t real_size_byte, announced_size_byte;
@@ -215,7 +230,9 @@ static int test_device(struct args *args)
 			args->fake_size_gb, args->fake_type)
 		: create_block_device(args->filename);
 	assert(dev);
+	assert(!gettimeofday(&t1, NULL));
 	probe_device(dev, &real_size_byte, &announced_size_byte, &wrap);
+	assert(!gettimeofday(&t2, NULL));
 	free_device(dev);
 
 	fake_type = dev_param_to_type(real_size_byte, announced_size_byte,
@@ -239,11 +256,12 @@ static int test_device(struct args *args)
 		break;
 	}
 
-	/* XXX Add user friendly values, and sectors. */
+	time_s = (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec)/1000000.;
 	printf("\nDevice geometry:\n");
-	printf("\t   *Real* size: %" PRIu64 " Bytes\n", real_size_byte);
-	printf("\tAnnounced size: %" PRIu64 " Bytes\n", announced_size_byte);
-	printf("\t          Wrap: 2^%i\n\n", wrap);
+	report("\t   *Real* size:", real_size_byte);
+	report("\tAnnounced size:", announced_size_byte);
+	printf("\t        Module: 2^%i\n", wrap);
+	printf("\nProbe time: %.2f seconds\n", time_s);
 	return 0;
 }
 
@@ -260,6 +278,7 @@ int main(int argc, char **argv)
 
 	/* Read parameters. */
 	argp_parse(&argp, argc, argv, 0, NULL, &args);
+	print_header(stdout, "probe");
 
 	if (args.unit_test)
 		return unit_test(args.filename);
