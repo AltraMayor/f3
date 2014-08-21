@@ -33,7 +33,7 @@ enum fake_type dev_param_to_type(uint64_t real_size_byte,
 struct device;
 
 struct device *create_file_device(const char *filename,
-	int file_size_gb, int fake_size_gb, enum fake_type fake_type);
+	uint64_t real_size_byte, uint64_t fake_size_byte, int wrap);
 
 struct device *create_block_device(const char *filename);
 

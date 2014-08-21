@@ -1,3 +1,5 @@
+#define _POSIX_C_SOURCE 200112L
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,12 +42,15 @@ static char doc[] = "F3 Probe -- probe a block device for "
  */
 
 static struct argp_option options[] = {
-	{"debug-file-size",	'd',	"SIZE_GB",	OPTION_HIDDEN,
-		"Enable debuging with a regular file",	1},
-	{"debug-fake-size",	'f',	"SIZE_GB",	OPTION_HIDDEN,
+	{"debug",		'd',	NULL,		OPTION_HIDDEN,
+		"Enable debugging; only needed if none --debug-* option used",
+		1},
+	{"debug-real-size",	'r',	"SIZE_BYTE",	OPTION_HIDDEN,
+		"Real size of the emulated flash",	0},
+	{"debug-fake-size",	'f',	"SIZE_BYTE",	OPTION_HIDDEN,
 		"Fake size of the emulated flash",	0},
-	{"debug-type",		't',	"N",		OPTION_HIDDEN,
-		"Set the type of the fake flash",	0},
+	{"debug-wrap",		'w',	"N",		OPTION_HIDDEN,
+		"Wrap parameter of the emulated flash",	0},
 	{"debug-unit-test",	'u',	NULL,		OPTION_HIDDEN,
 		"Run a unit test; it ignores all other debug options",	0},
 	{ 0 }
@@ -57,54 +62,61 @@ struct args {
 	/* Debugging options. */
 	bool		unit_test;
 	bool		debug;
-	enum fake_type	fake_type;
-	/* 1 bytes free. */
-	int		file_size_gb;
-	int		fake_size_gb;
+	/* 2 bytes free. */
+	uint64_t	real_size_byte;
+	uint64_t	fake_size_byte;
+	int		wrap;
 };
 
-static long arg_to_long(const struct argp_state *state, const char *arg)
+static long long arg_to_long_long(const struct argp_state *state,
+	const char *arg)
 {
 	char *end;
-	long l = strtol(arg, &end, 0);
+	long long ll = strtoll(arg, &end, 0);
 	if (!arg)
 		argp_error(state, "An integer must be provided");
 	if (!*arg || *end)
 		argp_error(state, "`%s' is not an integer", arg);
-	return l;
+	return ll;
 }
 
+/* XXX Add a friendly way to enter real and fake sizes: 1, 1k, 1m, 1g... */
 static error_t parse_opt(int key, char *arg, struct argp_state *state)
 {
 	struct args *args = state->input;
+	long long ll;
 
 	switch (key) {
 	case 'd':
-		args->file_size_gb = arg_to_long(state, arg);
-		if (args->file_size_gb < 1)
+		args->debug = true;
+		break;
+
+	case 'r':
+		ll = arg_to_long_long(state, arg);
+		if (ll < 0)
 			argp_error(state,
-				"Size of the regular file to be used for debugging must be at least 1GB");
+				"Real size must be greater or equal to zero");
+		args->real_size_byte = ll;
 		args->debug = true;
 		break;
 
 	case 'f':
-		args->fake_size_gb = arg_to_long(state, arg);
-		if (args->fake_size_gb < 1)
+		ll = arg_to_long_long(state, arg);
+		if (ll < 0)
 			argp_error(state,
-				"Fake size of the emulated flash must be at least 1GB");
+				"Fake size must be greater or equal to zero");
+		args->fake_size_byte = ll;
 		args->debug = true;
 		break;
 
-	case 't': {
-		long l = arg_to_long(state, arg);
-		if (l < FKTY_GOOD || l >= FKTY_MAX)
+	case 'w':
+		ll = arg_to_long_long(state, arg);
+		if (ll < 0 || ll >= 64)
 			argp_error(state,
-				"Fake type must be a number in the interval [%i, %i]",
-				FKTY_GOOD, FKTY_MAX);
-		args->fake_type = l;
+				"Wrap must be in the interval [0, 63]");
+		args->wrap = ll;
 		args->debug = true;
 		break;
-	}
 
 	case 'u':
 		args->unit_test = true;
@@ -125,6 +137,11 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		if (!args->filename)
 			argp_error(state,
 				"The block device was not specified");
+		if (args->debug &&
+			!dev_param_valid(args->real_size_byte,
+				args->fake_size_byte, args->wrap))
+			argp_error(state,
+				"The debugging parameters are not valid");
 		break;
 
 	default:
@@ -136,17 +153,17 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
 
 struct unit_test_item {
-	enum fake_type fake_type;
-	int file_size_gb;
-	int fake_size_gb;
+	uint64_t	real_size_byte;
+	uint64_t	fake_size_byte;
+	int		wrap;
 };
 
 static const struct unit_test_item ftype_to_params[] = {
-	{FKTY_GOOD,		1, 1},
-	{FKTY_BAD,		0, 1},
-	{FKTY_LIMBO,		1, 2},
-	{FKTY_WRAPAROUND,	1, 2},
-	{FKTY_WRAPAROUND,	2, 3},
+	{1ULL << 30,	1ULL << 30,	30},
+	{0,		1ULL << 30,	30},
+	{1ULL << 30,	1ULL << 34,	34},
+	{1ULL << 31,	1ULL << 34,	31},
+	{1ULL << 31,	1ULL << 34,	32},
 };
 
 #define UNIT_TEST_N_CASES \
@@ -156,13 +173,21 @@ static int unit_test(const char *filename)
 {
 	int i, success = 0;
 	for (i = 0; i < UNIT_TEST_N_CASES; i++) {
+		const struct unit_test_item *item = &ftype_to_params[i];
+		enum fake_type origin_type = dev_param_to_type(
+			item->real_size_byte, item->fake_size_byte, item->wrap);
+		double f_real = item->real_size_byte;
+		double f_fake = item->fake_size_byte;
+		const char *unit_real = adjust_unit(&f_real);
+		const char *unit_fake = adjust_unit(&f_fake);
+
 		enum fake_type fake_type;
 		uint64_t real_size_byte, announced_size_byte;
-		int wrap, good = 0;
-		struct device *dev = create_file_device(filename,
-			ftype_to_params[i].file_size_gb,
-			ftype_to_params[i].fake_size_gb,
-			ftype_to_params[i].fake_type);
+		int wrap;
+		struct device *dev;
+
+		dev = create_file_device(filename, item->real_size_byte,
+			item->fake_size_byte, item->wrap);
 		assert(dev);
 		probe_device(dev, &real_size_byte, &announced_size_byte, &wrap);
 		free_device(dev);
@@ -170,32 +195,24 @@ static int unit_test(const char *filename)
 			announced_size_byte, wrap);
 
 		/* Report */
-		printf("Test %i (type %s, file-size=%iGB, fake-size=%iGB): ",
-			i + 1, fake_type_to_name(ftype_to_params[i].fake_type),
-			ftype_to_params[i].file_size_gb,
-			ftype_to_params[i].fake_size_gb);
-		if (fake_type == ftype_to_params[i].fake_type) {
-			if (real_size_byte ==
-				(uint64_t)ftype_to_params[i].file_size_gb <<
-				30) {
-				good = 1;
-				success++;
-				printf("Perfect!\n");
-			} else {
-				printf("Correct type, wrong size\n");
-			}
-		} else if (real_size_byte ==
-				(uint64_t)ftype_to_params[i].file_size_gb <<
-				30) {
-			printf("Wrong type, correct size\n");
+		printf("Test %i (type %s, real-size=%.2f %s, fake-size=%.2f %s, module=2^%i)\n",
+			i + 1, fake_type_to_name(origin_type),
+			f_real, unit_real, f_fake, unit_fake, item->wrap);
+		if (real_size_byte == item->real_size_byte &&
+			announced_size_byte == item->fake_size_byte &&
+			wrap == item->wrap) {
+			success++;
+			printf("\tPerfect!\n\n");
 		} else {
-			printf("Got it all wrong\n");
+			double ret_f_real = real_size_byte;
+			double ret_f_fake = announced_size_byte;
+			const char *ret_unit_real = adjust_unit(&ret_f_real);
+			const char *ret_unit_fake = adjust_unit(&ret_f_fake);
+			printf("\tFound type %s, real size %.2f %s, fake size %.2f %s, and module 2^%i\n\n",
+				fake_type_to_name(fake_type),
+				ret_f_real, ret_unit_real,
+				ret_f_fake, ret_unit_fake, wrap);
 		}
-		if (!good)
-			printf("\tFound type %s, real size %" PRIu64 " Bytes, fake size %" PRIu64 " Bytes, and wrap 2^%i\n",
-				fake_type_to_name(fake_type), real_size_byte,
-				announced_size_byte, wrap);
-		printf("\n");
 	}
 
 	printf("SUMMARY: ");
@@ -226,8 +243,8 @@ static int test_device(struct args *args)
 	int wrap;
 
 	dev = args->debug
-		? create_file_device(args->filename, args->file_size_gb,
-			args->fake_size_gb, args->fake_type)
+		? create_file_device(args->filename, args->real_size_byte,
+			args->fake_size_byte, args->wrap)
 		: create_block_device(args->filename);
 	assert(dev);
 	assert(!gettimeofday(&t1, NULL));
@@ -271,9 +288,9 @@ int main(int argc, char **argv)
 		/* Defaults. */
 		.unit_test	= false,
 		.debug		= false,
-		.fake_type	= FKTY_LIMBO,
-		.file_size_gb	= 1,
-		.fake_size_gb	= 2,
+		.real_size_byte	= 1ULL << 31,
+		.fake_size_byte	= 1ULL << 34,
+		.wrap		= 31,
 	};
 
 	/* Read parameters. */

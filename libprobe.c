@@ -86,15 +86,10 @@ struct file_device {
 	/* This must be the first field. See dev_fdev() for details. */
 	struct device dev;
 
-	/* XXX Now the the file is unliked right after being created,
-	 * wouldn't it be a good idea to drop field @filename?
-	 */
-	const char *filename;
 	int fd;
-	int file_size_gb;
-	int fake_size_gb;
-	enum fake_type fake_type;
-	/* 3 free bytes. */
+	uint64_t real_size_byte;
+	uint64_t fake_size_byte;
+	uint64_t address_mask;
 };
 
 static inline struct file_device *dev_fdev(struct device *dev)
@@ -110,30 +105,12 @@ static inline struct file_device *dev_fdev(struct device *dev)
 static int fdev_read_block(struct device *dev, char *buf, uint64_t block)
 {
 	struct file_device *fdev = dev_fdev(dev);
-	off_t offset = block * BLOCK_SIZE;
+	off_t offset = (block * BLOCK_SIZE) & fdev->address_mask;
 	int done;
 
-	switch (fdev->fake_type) {
-	case FKTY_BAD:
+	if ((uint64_t)offset >= fdev->real_size_byte) {
 		memset(buf, 0, BLOCK_SIZE);
 		return 0;
-
-	case FKTY_LIMBO:
-		if (offset >= GIGABYTE * fdev->file_size_gb) {
-			memset(buf, 0, BLOCK_SIZE);
-			return 0;
-		}
-		break;
-
-	case FKTY_WRAPAROUND:
-		offset %= GIGABYTE * fdev->file_size_gb;
-		/* Fall through. */
-
-	case FKTY_GOOD:
-		break;
-
-	default:
-		assert(0);
 	}
 
 	assert(lseek(fdev->fd, offset, SEEK_SET) == offset);
@@ -168,72 +145,49 @@ static int write_all(int fd, const char *buf, int count)
 static int fdev_write_block(struct device *dev, const char *buf, uint64_t block)
 {
 	struct file_device *fdev = dev_fdev(dev);
-	off_t offset = block * BLOCK_SIZE;
-
-	switch (fdev->fake_type) {
-	case FKTY_BAD:
+	off_t offset = (block * BLOCK_SIZE) & fdev->address_mask;
+	if ((uint64_t)offset >= fdev->real_size_byte)
 		return 0;
-
-	case FKTY_LIMBO:
-		if (offset >= GIGABYTE * fdev->file_size_gb)
-			return 0;
-		break;
-
-	case FKTY_WRAPAROUND:
-		offset %= GIGABYTE * fdev->file_size_gb;
-		/* Fall through. */
-
-	case  FKTY_GOOD:
-		break;
-
-	default:
-		assert(0);
-	}
-
 	assert(lseek(fdev->fd, offset, SEEK_SET) == offset);
 	return write_all(fdev->fd, buf, BLOCK_SIZE);
 }
 
 static uint64_t fdev_get_size_byte(struct device *dev)
 {
-	return (uint64_t)dev_fdev(dev)->fake_size_gb * GIGABYTE;
+	return dev_fdev(dev)->fake_size_byte;
 }
 
 static void fdev_free(struct device *dev)
 {
 	struct file_device *fdev = dev_fdev(dev);
 	assert(!close(fdev->fd));
-	free((void *)fdev->filename);
 }
 
-/* XXX Validate parameters.
- * For example, if @fake_type == FKTY_GOOD, then @fake_size_gb and
- * fake_size_gb must be equal.
- */
 struct device *create_file_device(const char *filename,
-	int file_size_gb, int fake_size_gb, enum fake_type fake_type)
+	uint64_t real_size_byte, uint64_t fake_size_byte, int wrap)
 {
-	struct file_device *fdev = malloc(sizeof(*fdev));
-	if (!fdev)
+	struct file_device *fdev;
+
+	if (!dev_param_valid(real_size_byte, fake_size_byte, wrap))
 		goto error;
 
-	fdev->filename = strdup(filename);
-	if (!fdev->filename)
-		goto fdev;
+	fdev = malloc(sizeof(*fdev));
+	if (!fdev)
+		goto error;
 
 	fdev->fd = open(filename, O_RDWR | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR);
 	if (fdev->fd < 0) {
 		err(errno, "Can't create file `%s'", filename);
-		goto filename;
+		goto fdev;
 	}
 	/* Unlinking the file now guarantees that it won't exist if
 	 * there is a crash.
 	 */
 	assert(!unlink(filename));
 
-	fdev->file_size_gb = file_size_gb;
-	fdev->fake_size_gb = fake_size_gb;
-	fdev->fake_type = fake_type;
+	fdev->real_size_byte = real_size_byte;
+	fdev->fake_size_byte = fake_size_byte;
+	fdev->address_mask = (((uint64_t)1) << wrap) - 1;
 
 	fdev->dev.read_block = fdev_read_block;
 	fdev->dev.write_block = fdev_write_block;
@@ -243,8 +197,6 @@ struct device *create_file_device(const char *filename,
 
 	return &fdev->dev;
 
-filename:
-	free((void *)fdev->filename);
 fdev:
 	free(fdev);
 error:
