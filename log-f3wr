@@ -1,0 +1,5 @@
+#!/bin/bash
+LOG=$1
+f3write "${@:2}" 2>&1 | tee -a "${LOG}" && \
+echo -e "\n\n" >> "${LOG}" && \
+f3read  "${@:2}" 2>&1 | tee -a "${LOG}"

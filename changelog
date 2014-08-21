@@ -1,7 +1,7 @@
 Version 3.1 - Sep 21, 2014
 
     * add optional parameter --end-at=NUM to F3.
-    * add script f3write.h2w.
+    * add scripts f3write.h2w and log-f3wr.
     * unify Makefile.
     * general code review.
 
