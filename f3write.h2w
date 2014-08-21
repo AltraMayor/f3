@@ -1,4 +1,6 @@
 #!/bin/bash
-PATH=$1
-f3write $PATH && \
-truncate --size=/1M "$PATH/*.h2w"
+
+f3write "$@" || exit 1
+
+FILES=("${@: -1}/*.h2w")
+truncate --size=/1M $FILES
