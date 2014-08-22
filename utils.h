@@ -67,4 +67,8 @@ static inline int posix_fadvise(int fd, off_t offset, off_t len, int advice)
 
 #endif	/* Apple Macintosh */
 
+#ifdef __FreeBSD__
+#define fdatasync(fd) fsync(fd)
+#endif
+
 #endif	/* HEADER_UTILS_H */
