@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200112L
+#define _XOPEN_SOURCE 600
 
 #include <assert.h>
 #include <stdint.h>
@@ -9,10 +10,10 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/statvfs.h>
+#include <sys/time.h>
 #include <errno.h>
 #include <unistd.h>
 #include <err.h>
-#include <alloca.h>
 #include <math.h>
 
 #include "utils.h"
@@ -341,7 +342,7 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 	char *full_fn;
 	const char *filename;
 	int fd, fine;
-	void *buf;
+	char buf[fw->block_size];
 	size_t remaining;
 	uint64_t offset;
 	ssize_t written;
@@ -350,7 +351,7 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 	assert(size % fw->block_size == 0);
 
 	/* Create the file. */
-	
+
 	fine = 0;
 	full_fn = full_fn_from_number(&filename, path, number);
 	assert(full_fn);
@@ -365,10 +366,6 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 		err(errno, "Can't create file %s", full_fn);
 	}
 	assert(fd >= 0);
-
-	/* Obtain the buffer. */
-	buf = alloca(fw->block_size);
-	assert(buf);
 
 	/* Write content. */
 	fine = 1;
@@ -392,7 +389,7 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 	assert(!fine || remaining == 0);
 	end_measurement(fd, fw);
 	close(fd);
-	
+
 	printf("OK!\n");
 
 out:
