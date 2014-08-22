@@ -75,12 +75,52 @@ enum fake_type dev_param_to_type(uint64_t real_size_byte,
 }
 
 struct device {
-	int (*read_block)(struct device *dev, char *buf, uint64_t block);
-	int (*write_block)(struct device *dev, const char *buf, uint64_t block);
+	uint64_t	size_byte;
+
+	int (*read_block)(struct device *dev, char *buf, uint64_t offset);
+	int (*write_block)(struct device *dev, const char *buf,
+		uint64_t offset);
 	int (*reset)(struct device *dev);
-	uint64_t (*get_size_byte)(struct device *dev);
 	void (*free)(struct device *dev);
 };
+
+static inline uint64_t dev_get_size_byte(struct device *dev)
+{
+	return dev->size_byte;
+}
+
+static inline int dev_read_block(struct device *dev, char *buf, uint64_t block)
+{
+	uint64_t offset = block << BLOCK_SIZE_BITS;
+	assert(offset + BLOCK_SIZE <= dev->size_byte);
+	return dev->read_block(dev, buf, offset);
+}
+
+static inline int dev_write_block(struct device *dev, const char *buf,
+	uint64_t block)
+{
+	uint64_t offset = block << BLOCK_SIZE_BITS;
+	assert(offset + BLOCK_SIZE <= dev->size_byte);
+	return dev->write_block(dev, buf, offset);
+}
+
+static inline int dev_reset(struct device *dev)
+{
+	return dev->reset ? dev->reset(dev) : 0;
+}
+
+static inline int dev_write_and_reset(struct device *dev, const char *buf,
+	uint64_t block)
+{
+	int rc = dev_write_block(dev, buf, block);
+	return rc ? rc : dev_reset(dev);
+}
+
+void free_device(struct device *dev)
+{
+	dev->free(dev);
+	free(dev);
+}
 
 struct file_device {
 	/* This must be the first field. See dev_fdev() for details. */
@@ -88,7 +128,6 @@ struct file_device {
 
 	int fd;
 	uint64_t real_size_byte;
-	uint64_t fake_size_byte;
 	uint64_t address_mask;
 };
 
@@ -102,18 +141,22 @@ static inline struct file_device *dev_fdev(struct device *dev)
 /* XXX Replace expressions block * BLOCK_SIZE to block << BLOCK_SIZE_BITS,
  * and do the same for expressions like GIGABYTE * variable.
  */
-static int fdev_read_block(struct device *dev, char *buf, uint64_t block)
+static int fdev_read_block(struct device *dev, char *buf, uint64_t offset)
 {
 	struct file_device *fdev = dev_fdev(dev);
-	off_t offset = (block * BLOCK_SIZE) & fdev->address_mask;
+	off_t off_ret;
 	int done;
 
-	if ((uint64_t)offset >= fdev->real_size_byte) {
+	offset &= fdev->address_mask;
+	if (offset >= fdev->real_size_byte) {
 		memset(buf, 0, BLOCK_SIZE);
 		return 0;
 	}
 
-	assert(lseek(fdev->fd, offset, SEEK_SET) == offset);
+	off_ret = lseek(fdev->fd, offset, SEEK_SET);
+	if (off_ret < 0)
+		return - errno;
+	assert((uint64_t)off_ret == offset);
 
 	done = 0;
 	do {
@@ -142,19 +185,22 @@ static int write_all(int fd, const char *buf, int count)
 	return 0;
 }
 
-static int fdev_write_block(struct device *dev, const char *buf, uint64_t block)
+static int fdev_write_block(struct device *dev, const char *buf,
+	uint64_t offset)
 {
 	struct file_device *fdev = dev_fdev(dev);
-	off_t offset = (block * BLOCK_SIZE) & fdev->address_mask;
-	if ((uint64_t)offset >= fdev->real_size_byte)
-		return 0;
-	assert(lseek(fdev->fd, offset, SEEK_SET) == offset);
-	return write_all(fdev->fd, buf, BLOCK_SIZE);
-}
+	off_t off_ret;
 
-static uint64_t fdev_get_size_byte(struct device *dev)
-{
-	return dev_fdev(dev)->fake_size_byte;
+	offset &= fdev->address_mask;
+	if (offset >= fdev->real_size_byte)
+		return 0;
+
+	off_ret = lseek(fdev->fd, offset, SEEK_SET);
+	if (off_ret < 0)
+		return - errno;
+	assert((uint64_t)off_ret == offset);
+
+	return write_all(fdev->fd, buf, BLOCK_SIZE);
 }
 
 static void fdev_free(struct device *dev)
@@ -186,13 +232,12 @@ struct device *create_file_device(const char *filename,
 	assert(!unlink(filename));
 
 	fdev->real_size_byte = real_size_byte;
-	fdev->fake_size_byte = fake_size_byte;
 	fdev->address_mask = (((uint64_t)1) << wrap) - 1;
 
+	fdev->dev.size_byte = fake_size_byte;
 	fdev->dev.read_block = fdev_read_block;
 	fdev->dev.write_block = fdev_write_block;
 	fdev->dev.reset = NULL;
-	fdev->dev.get_size_byte = fdev_get_size_byte;
 	fdev->dev.free = fdev_free;
 
 	return &fdev->dev;
@@ -229,19 +274,24 @@ static int read_all(int fd, char *buf, int count)
 	return 0;
 }
 
-static int bdev_read_block(struct device *dev, char *buf, uint64_t block)
+static int bdev_read_block(struct device *dev, char *buf, uint64_t offset)
 {
 	struct block_device *bdev = dev_bdev(dev);
-	off_t offset = block * BLOCK_SIZE;
-	assert(lseek(bdev->fd, offset, SEEK_SET) == offset);
+	off_t off_ret = lseek(bdev->fd, offset, SEEK_SET);
+	if (off_ret < 0)
+		return - errno;
+	assert((uint64_t)off_ret == offset);
 	return read_all(bdev->fd, buf, BLOCK_SIZE);
 }
 
-static int bdev_write_block(struct device *dev, const char *buf, uint64_t block)
+static int bdev_write_block(struct device *dev, const char *buf,
+	uint64_t offset)
 {
 	struct block_device *bdev = dev_bdev(dev);
-	off_t offset = block * BLOCK_SIZE;
-	assert(lseek(bdev->fd, offset, SEEK_SET) == offset);
+	off_t off_ret = lseek(bdev->fd, offset, SEEK_SET);
+	if (off_ret < 0)
+		return - errno;
+	assert((uint64_t)off_ret == offset);
 	return write_all(bdev->fd, buf, BLOCK_SIZE);
 }
 
@@ -259,13 +309,6 @@ static int bdev_reset(struct device *dev)
 	if (bdev->fd < 0)
 		err(errno, "Can't REopen device `%s'", bdev->filename);
 	return 0;
-}
-
-static uint64_t bdev_get_size_byte(struct device *dev)
-{
-	uint64_t size_byte;
-	assert(!ioctl(dev_bdev(dev)->fd, BLKGETSIZE64, &size_byte));
-	return size_byte;
 }
 
 static void bdev_free(struct device *dev)
@@ -400,10 +443,10 @@ struct device *create_block_device(const char *filename)
 		goto usb_filename;
 	}
 
+	assert(!ioctl(bdev->fd, BLKGETSIZE64, &bdev->dev.size_byte));
 	bdev->dev.read_block = bdev_read_block;
 	bdev->dev.write_block = bdev_write_block;
 	bdev->dev.reset	= bdev_reset;
-	bdev->dev.get_size_byte = bdev_get_size_byte;
 	bdev->dev.free = bdev_free;
 
 	free((void *)usb_filename);
@@ -419,40 +462,6 @@ bdev:
 	free(bdev);
 error:
 	return NULL;
-}
-
-void free_device(struct device *dev)
-{
-	dev->free(dev);
-	free(dev);
-}
-
-static inline int dev_read_block(struct device *dev, char *buf, uint64_t block)
-{
-	return dev->read_block(dev, buf, block);
-}
-
-static inline int dev_write_block(struct device *dev, const char *buf,
-	uint64_t block)
-{
-	return dev->write_block(dev, buf, block);
-}
-
-static inline int dev_reset(struct device *dev)
-{
-	return dev->reset ? dev->reset(dev) : 0;
-}
-
-static inline int dev_write_and_reset(struct device *dev, const char *buf,
-	uint64_t block)
-{
-	int rc = dev_write_block(dev, buf, block);
-	return rc ? rc : dev_reset(dev);
-}
-
-static inline uint64_t dev_get_size_byte(struct device *dev)
-{
-	return dev->get_size_byte(dev);
 }
 
 static inline int equal_blk(const char *b1, const char *b2)
