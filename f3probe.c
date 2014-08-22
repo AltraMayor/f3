@@ -159,10 +159,19 @@ struct unit_test_item {
 };
 
 static const struct unit_test_item ftype_to_params[] = {
-	{1ULL << 30,	1ULL << 30,	30},
+	/* Smallest good drive. */
+	{1ULL << 20,	1ULL << 20,	20},
+
+	/* Bad drive. */
 	{0,		1ULL << 30,	30},
-	{1ULL << 30,	1ULL << 34,	34},
+
+	/* Geometry of a real limbo drive. */
+	{1777645568ULL,	32505331712ULL,	35},
+
+	/* Geometry of a real wraparound drive. */
 	{1ULL << 31,	1ULL << 34,	31},
+
+	/* Chain drive. */
 	{1ULL << 31,	1ULL << 34,	32},
 };
 

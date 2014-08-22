@@ -463,14 +463,14 @@ static inline int equal_blk(const char *b1, const char *b2)
 /* Minimum size of the memory chunk used to build flash drives.
  * It must be a power of two.
  */
-#define	INITAIL_HIGH_BIT	(1 << 20)
+#define	INITAIL_HIGH_BIT_BLOCK	(1 << (20 - BLOCK_SIZE_BITS))
 
 /* Caller must guarantee that the left bock is good, and written. */
 static int search_wrap(struct device *dev,
 	uint64_t left_pos, uint64_t *pright_pos,
 	const char *stamp_blk, char *probe_blk)
 {
-	uint64_t high_bit = INITAIL_HIGH_BIT;
+	uint64_t high_bit = INITAIL_HIGH_BIT_BLOCK;
 	uint64_t pos = high_bit + left_pos;
 
 	/* The left block must be in the first memory chunk. */
@@ -622,12 +622,13 @@ static inline void *align_512(void *p)
 	return (void *)(   (ip + 511) & ~511   );
 }
 
-/* XXX Properly handle read and write errors. */
+/* XXX Properly handle read and write errors.
+ * Review each assert to check if them can be removed.
+ */
 void probe_device(struct device *dev, uint64_t *preal_size_byte,
 	uint64_t *pannounced_size_byte, int *pwrap)
 {
 	uint64_t dev_size_byte = dev_get_size_byte(dev);
-	int dev_size_block = dev_size_byte >> BLOCK_SIZE_BITS;
 	char stack[511 + 2 * BLOCK_SIZE];
 	char *stamp_blk, *probe_blk;
 	/* XXX Don't write at the very beginning of the card to avoid
@@ -636,7 +637,8 @@ void probe_device(struct device *dev, uint64_t *preal_size_byte,
 	 * to become "smarter".
 	 * And try a couple of blocks if they keep failing.
 	 */
-	uint64_t left_pos = 10, right_pos = dev_size_block - 1;
+	uint64_t left_pos = 10;
+	uint64_t right_pos = (dev_size_byte >> BLOCK_SIZE_BITS) - 1;
 
 	assert(dev_size_byte % BLOCK_SIZE == 0);
 	assert(left_pos < right_pos);
