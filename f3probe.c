@@ -46,11 +46,13 @@ static struct argp_option options[] = {
 		"Enable debugging; only needed if none --debug-* option used",
 		1},
 	{"debug-real-size",	'r',	"SIZE_BYTE",	OPTION_HIDDEN,
-		"Real size of the emulated flash",	0},
+		"Real size of the emulated drive",	0},
 	{"debug-fake-size",	'f',	"SIZE_BYTE",	OPTION_HIDDEN,
-		"Fake size of the emulated flash",	0},
+		"Fake size of the emulated drive",	0},
 	{"debug-wrap",		'w',	"N",		OPTION_HIDDEN,
-		"Wrap parameter of the emulated flash",	0},
+		"Wrap parameter of the emulated drive",	0},
+	{"debug-block-order",	'b',	"ORDER",	OPTION_HIDDEN,
+		"Block size the emulated drive is 2^ORDER Byte", 0},
 	{"debug-unit-test",	'u',	NULL,		OPTION_HIDDEN,
 		"Run a unit test; it ignores all other debug options",	0},
 	{ 0 }
@@ -66,6 +68,7 @@ struct args {
 	uint64_t	real_size_byte;
 	uint64_t	fake_size_byte;
 	int		wrap;
+	int		block_order;
 };
 
 static long long arg_to_long_long(const struct argp_state *state,
@@ -118,6 +121,15 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		args->debug = true;
 		break;
 
+	case 'b':
+		ll = arg_to_long_long(state, arg);
+		if (ll < 9 || ll > 20)
+			argp_error(state,
+				"Block order must be in the interval [9, 20]");
+		args->block_order = ll;
+		args->debug = true;
+		break;
+
 	case 'u':
 		args->unit_test = true;
 		break;
@@ -139,7 +151,8 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 				"The block device was not specified");
 		if (args->debug &&
 			!dev_param_valid(args->real_size_byte,
-				args->fake_size_byte, args->wrap))
+				args->fake_size_byte, args->wrap,
+				args->block_order))
 			argp_error(state,
 				"The debugging parameters are not valid");
 		break;
@@ -156,23 +169,27 @@ struct unit_test_item {
 	uint64_t	real_size_byte;
 	uint64_t	fake_size_byte;
 	int		wrap;
+	int		block_order;
 };
 
 static const struct unit_test_item ftype_to_params[] = {
 	/* Smallest good drive. */
-	{1ULL << 20,	1ULL << 20,	20},
+	{1ULL << 20,	1ULL << 20,	20,	9},
+
+	/* Good, 4KB-block, 1GB drive. */
+	{1ULL << 30,	1ULL << 30,	30,	12},
 
 	/* Bad drive. */
-	{0,		1ULL << 30,	30},
+	{0,		1ULL << 30,	30,	9},
 
 	/* Geometry of a real limbo drive. */
-	{1777645568ULL,	32505331712ULL,	35},
+	{1777645568ULL,	32505331712ULL,	35,	9},
 
 	/* Geometry of a real wraparound drive. */
-	{1ULL << 31,	1ULL << 34,	31},
+	{1ULL << 31,	1ULL << 34,	31,	9},
 
 	/* Chain drive. */
-	{1ULL << 31,	1ULL << 34,	32},
+	{1ULL << 31,	1ULL << 34,	32,	9},
 };
 
 #define UNIT_TEST_N_CASES \
@@ -184,7 +201,8 @@ static int unit_test(const char *filename)
 	for (i = 0; i < UNIT_TEST_N_CASES; i++) {
 		const struct unit_test_item *item = &ftype_to_params[i];
 		enum fake_type origin_type = dev_param_to_type(
-			item->real_size_byte, item->fake_size_byte, item->wrap);
+			item->real_size_byte, item->fake_size_byte,
+			item->wrap, item->block_order);
 		double f_real = item->real_size_byte;
 		double f_fake = item->fake_size_byte;
 		const char *unit_real = adjust_unit(&f_real);
@@ -192,35 +210,40 @@ static int unit_test(const char *filename)
 
 		enum fake_type fake_type;
 		uint64_t real_size_byte, announced_size_byte;
-		int wrap;
+		int wrap, block_order;
 		struct device *dev;
 
 		dev = create_file_device(filename, item->real_size_byte,
-			item->fake_size_byte, item->wrap);
+			item->fake_size_byte, item->wrap, item->block_order);
 		assert(dev);
-		probe_device(dev, &real_size_byte, &announced_size_byte, &wrap);
+		probe_device(dev, &real_size_byte, &announced_size_byte,
+			&wrap, &block_order);
 		free_device(dev);
 		fake_type = dev_param_to_type(real_size_byte,
-			announced_size_byte, wrap);
+			announced_size_byte, wrap, block_order);
 
 		/* Report */
-		printf("Test %i (type %s, real-size=%.2f %s, fake-size=%.2f %s, module=2^%i)\n",
-			i + 1, fake_type_to_name(origin_type),
-			f_real, unit_real, f_fake, unit_fake, item->wrap);
+		printf("Test %i\t\ttype/real size/fake size/module/block size\n",
+			i + 1);
+		printf("\t\t%s/%.2f %s/%.2f %s/2^%i Byte/2^%i Byte\n",
+			fake_type_to_name(origin_type),
+			f_real, unit_real, f_fake, unit_fake, item->wrap,
+			item->block_order);
 		if (real_size_byte == item->real_size_byte &&
 			announced_size_byte == item->fake_size_byte &&
-			wrap == item->wrap) {
+			wrap == item->wrap &&
+			block_order == item->block_order) {
 			success++;
-			printf("\tPerfect!\n\n");
+			printf("\t\tPerfect!\n\n");
 		} else {
 			double ret_f_real = real_size_byte;
 			double ret_f_fake = announced_size_byte;
 			const char *ret_unit_real = adjust_unit(&ret_f_real);
 			const char *ret_unit_fake = adjust_unit(&ret_f_fake);
-			printf("\tFound type %s, real size %.2f %s, fake size %.2f %s, and module 2^%i\n\n",
+			printf("\tError\t%s/%.2f %s/%.2f %s/2^%i Byte/2^%i Byte\n\n",
 				fake_type_to_name(fake_type),
 				ret_f_real, ret_unit_real,
-				ret_f_fake, ret_unit_fake, wrap);
+				ret_f_fake, ret_unit_fake, wrap, block_order);
 		}
 	}
 
@@ -233,13 +256,20 @@ static int unit_test(const char *filename)
 	return 0;
 }
 
-static void report(const char *prefix, uint64_t bytes)
+static void report_size(const char *prefix, uint64_t bytes)
 {
-	double f = (double)bytes;
+	double f = bytes;
 	const char *unit = adjust_unit(&f);
 	assert(bytes % SECTOR_SIZE == 0);
-	printf("%s %.2f %s (%" PRIu64 " sectors)\n", prefix, f, unit,
+	printf("%s %.2f %s (%" PRIu64 " sector)\n", prefix, f, unit,
 		bytes / SECTOR_SIZE);
+}
+
+static void report_order(const char *prefix, int order)
+{
+	double f = (1ULL << order);
+	const char *unit = adjust_unit(&f);
+	printf("%s %.2f %s (2^%i Byte)\n", prefix, f, unit, order);
 }
 
 static int test_device(struct args *args)
@@ -249,20 +279,21 @@ static int test_device(struct args *args)
 	struct device *dev;
 	enum fake_type fake_type;
 	uint64_t real_size_byte, announced_size_byte;
-	int wrap;
+	int wrap, block_order;
 
 	dev = args->debug
 		? create_file_device(args->filename, args->real_size_byte,
-			args->fake_size_byte, args->wrap)
+			args->fake_size_byte, args->wrap, args->block_order)
 		: create_block_device(args->filename);
 	assert(dev);
 	assert(!gettimeofday(&t1, NULL));
-	probe_device(dev, &real_size_byte, &announced_size_byte, &wrap);
+	probe_device(dev, &real_size_byte, &announced_size_byte,
+		&wrap, &block_order);
 	assert(!gettimeofday(&t2, NULL));
 	free_device(dev);
 
 	fake_type = dev_param_to_type(real_size_byte, announced_size_byte,
-		wrap);
+		wrap, block_order);
 	switch (fake_type) {
 	case FKTY_GOOD:
 		printf("Good news: The device `%s' is the real thing\n",
@@ -284,9 +315,10 @@ static int test_device(struct args *args)
 
 	time_s = (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec)/1000000.;
 	printf("\nDevice geometry:\n");
-	report("\t   *Real* size:", real_size_byte);
-	report("\tAnnounced size:", announced_size_byte);
-	printf("\t        Module: 2^%i\n", wrap);
+	 report_size("\t   *Real* size:", real_size_byte);
+	 report_size("\tAnnounced size:", announced_size_byte);
+	report_order("\t        Module:", wrap);
+	report_order("\t    Block size:", block_order);
 	printf("\nProbe time: %.2f seconds\n", time_s);
 	return 0;
 }
@@ -300,6 +332,7 @@ int main(int argc, char **argv)
 		.real_size_byte	= 1ULL << 31,
 		.fake_size_byte	= 1ULL << 34,
 		.wrap		= 31,
+		.block_order	= 9,
 	};
 
 	/* Read parameters. */

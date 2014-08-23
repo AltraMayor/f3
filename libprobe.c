@@ -36,10 +36,18 @@ const char *fake_type_to_name(enum fake_type fake_type)
 }
 
 int dev_param_valid(uint64_t real_size_byte,
-	uint64_t announced_size_byte, int wrap)
+	uint64_t announced_size_byte, int wrap, int block_order)
 {
+	int block_size;
+
 	/* Check general ranges. */
-	if (real_size_byte > announced_size_byte || wrap < 0 || wrap >= 64)
+	if (real_size_byte > announced_size_byte || wrap < 0 || wrap >= 64 ||
+		block_order < 9 || block_order > 20)
+		return false;
+
+	/* Check alignment of the sizes. */
+	block_size = 1 << block_order;
+	if (real_size_byte % block_size || announced_size_byte % block_size)
 		return false;
 
 	/* If good, @wrap must make sense. */
@@ -52,11 +60,12 @@ int dev_param_valid(uint64_t real_size_byte,
 }
 
 enum fake_type dev_param_to_type(uint64_t real_size_byte,
-	uint64_t announced_size_byte, int wrap)
+	uint64_t announced_size_byte, int wrap, int block_order)
 {
 	uint64_t two_wrap;
 
-	assert(dev_param_valid(real_size_byte, announced_size_byte, wrap));
+	assert(dev_param_valid(real_size_byte, announced_size_byte,
+		wrap, block_order));
 
 	if (real_size_byte == announced_size_byte)
 		return FKTY_GOOD;
@@ -76,9 +85,11 @@ enum fake_type dev_param_to_type(uint64_t real_size_byte,
 
 struct device {
 	uint64_t	size_byte;
+	int		block_order;
 
-	int (*read_block)(struct device *dev, char *buf, uint64_t offset);
-	int (*write_block)(struct device *dev, const char *buf,
+	int (*read_block)(struct device *dev, char *buf, int length,
+		uint64_t offset);
+	int (*write_block)(struct device *dev, const char *buf, int length,
 		uint64_t offset);
 	int (*reset)(struct device *dev);
 	void (*free)(struct device *dev);
@@ -89,19 +100,31 @@ static inline uint64_t dev_get_size_byte(struct device *dev)
 	return dev->size_byte;
 }
 
+static inline int dev_get_block_order(struct device *dev)
+{
+	return dev->block_order;
+}
+
+static inline int dev_get_block_size(struct device *dev)
+{
+	return 1 << dev->block_order;
+}
+
 static inline int dev_read_block(struct device *dev, char *buf, uint64_t block)
 {
-	uint64_t offset = block << BLOCK_SIZE_BITS;
-	assert(offset + BLOCK_SIZE <= dev->size_byte);
-	return dev->read_block(dev, buf, offset);
+	const int block_size = 1 << dev->block_order;
+	uint64_t offset = block << dev->block_order;
+	assert(offset + block_size <= dev->size_byte);
+	return dev->read_block(dev, buf, block_size, offset);
 }
 
 static inline int dev_write_block(struct device *dev, const char *buf,
 	uint64_t block)
 {
-	uint64_t offset = block << BLOCK_SIZE_BITS;
-	assert(offset + BLOCK_SIZE <= dev->size_byte);
-	return dev->write_block(dev, buf, offset);
+	const int block_size = 1 << dev->block_order;
+	uint64_t offset = block << dev->block_order;
+	assert(offset + block_size <= dev->size_byte);
+	return dev->write_block(dev, buf, block_size, offset);
 }
 
 static inline int dev_reset(struct device *dev)
@@ -136,12 +159,8 @@ static inline struct file_device *dev_fdev(struct device *dev)
 	return (struct file_device *)dev;
 }
 
-#define GIGABYTE	(1 << 30)
-
-/* XXX Replace expressions block * BLOCK_SIZE to block << BLOCK_SIZE_BITS,
- * and do the same for expressions like GIGABYTE * variable.
- */
-static int fdev_read_block(struct device *dev, char *buf, uint64_t offset)
+static int fdev_read_block(struct device *dev, char *buf, int length,
+	uint64_t offset)
 {
 	struct file_device *fdev = dev_fdev(dev);
 	off_t off_ret;
@@ -149,7 +168,7 @@ static int fdev_read_block(struct device *dev, char *buf, uint64_t offset)
 
 	offset &= fdev->address_mask;
 	if (offset >= fdev->real_size_byte) {
-		memset(buf, 0, BLOCK_SIZE);
+		memset(buf, 0, length);
 		return 0;
 	}
 
@@ -160,16 +179,16 @@ static int fdev_read_block(struct device *dev, char *buf, uint64_t offset)
 
 	done = 0;
 	do {
-		ssize_t rc = read(fdev->fd, buf + done, BLOCK_SIZE - done);
+		ssize_t rc = read(fdev->fd, buf + done, length - done);
 		assert(rc >= 0);
 		if (!rc) {
 			/* Tried to read beyond the end of the file. */
 			assert(!done);
-			memset(buf, 0, BLOCK_SIZE);
-			done += BLOCK_SIZE;
+			memset(buf, 0, length);
+			done += length;
 		}
 		done += rc;
-	} while (done < BLOCK_SIZE);
+	} while (done < length);
 
 	return 0;
 }
@@ -185,7 +204,7 @@ static int write_all(int fd, const char *buf, int count)
 	return 0;
 }
 
-static int fdev_write_block(struct device *dev, const char *buf,
+static int fdev_write_block(struct device *dev, const char *buf, int length,
 	uint64_t offset)
 {
 	struct file_device *fdev = dev_fdev(dev);
@@ -200,7 +219,7 @@ static int fdev_write_block(struct device *dev, const char *buf,
 		return - errno;
 	assert((uint64_t)off_ret == offset);
 
-	return write_all(fdev->fd, buf, BLOCK_SIZE);
+	return write_all(fdev->fd, buf, length);
 }
 
 static void fdev_free(struct device *dev)
@@ -210,11 +229,12 @@ static void fdev_free(struct device *dev)
 }
 
 struct device *create_file_device(const char *filename,
-	uint64_t real_size_byte, uint64_t fake_size_byte, int wrap)
+	uint64_t real_size_byte, uint64_t fake_size_byte, int wrap,
+	int block_order)
 {
 	struct file_device *fdev;
 
-	if (!dev_param_valid(real_size_byte, fake_size_byte, wrap))
+	if (!dev_param_valid(real_size_byte, fake_size_byte, wrap, block_order))
 		goto error;
 
 	fdev = malloc(sizeof(*fdev));
@@ -235,6 +255,7 @@ struct device *create_file_device(const char *filename,
 	fdev->address_mask = (((uint64_t)1) << wrap) - 1;
 
 	fdev->dev.size_byte = fake_size_byte;
+	fdev->dev.block_order = block_order;
 	fdev->dev.read_block = fdev_read_block;
 	fdev->dev.write_block = fdev_write_block;
 	fdev->dev.reset = NULL;
@@ -274,17 +295,7 @@ static int read_all(int fd, char *buf, int count)
 	return 0;
 }
 
-static int bdev_read_block(struct device *dev, char *buf, uint64_t offset)
-{
-	struct block_device *bdev = dev_bdev(dev);
-	off_t off_ret = lseek(bdev->fd, offset, SEEK_SET);
-	if (off_ret < 0)
-		return - errno;
-	assert((uint64_t)off_ret == offset);
-	return read_all(bdev->fd, buf, BLOCK_SIZE);
-}
-
-static int bdev_write_block(struct device *dev, const char *buf,
+static int bdev_read_block(struct device *dev, char *buf, int length,
 	uint64_t offset)
 {
 	struct block_device *bdev = dev_bdev(dev);
@@ -292,7 +303,18 @@ static int bdev_write_block(struct device *dev, const char *buf,
 	if (off_ret < 0)
 		return - errno;
 	assert((uint64_t)off_ret == offset);
-	return write_all(bdev->fd, buf, BLOCK_SIZE);
+	return read_all(bdev->fd, buf, length);
+}
+
+static int bdev_write_block(struct device *dev, const char *buf, int length,
+	uint64_t offset)
+{
+	struct block_device *bdev = dev_bdev(dev);
+	off_t off_ret = lseek(bdev->fd, offset, SEEK_SET);
+	if (off_ret < 0)
+		return - errno;
+	assert((uint64_t)off_ret == offset);
+	return write_all(bdev->fd, buf, length);
 }
 
 static inline int bdev_open(const char *filename)
@@ -394,6 +416,28 @@ static char *map_block_to_usb_dev(const char *block_dev)
 	return usb_dev_path;
 }
 
+/* Count the number of 1 bits. */
+static int pop(uint64_t x)
+{
+	int n = 0;
+	while (x) {
+		n++;
+		x = x & (x - 1);
+	}
+	return n;
+}
+
+static int ilog2(uint64_t x)
+{
+	x = x | (x >>  1);
+	x = x | (x >>  2);
+	x = x | (x >>  4);
+	x = x | (x >>  8);
+	x = x | (x >> 16);
+	x = x | (x >> 32);
+	return pop(x) - 1;
+}
+
 /* XXX Test if it's a device, or a partition.
  * If a partition, warn user, and ask for confirmation before
  * going ahead.
@@ -409,6 +453,7 @@ struct device *create_block_device(const char *filename)
 {
 	const char *usb_filename;
 	struct block_device *bdev;
+	int block_size;
 
 	bdev = malloc(sizeof(*bdev));
 	if (!bdev)
@@ -444,6 +489,11 @@ struct device *create_block_device(const char *filename)
 	}
 
 	assert(!ioctl(bdev->fd, BLKGETSIZE64, &bdev->dev.size_byte));
+
+	assert(!ioctl(bdev->fd, BLKBSZGET, &block_size));
+	bdev->dev.block_order = ilog2(block_size);
+	assert(block_size == (1 << bdev->dev.block_order));
+
 	bdev->dev.read_block = bdev_read_block;
 	bdev->dev.write_block = bdev_write_block;
 	bdev->dev.reset	= bdev_reset;
@@ -464,22 +514,27 @@ error:
 	return NULL;
 }
 
-static inline int equal_blk(const char *b1, const char *b2)
+static inline int equal_blk(struct device *dev, const char *b1, const char *b2)
 {
-	return !memcmp(b1, b2, BLOCK_SIZE);
+	return !memcmp(b1, b2, dev_get_block_size(dev));
 }
 
 /* Minimum size of the memory chunk used to build flash drives.
  * It must be a power of two.
  */
-#define	INITAIL_HIGH_BIT_BLOCK	(1 << (20 - BLOCK_SIZE_BITS))
+static inline uint64_t initial_high_bit_block(struct device *dev)
+{
+	int block_order = dev_get_block_order(dev);
+	assert(block_order <= 20);
+	return 1ULL << (20 - block_order);
+}
 
 /* Caller must guarantee that the left bock is good, and written. */
 static int search_wrap(struct device *dev,
 	uint64_t left_pos, uint64_t *pright_pos,
 	const char *stamp_blk, char *probe_blk)
 {
-	uint64_t high_bit = INITAIL_HIGH_BIT_BLOCK;
+	uint64_t high_bit = initial_high_bit_block(dev);
 	uint64_t pos = high_bit + left_pos;
 
 	/* The left block must be in the first memory chunk. */
@@ -493,7 +548,7 @@ static int search_wrap(struct device *dev,
 			dev_read_block(dev, probe_blk, pos))
 			return true;
 		/* XXX Deal with flipped bit on reception. */
-		if (equal_blk(stamp_blk, probe_blk)) {
+		if (equal_blk(dev, stamp_blk, probe_blk)) {
 			/* XXX Test wraparound hypothesis. */
 			*pright_pos = high_bit - 1;
 			return false;
@@ -506,11 +561,13 @@ static int search_wrap(struct device *dev,
 }
 
 /* Return true if @b1 and b2 are at most @tolerance_byte bytes different. */
-static int similar_blk(const char *b1, const char *b2, int tolerance_byte)
+static int similar_blk(struct device *dev, const char *b1, const char *b2,
+	int tolerance_byte)
 {
+	const int block_size = dev_get_block_size(dev);
 	int i;
 
-	for (i = 0; i < BLOCK_SIZE; i++) {
+	for (i = 0; i < block_size; i++) {
 		if (*b1 != *b2) {
 			tolerance_byte--;
 			if (tolerance_byte <= 0)
@@ -543,11 +600,11 @@ static int test_block(struct device *dev,
 		dev_read_block(dev, probe_blk, pos))
 		return true;
 
-	if (equal_blk(stamp_blk, probe_blk))
+	if (equal_blk(dev, stamp_blk, probe_blk))
 		return false;
 
 	/* Save time with certainly damaged blocks. */
-	if (!similar_blk(stamp_blk, probe_blk, 8)) {
+	if (!similar_blk(dev, stamp_blk, probe_blk, 8)) {
 		/* The probe block is damaged. */
 		return true;
 	}
@@ -557,7 +614,7 @@ static int test_block(struct device *dev,
 	 */
 	return 	dev_write_and_reset(dev, stamp_blk, pos) ||
 		dev_read_block(dev, probe_blk, pos)  ||
-		!equal_blk(stamp_blk, probe_blk);
+		!equal_blk(dev, stamp_blk, probe_blk);
 }
 
 /* Caller must guarantee that the left bock is good, and written. */
@@ -583,28 +640,6 @@ static int search_edge(struct device *dev,
 static void fill_buffer(char *buf, int len)
 {
 	memset(buf, 0xAA, len);
-}
-
-/* Count the number of 1 bits. */
-static int pop(uint64_t x)
-{
-	int n = 0;
-	while (x) {
-		n++;
-		x = x & (x - 1);
-	}
-	return n;
-}
-
-static int ilog2(uint64_t x)
-{
-	x = x | (x >>  1);
-	x = x | (x >>  2);
-	x = x | (x >>  4);
-	x = x | (x >>  8);
-	x = x | (x >> 16);
-	x = x | (x >> 32);
-	return pop(x) - 1;
 }
 
 /* Least power of 2 greater than or equal to x. */
@@ -635,10 +670,12 @@ static inline void *align_512(void *p)
  * Review each assert to check if them can be removed.
  */
 void probe_device(struct device *dev, uint64_t *preal_size_byte,
-	uint64_t *pannounced_size_byte, int *pwrap)
+	uint64_t *pannounced_size_byte, int *pwrap, int *pblock_order)
 {
 	uint64_t dev_size_byte = dev_get_size_byte(dev);
-	char stack[511 + 2 * BLOCK_SIZE];
+	const int block_size = dev_get_block_size(dev);
+	const int block_order = dev_get_block_order(dev);
+	char stack[511 + (2 << block_order)];
 	char *stamp_blk, *probe_blk;
 	/* XXX Don't write at the very beginning of the card to avoid
 	 * losing the partition table.
@@ -647,9 +684,9 @@ void probe_device(struct device *dev, uint64_t *preal_size_byte,
 	 * And try a couple of blocks if they keep failing.
 	 */
 	uint64_t left_pos = 10;
-	uint64_t right_pos = (dev_size_byte >> BLOCK_SIZE_BITS) - 1;
+	uint64_t right_pos = (dev_size_byte >> block_order) - 1;
 
-	assert(dev_size_byte % BLOCK_SIZE == 0);
+	assert(dev_size_byte % block_size == 0);
 	assert(left_pos < right_pos);
 
 	/* Aligning these pointers is necessary to directly read and write
@@ -657,9 +694,9 @@ void probe_device(struct device *dev, uint64_t *preal_size_byte,
 	 * For the file device, this is superfluous.
 	 */
 	stamp_blk = align_512(stack);
-	probe_blk = stamp_blk + BLOCK_SIZE;
+	probe_blk = stamp_blk + block_size;
 
-	fill_buffer(stamp_blk, BLOCK_SIZE);
+	fill_buffer(stamp_blk, block_size);
 
 	/* Make sure that there is at least a good block at the beginning
 	 * of the drive.
@@ -673,13 +710,15 @@ void probe_device(struct device *dev, uint64_t *preal_size_byte,
 	if (search_edge(dev, &left_pos, right_pos, stamp_blk, probe_blk))
 		goto bad;
 
-	*preal_size_byte = (left_pos + 1) << BLOCK_SIZE_BITS;
+	*preal_size_byte = (left_pos + 1) << block_order;
 	*pannounced_size_byte = dev_size_byte;
-	*pwrap = ceiling_log2(right_pos * BLOCK_SIZE);
+	*pwrap = ceiling_log2(right_pos << block_order);
+	*pblock_order = block_order;
 	return;
 
 bad:
 	*preal_size_byte = 0;
 	*pannounced_size_byte = dev_size_byte;
 	*pwrap = ceiling_log2(dev_size_byte);
+	*pblock_order = block_order;
 }
