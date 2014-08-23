@@ -25,22 +25,6 @@ static char doc[] = "F3 Probe -- probe a block device for "
 	"counterfeit flash memory. If counterfeit, "
 	"f3probe identifies the fake type and real memory size";
 
-/* XXX Have an option to back up blocks on memory, or in a file to be
- * restored at the end of the test, or even later in the case of the file.
- *
- * The default should be off, so user must know that she is calling for
- * this extra function; it is important for when things go wrong during
- * the test.
- *
- * f3probe should preallocate memory to avoid failing during the test
- * when memory is low.
- * If memory cannot be preallocated, suggest using a file.
- *
- * When this option is not being used, warning that all data will be lost,
- * ask for confirmation, and suggest the option.
- * A way to disable confirmation is necessary for scripting.
- */
-
 static struct argp_option options[] = {
 	{"debug",		'd',	NULL,		OPTION_HIDDEN,
 		"Enable debugging; only needed if none --debug-* option used",
@@ -52,9 +36,13 @@ static struct argp_option options[] = {
 	{"debug-wrap",		'w',	"N",		OPTION_HIDDEN,
 		"Wrap parameter of the emulated drive",	0},
 	{"debug-block-order",	'b',	"ORDER",	OPTION_HIDDEN,
-		"Block size the emulated drive is 2^ORDER Byte", 0},
+		"Block size the emulated drive is 2^ORDER Byte",	0},
+	{"debug-keep-file",	'k',	NULL,		OPTION_HIDDEN,
+		"Don't remove file used for emulating the drive",	0},
 	{"debug-unit-test",	'u',	NULL,		OPTION_HIDDEN,
 		"Run a unit test; it ignores all other debug options",	0},
+	{"destructive",		'n',	NULL,		0,
+		"Do not restore blocks of the device after probing it",	2},
 	{ 0 }
 };
 
@@ -64,7 +52,9 @@ struct args {
 	/* Debugging options. */
 	bool		unit_test;
 	bool		debug;
-	/* 2 bytes free. */
+	bool		keep_file;
+	bool		save;
+
 	uint64_t	real_size_byte;
 	uint64_t	fake_size_byte;
 	int		wrap;
@@ -130,8 +120,16 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		args->debug = true;
 		break;
 
+	case 'k':
+		args->keep_file = true;
+		break;
+
 	case 'u':
 		args->unit_test = true;
+		break;
+
+	case 'n':
+		args->save = false;
 		break;
 
 	case ARGP_KEY_INIT:
@@ -214,7 +212,8 @@ static int unit_test(const char *filename)
 		struct device *dev;
 
 		dev = create_file_device(filename, item->real_size_byte,
-			item->fake_size_byte, item->wrap, item->block_order);
+			item->fake_size_byte, item->wrap, item->block_order,
+			false);
 		assert(dev);
 		probe_device(dev, &real_size_byte, &announced_size_byte,
 			&wrap, &block_order);
@@ -283,13 +282,24 @@ static int test_device(struct args *args)
 
 	dev = args->debug
 		? create_file_device(args->filename, args->real_size_byte,
-			args->fake_size_byte, args->wrap, args->block_order)
+			args->fake_size_byte, args->wrap, args->block_order,
+			args->keep_file)
 		: create_block_device(args->filename);
 	assert(dev);
+
+	if (args->save) {
+		dev = create_safe_device(dev, probe_device_max_blocks(dev));
+		assert(dev);
+	}
+
 	assert(!gettimeofday(&t1, NULL));
 	probe_device(dev, &real_size_byte, &announced_size_byte,
 		&wrap, &block_order);
 	assert(!gettimeofday(&t2, NULL));
+	/* Keep free_device() as close of probe_device() as possible to
+	 * make sure that the written blocks are recovered when
+	 * @args->save is true.
+	 */
 	free_device(dev);
 
 	fake_type = dev_param_to_type(real_size_byte, announced_size_byte,
@@ -329,6 +339,8 @@ int main(int argc, char **argv)
 		/* Defaults. */
 		.unit_test	= false,
 		.debug		= false,
+		.keep_file	= false,
+		.save		= true,
 		.real_size_byte	= 1ULL << 31,
 		.fake_size_byte	= 1ULL << 34,
 		.wrap		= 31,
