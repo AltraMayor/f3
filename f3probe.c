@@ -43,6 +43,8 @@ static struct argp_option options[] = {
 		"Run a unit test; it ignores all other debug options",	0},
 	{"destructive",		'n',	NULL,		0,
 		"Do not restore blocks of the device after probing it",	2},
+	{"manual-reset",	'm',	NULL,		0,
+		"Ask user to manually reset the drive",	0},
 	{ 0 }
 };
 
@@ -59,6 +61,9 @@ struct args {
 	uint64_t	fake_size_byte;
 	int		wrap;
 	int		block_order;
+
+	bool		manual_reset;
+	/* 3 free bytes. */
 };
 
 static long long arg_to_long_long(const struct argp_state *state,
@@ -130,6 +135,10 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 	case 'n':
 		args->save = false;
+		break;
+
+	case 'm':
+		args->manual_reset = true;
 		break;
 
 	case ARGP_KEY_INIT:
@@ -284,7 +293,7 @@ static int test_device(struct args *args)
 		? create_file_device(args->filename, args->real_size_byte,
 			args->fake_size_byte, args->wrap, args->block_order,
 			args->keep_file)
-		: create_block_device(args->filename);
+		: create_block_device(args->filename, args->manual_reset);
 	assert(dev);
 
 	if (args->save) {
@@ -345,6 +354,7 @@ int main(int argc, char **argv)
 		.fake_size_byte	= 1ULL << 34,
 		.wrap		= 31,
 		.block_order	= 9,
+		.manual_reset	= false,
 	};
 
 	/* Read parameters. */

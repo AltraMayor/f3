@@ -36,7 +36,7 @@ struct device *create_file_device(const char *filename,
 	uint64_t real_size_byte, uint64_t fake_size_byte, int wrap,
 	int block_order, int keep_file);
 
-struct device *create_block_device(const char *filename);
+struct device *create_block_device(const char *filename, int manual_reset);
 
 struct device *create_safe_device(struct device *dev, int max_blocks);
 

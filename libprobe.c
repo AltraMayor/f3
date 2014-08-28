@@ -324,6 +324,21 @@ static inline int bdev_open(const char *filename)
 	return open(filename, O_RDWR | O_DIRECT | O_SYNC);
 }
 
+/* XXX Monitor the USB subsytem to know when the drive was unplugged and
+ * plugged back to continue instead of waiting for a key.
+ */
+static int bdev_manual_reset(struct device *dev)
+{
+	struct block_device *bdev = dev_bdev(dev);
+	assert(!close(bdev->fd));
+	printf("Please unplug and plug back the USB drive, and press a key to continue...\n");
+	getchar();
+	bdev->fd = bdev_open(bdev->filename);
+	if (bdev->fd < 0)
+		err(errno, "Can't REopen device `%s'", bdev->filename);
+	return 0;
+}
+
 static int bdev_reset(struct device *dev)
 {
 	struct block_device *bdev = dev_bdev(dev);
@@ -338,8 +353,10 @@ static int bdev_reset(struct device *dev)
 static void bdev_free(struct device *dev)
 {
 	struct block_device *bdev = dev_bdev(dev);
-	assert(!close(bdev->hw_fd));
-	assert(!close(bdev->fd));
+	if (bdev->hw_fd >= 0)
+		assert(!close(bdev->hw_fd));
+	if (bdev->fd >= 0)
+		assert(!close(bdev->fd));
 	free((void *)bdev->filename);
 }
 
@@ -446,14 +463,14 @@ static int ilog2(uint64_t x)
  * Suggest how to call f3probe with the correct device name if
  * the block device is a partition.
  * Use udev to do these tests.
+ * Make sure that no partition of the drive is mounted.
  */
 /* XXX Test for write access of the block device to give
  * a nice error message.
  * If it fails, suggest running f3probe as root.
  */
-struct device *create_block_device(const char *filename)
+struct device *create_block_device(const char *filename, int manual_reset)
 {
-	const char *usb_filename;
 	struct block_device *bdev;
 	int block_size;
 
@@ -476,18 +493,25 @@ struct device *create_block_device(const char *filename)
 		goto fd;
 	}
 
-	/* XXX Add support for block devices backed by SCSI, SATA, and ATA. */
-	usb_filename = map_block_to_usb_dev(filename);
-	if (!usb_filename) {
-		err(EINVAL, "Block device `%s' is not backed by a USB device",
-			filename);
-		goto fd;
-	}
+	if (manual_reset) {
+		bdev->hw_fd = -1;
+		bdev->dev.reset	= bdev_manual_reset;
+	} else {
+		/* XXX Add support for block devices backed by SCSI and ATA. */
+		const char *usb_filename = map_block_to_usb_dev(filename);
+		if (!usb_filename) {
+			err(EINVAL, "Block device `%s' is not backed by a USB device",
+				filename);
+			goto fd;
+		}
 
-	bdev->hw_fd = open(usb_filename, O_WRONLY | O_NONBLOCK);
-	if (bdev->hw_fd < 0) {
-		err(errno, "Can't open device `%s'", usb_filename);
-		goto usb_filename;
+		bdev->hw_fd = open(usb_filename, O_WRONLY | O_NONBLOCK);
+		free((void *)usb_filename);
+		if (bdev->hw_fd < 0) {
+			err(errno, "Can't open device `%s'", usb_filename);
+			goto fd;
+		}
+		bdev->dev.reset = bdev_reset;
 	}
 
 	assert(!ioctl(bdev->fd, BLKGETSIZE64, &bdev->dev.size_byte));
@@ -498,14 +522,10 @@ struct device *create_block_device(const char *filename)
 
 	bdev->dev.read_block = bdev_read_block;
 	bdev->dev.write_block = bdev_write_block;
-	bdev->dev.reset	= bdev_reset;
 	bdev->dev.free = bdev_free;
 
-	free((void *)usb_filename);
 	return &bdev->dev;
 
-usb_filename:
-	free((void *)usb_filename);
 fd:
 	assert(!close(bdev->fd));
 filename:
