@@ -427,6 +427,13 @@ static int fill_fs(const char *path, long start_at, long end_at, int progress)
 		return 1;
 	}
 
+	/* If the amount of data to write is less than the space available,
+	 * update @free_space to improve estimate of time to finish.
+	 */
+	i = end_at - start_at + 1;
+	if (i > 0 && (uint64_t)i <= (free_space >> 30))
+		free_space = (uint64_t)i << 30;
+
 	init_flow(&fw, free_space, progress);
 	for (i = start_at; i <= end_at; i++)
 		if (!create_and_fill_file(path, i, GIGABYTES, &fw))
