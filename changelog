@@ -1,9 +1,9 @@
-Version 3.1 - Sep 21, 2014
+Version 4.0 - Sep 9, 2014
 
+    * add support for FreeBSD.
     * add optional parameter --end-at=NUM to F3.
     * add scripts f3write.h2w and log-f3wr.
     * unify Makefile.
-    * general code review.
 
 Version 3.0 - May 14, 2014
 
