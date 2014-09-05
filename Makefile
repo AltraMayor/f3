@@ -1,5 +1,5 @@
-CC = gcc
-CFLAGS = -std=c99 -Wall -Wextra -Wpedantic -MMD
+CC ?= gcc
+CFLAGS += -std=c99 -Wall -Wextra -pedantic -MMD
 
 TARGETS = f3write f3read
 
@@ -16,4 +16,4 @@ f3read: utils.o f3read.o
 PHONY: clean
 
 clean:
-	rm -f *.o $(TARGETS)
+	rm -f *.o *.d $(TARGETS)
