@@ -725,6 +725,63 @@ static inline int equal_blk(struct device *dev, const char *b1, const char *b2)
 	return !memcmp(b1, b2, dev_get_block_size(dev));
 }
 
+/* Return true if @b1 and b2 are at most @tolerance_byte bytes different. */
+static int similar_blk(struct device *dev, const char *b1, const char *b2,
+	int tolerance_byte)
+{
+	const int block_size = dev_get_block_size(dev);
+	int i;
+
+	for (i = 0; i < block_size; i++) {
+		if (*b1 != *b2) {
+			tolerance_byte--;
+			if (tolerance_byte <= 0)
+				return false;
+		}
+		b1++;
+		b2++;
+	}
+	return true;
+}
+
+/* Return true if the block at @pos is damaged. */
+static int test_block(struct device *dev,
+	const char *stamp_blk, char *probe_blk, uint64_t pos)
+{
+	/* Write block. */
+	if (dev_write_block(dev, stamp_blk, pos) &&
+		dev_write_block(dev, stamp_blk, pos))
+		return true;
+
+	/* Reset. */
+	if (dev_reset(dev) && dev_reset(dev))
+		return true;
+
+	/*
+	 *	Test block.
+	 */
+
+	if (dev_read_block(dev, probe_blk, pos) &&
+		dev_read_block(dev, probe_blk, pos))
+		return true;
+
+	if (equal_blk(dev, stamp_blk, probe_blk))
+		return false;
+
+	/* Save time with certainly damaged blocks. */
+	if (!similar_blk(dev, stamp_blk, probe_blk, 8)) {
+		/* The probe block is damaged. */
+		return true;
+	}
+
+	/* The probe block seems to be damaged.
+	 * Trying a second time...
+	 */
+	return 	dev_write_and_reset(dev, stamp_blk, pos) ||
+		dev_read_block(dev, probe_blk, pos)  ||
+		!equal_blk(dev, stamp_blk, probe_blk);
+}
+
 /* Minimum size of the memory chunk used to build flash drives.
  * It must be a power of two.
  */
@@ -766,61 +823,66 @@ static int search_wrap(struct device *dev,
 	return false;
 }
 
-/* Return true if @b1 and b2 are at most @tolerance_byte bytes different. */
-static int similar_blk(struct device *dev, const char *b1, const char *b2,
-	int tolerance_byte)
-{
-	const int block_size = dev_get_block_size(dev);
-	int i;
+#define TEST_N_BLOCKS	1024
 
-	for (i = 0; i < block_size; i++) {
-		if (*b1 != *b2) {
-			tolerance_byte--;
-			if (tolerance_byte <= 0)
-				return false;
-		}
-		b1++;
-		b2++;
-	}
-	return true;
+static int write_test_blocks(struct device *dev, const char *stamp_blk,
+	uint64_t left_pos, uint64_t right_pos,
+	uint64_t *pa, uint64_t *pb, uint64_t *pmax_idx)
+{
+	uint64_t pos = left_pos + 1;
+	uint64_t last_pos;
+
+	/* Find coeficients of function a*idx + b where idx <= max_idx. */
+	assert(left_pos < right_pos);
+	*pb = pos;
+	*pa = (right_pos - *pb) / TEST_N_BLOCKS;
+	*pa = !*pa ? 1ULL : *pa;
+	*pmax_idx = (right_pos - *pb) / *pa;
+	if (*pmax_idx >= TEST_N_BLOCKS)
+		*pmax_idx = TEST_N_BLOCKS - 1;
+	last_pos = *pa * *pmax_idx + *pb;
+	assert(last_pos <= right_pos);
+
+	/* Write test blocks. */
+	for (; pos <= last_pos; pos += *pa)
+		if (dev_write_block(dev, stamp_blk, pos) &&
+			dev_write_block(dev, stamp_blk, pos))
+			return true;
+	return false;
 }
 
-/* Return true if the block @pos is damaged. */
-static int test_block(struct device *dev,
+/* Return true if the test block at @pos is damaged. */
+static int test_test_block(struct device *dev,
 	const char *stamp_blk, char *probe_blk, uint64_t pos)
 {
-	/* Write block. */
-	if (dev_write_block(dev, stamp_blk, pos) &&
-		dev_write_block(dev, stamp_blk, pos))
-		return true;
-
-	/* Reset. */
-	if (dev_reset(dev) && dev_reset(dev))
-		return true;
-
-	/*
-	 *	Test block.
-	 */
-
 	if (dev_read_block(dev, probe_blk, pos) &&
 		dev_read_block(dev, probe_blk, pos))
 		return true;
 
-	if (equal_blk(dev, stamp_blk, probe_blk))
-		return false;
+	return !equal_blk(dev, stamp_blk, probe_blk);
+}
 
-	/* Save time with certainly damaged blocks. */
-	if (!similar_blk(dev, stamp_blk, probe_blk, 8)) {
-		/* The probe block is damaged. */
-		return true;
+static int probe_test_blocks(struct device *dev,
+	const char *stamp_blk, char *probe_blk,
+	uint64_t *pleft_pos, uint64_t *pright_pos,
+	uint64_t a, uint64_t b, uint64_t max_idx)
+{
+	/* Signed variables. */
+	int64_t left_idx = 0;
+	int64_t right_idx = max_idx;
+	int64_t idx = right_idx;
+	while (left_idx <= right_idx) {
+		uint64_t pos = a * idx + b;
+		if (test_test_block(dev, stamp_blk, probe_blk, pos)) {
+			right_idx = idx - 1;
+			*pright_pos = pos;
+		} else {
+			left_idx = idx + 1;
+			*pleft_pos = pos;
+		}
+		idx = (left_idx + right_idx) / 2;
 	}
-
-	/* The probe block seems to be damaged.
-	 * Trying a second time...
-	 */
-	return 	dev_write_and_reset(dev, stamp_blk, pos) ||
-		dev_read_block(dev, probe_blk, pos)  ||
-		!equal_blk(dev, stamp_blk, probe_blk);
+	return  false;
 }
 
 /* Caller must guarantee that the left bock is good, and written. */
@@ -828,15 +890,24 @@ static int search_edge(struct device *dev,
 	uint64_t *pleft_pos, uint64_t right_pos,
 	const char *stamp_blk, char *probe_blk)
 {
-	uint64_t pos = right_pos;
-	do {
-		if (test_block(dev, stamp_blk, probe_blk, pos))
-			right_pos = pos;
-		else
-			*pleft_pos = pos;
-		pos = (*pleft_pos + right_pos) / 2;
-	} while (right_pos - *pleft_pos >= 2);
-	return  false;
+	uint64_t gap = right_pos - *pleft_pos;
+	uint64_t prv_gap = gap + 1;
+	while (prv_gap > gap && gap >= 1) {
+		uint64_t a, b, max_idx;
+		if (write_test_blocks(dev, stamp_blk, *pleft_pos, right_pos,
+			&a, &b, &max_idx))
+			return true;
+		/* Reset. */
+		if (dev_reset(dev) && dev_reset(dev))
+			return true;
+		if (probe_test_blocks(dev, stamp_blk, probe_blk,
+			pleft_pos, &right_pos, a, b, max_idx))
+			return true;
+
+		prv_gap = gap;
+		gap = right_pos - *pleft_pos;
+	}
+	return false;
 }
 
 /* XXX Write random data to make it harder for fake chips to become "smarter".
@@ -868,7 +939,16 @@ static int ceiling_log2(uint64_t x)
 
 int probe_device_max_blocks(struct device *dev)
 {
-	return 4 * ceiling_log2(dev_get_size_byte(dev));
+	uint64_t num_blocks = dev_get_size_byte(dev) >>
+		dev_get_block_order(dev);
+	int num_blocks_order = ceiling_log2(num_blocks);
+	div_t div_num_passes = div(num_blocks_order, ilog2(TEST_N_BLOCKS));
+	int num_passes = div_num_passes.quot + (div_num_passes.rem ? 1 : 0);
+	return
+		/* search_wrap() */
+		1 +
+		/* Search_edge() */
+		num_passes * TEST_N_BLOCKS;
 }
 
 /* XXX Properly handle read and write errors.

@@ -229,13 +229,14 @@ static int unit_test(const char *filename)
 
 		enum fake_type fake_type;
 		uint64_t real_size_byte, announced_size_byte;
-		int wrap, block_order;
+		int wrap, block_order, max_probe_blocks;
 		struct device *dev;
 
 		dev = create_file_device(filename, item->real_size_byte,
 			item->fake_size_byte, item->wrap, item->block_order,
 			false);
 		assert(dev);
+		max_probe_blocks = probe_device_max_blocks(dev);
 		probe_device(dev, &real_size_byte, &announced_size_byte,
 			&wrap, &block_order);
 		free_device(dev);
@@ -254,7 +255,8 @@ static int unit_test(const char *filename)
 			wrap == item->wrap &&
 			block_order == item->block_order) {
 			success++;
-			printf("\t\tPerfect!\n\n");
+			printf("\t\tPerfect!\tMax # of probed blocks: %i\n\n",
+				max_probe_blocks);
 		} else {
 			double ret_f_real = real_size_byte;
 			double ret_f_fake = announced_size_byte;
