@@ -570,32 +570,58 @@ static inline void *align_512(void *p)
 	return (void *)(   (ip + 511) & ~511   );
 }
 
-static int sdev_write_block(struct device *dev, const char *buf, int length,
-	uint64_t offset)
+static int sdev_save_block(struct safe_device *sdev,
+	int length, uint64_t offset)
 {
-	struct safe_device *sdev = dev_sdev(dev);
 	const int block_order = dev_get_block_order(sdev->shadow_dev);
 	lldiv_t idx = lldiv(offset >> block_order, SDEV_BITMAP_BITS_PER_WORD);
 	SDEV_BITMAP_WORD set_bit = (SDEV_BITMAP_WORD)1 << idx.rem;
+	char *block;
+	int rc;
 
 	/* The current implementation doesn't support variable lengths. */
 	assert(length == dev_get_block_size(sdev->shadow_dev));
 
 	/* Is this block already saved? */
-	if (!(sdev->sb_bitmap[idx.quot] & set_bit)) {
-		/* No. Save this block. */
-		char *block = (char *)align_512(sdev->saved_blocks) +
-			(sdev->sb_n << block_order);
-		int rc;
-		assert(sdev->sb_n < sdev->sb_max);
-		rc = sdev->shadow_dev->read_block(sdev->shadow_dev, block,
-			length, offset);
-		if (rc)
-			return rc;
-		sdev->sb_bitmap[idx.quot] |= set_bit;
-		sdev->sb_offsets[sdev->sb_n] = offset;
-		sdev->sb_n++;
+	if (!sdev->sb_bitmap) {
+		int i;
+		/* Running without bitmap. */
+		for (i = 0; i < sdev->sb_n; i++)
+			if (sdev->sb_offsets[i] == offset) {
+				/* The block at @offset is already saved. */
+				return 0;
+			}
+	} else if (sdev->sb_bitmap[idx.quot] & set_bit) {
+		/* The block at @offset is already saved. */
+		return 0;
 	}
+
+	/* The block at @offset hasn't been saved before. Save this block. */
+	assert(sdev->sb_n < sdev->sb_max);
+	block = (char *)align_512(sdev->saved_blocks) +
+		(sdev->sb_n << block_order);
+	rc = sdev->shadow_dev->read_block(sdev->shadow_dev, block,
+		length, offset);
+	if (rc)
+		return rc;
+
+	/* Bookkeeping. */
+	if (sdev->sb_bitmap)
+		sdev->sb_bitmap[idx.quot] |= set_bit;
+	sdev->sb_offsets[sdev->sb_n] = offset;
+	sdev->sb_n++;
+	return 0;
+}
+
+static int sdev_write_block(struct device *dev, const char *buf, int length,
+	uint64_t offset)
+{
+	struct safe_device *sdev = dev_sdev(dev);
+	int rc;
+
+	rc = sdev_save_block(sdev, length, offset);
+	if (rc)
+		return rc;
 
 	return sdev->shadow_dev->write_block(sdev->shadow_dev, buf,
 		length, offset);
@@ -638,12 +664,11 @@ static void sdev_free(struct device *dev)
 	free_device(sdev->shadow_dev);
 }
 
-struct device *create_safe_device(struct device *dev, int max_blocks)
+struct device *create_safe_device(struct device *dev, int max_blocks,
+	int min_memory)
 {
 	struct safe_device *sdev;
 	const int block_order = dev_get_block_order(dev);
-	lldiv_t idx = lldiv(dev_get_size_byte(dev) >> block_order,
-		SDEV_BITMAP_BITS_PER_WORD);
 	uint64_t length;
 
 	sdev = malloc(sizeof(*sdev));
@@ -659,11 +684,18 @@ struct device *create_safe_device(struct device *dev, int max_blocks)
 	if (!sdev->sb_offsets)
 		goto saved_blocks;
 
-	length = (idx.quot + (idx.rem ? 1 : 0)) * sizeof(SDEV_BITMAP_WORD);
-	sdev->sb_bitmap = malloc(length);
-	if (!sdev->sb_bitmap)
-		goto offsets;
-	memset(sdev->sb_bitmap, 0, length);
+	if (!min_memory) {
+		lldiv_t idx = lldiv(dev_get_size_byte(dev) >> block_order,
+			SDEV_BITMAP_BITS_PER_WORD);
+		length = (idx.quot + (idx.rem ? 1 : 0)) *
+			sizeof(SDEV_BITMAP_WORD);
+		sdev->sb_bitmap = malloc(length);
+		if (!sdev->sb_bitmap)
+			goto offsets;
+		memset(sdev->sb_bitmap, 0, length);
+	} else {
+		sdev->sb_bitmap = NULL;
+	}
 
 	sdev->shadow_dev = dev;
 	sdev->sb_n = 0;

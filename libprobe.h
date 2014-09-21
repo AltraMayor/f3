@@ -38,7 +38,8 @@ struct device *create_file_device(const char *filename,
 
 struct device *create_block_device(const char *filename, int manual_reset);
 
-struct device *create_safe_device(struct device *dev, int max_blocks);
+struct device *create_safe_device(struct device *dev, int max_blocks,
+	int min_memory);
 
 void free_device(struct device *dev);
 

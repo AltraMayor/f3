@@ -43,6 +43,8 @@ static struct argp_option options[] = {
 		"Run a unit test; it ignores all other debug options",	0},
 	{"destructive",		'n',	NULL,		0,
 		"Do not restore blocks of the device after probing it",	2},
+	{"min-memory",		'l',	NULL,		0,
+		"Trade speed for less use of memory",		0},
 	{"manual-reset",	'm',	NULL,		0,
 		"Ask user to manually reset the drive",	0},
 	{ 0 }
@@ -52,18 +54,21 @@ struct args {
 	char		*filename;
 
 	/* Debugging options. */
-	bool		unit_test;
 	bool		debug;
+	bool		unit_test;
 	bool		keep_file;
-	bool		save;
 
+	/* Behavior options. */
+	bool		save;
+	bool		min_mem;
+	bool		manual_reset;
+	/* 2 free bytes. */
+
+	/* Geometry. */
 	uint64_t	real_size_byte;
 	uint64_t	fake_size_byte;
 	int		wrap;
 	int		block_order;
-
-	bool		manual_reset;
-	/* 3 free bytes. */
 };
 
 static long long arg_to_long_long(const struct argp_state *state,
@@ -137,6 +142,10 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		args->save = false;
 		break;
 
+	case 'l':
+		args->min_mem = true;
+		break;
+
 	case 'm':
 		args->manual_reset = true;
 		break;
@@ -192,11 +201,14 @@ static const struct unit_test_item ftype_to_params[] = {
 	/* Geometry of a real limbo drive. */
 	{1777645568ULL,	32505331712ULL,	35,	9},
 
-	/* Geometry of a real wraparound drive. */
+	/* Wraparound drive. */
 	{1ULL << 31,	1ULL << 34,	31,	9},
 
 	/* Chain drive. */
 	{1ULL << 31,	1ULL << 34,	32,	9},
+
+	/* Extreme case for memory usage (limbo drive). */
+	{1ULL << 20,	1ULL << 40,	40,	9},
 };
 
 #define UNIT_TEST_N_CASES \
@@ -297,7 +309,17 @@ static int test_device(struct args *args)
 	assert(dev);
 
 	if (args->save) {
-		dev = create_safe_device(dev, probe_device_max_blocks(dev));
+		dev = create_safe_device(dev, probe_device_max_blocks(dev),
+			args->min_mem);
+		if (!dev) {
+			if (!args->min_mem)
+				fprintf(stderr, "Out of memory, try `f3probe --min-memory %s'\n",
+					args->filename);
+			else
+				fprintf(stderr, "Out of memory, try `f3probe --destructive %s'\nPlease back your data up before using option --destructive.\nAlternatively, you could use a machine with more memory to run f3probe.\n",
+					args->filename);
+			exit(1);
+		}
 		assert(dev);
 	}
 
@@ -346,15 +368,16 @@ int main(int argc, char **argv)
 {
 	struct args args = {
 		/* Defaults. */
-		.unit_test	= false,
 		.debug		= false,
+		.unit_test	= false,
 		.keep_file	= false,
 		.save		= true,
+		.min_mem	= false,
+		.manual_reset	= false,
 		.real_size_byte	= 1ULL << 31,
 		.fake_size_byte	= 1ULL << 34,
 		.wrap		= 31,
 		.block_order	= 9,
-		.manual_reset	= false,
 	};
 
 	/* Read parameters. */
