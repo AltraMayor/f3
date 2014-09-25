@@ -10,6 +10,7 @@
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdint.h>
@@ -534,6 +535,133 @@ bdev:
 	free(bdev);
 error:
 	return NULL;
+}
+
+struct perf_device {
+	/* This must be the first field. See dev_pdev() for details. */
+	struct device		dev;
+
+	struct device		*shadow_dev;
+
+	uint64_t		read_count;
+	uint64_t		read_time_us;
+	uint64_t		write_count;
+	uint64_t		write_time_us;
+	uint64_t		reset_count;
+	uint64_t		reset_time_us;
+};
+
+static inline struct perf_device *dev_pdev(struct device *dev)
+{
+	return (struct perf_device *)dev;
+}
+
+static inline uint64_t diff_timeval_us(const struct timeval *t1,
+	const struct timeval *t2)
+{
+	return (t2->tv_sec - t1->tv_sec) * 1000000ULL +
+		t2->tv_usec - t1->tv_usec;
+}
+
+static int pdev_read_block(struct device *dev, char *buf, int length,
+	uint64_t offset)
+{
+	struct perf_device *pdev = dev_pdev(dev);
+	struct timeval t1, t2;
+	int rc;
+
+	assert(!gettimeofday(&t1, NULL));
+	rc = pdev->shadow_dev->read_block(pdev->shadow_dev, buf,
+		length, offset);
+	assert(!gettimeofday(&t2, NULL));
+	pdev->read_count++;
+	pdev->read_time_us += diff_timeval_us(&t1, &t2);
+	return rc;
+}
+
+static int pdev_write_block(struct device *dev, const char *buf, int length,
+	uint64_t offset)
+{
+	struct perf_device *pdev = dev_pdev(dev);
+	struct timeval t1, t2;
+	int rc;
+
+	assert(!gettimeofday(&t1, NULL));
+	rc = pdev->shadow_dev->write_block(pdev->shadow_dev, buf,
+		length, offset);
+	assert(!gettimeofday(&t2, NULL));
+	pdev->write_count++;
+	pdev->write_time_us += diff_timeval_us(&t1, &t2);
+	return rc;
+}
+
+static int pdev_reset(struct device *dev)
+{
+	struct perf_device *pdev = dev_pdev(dev);
+	struct timeval t1, t2;
+	int rc;
+
+	assert(!gettimeofday(&t1, NULL));
+	rc = dev_reset(pdev->shadow_dev);
+	assert(!gettimeofday(&t2, NULL));
+	pdev->reset_count++;
+	pdev->reset_time_us += diff_timeval_us(&t1, &t2);
+	return rc;
+}
+
+static void pdev_free(struct device *dev)
+{
+	struct perf_device *pdev = dev_pdev(dev);
+	free_device(pdev->shadow_dev);
+}
+
+struct device *create_perf_device(struct device *dev)
+{
+	struct perf_device *pdev;
+
+	pdev = malloc(sizeof(*pdev));
+	if (!pdev)
+		return NULL;
+
+	pdev->shadow_dev = dev;
+	pdev->read_count = 0;
+	pdev->read_time_us = 0;
+	pdev->write_count = 0;
+	pdev->write_time_us = 0;
+	pdev->reset_count = 0;
+	pdev->reset_time_us = 0;
+
+	pdev->dev.size_byte = dev->size_byte;
+	pdev->dev.block_order = dev->block_order;
+	pdev->dev.read_block = pdev_read_block;
+	pdev->dev.write_block = pdev_write_block;
+	pdev->dev.reset	= pdev_reset;
+	pdev->dev.free = pdev_free;
+
+	return &pdev->dev;
+}
+
+void perf_device_sample(struct device *dev,
+	uint64_t *pread_count, uint64_t *pread_time_us,
+	uint64_t *pwrite_count, uint64_t *pwrite_time_us,
+	uint64_t *preset_count, uint64_t *preset_time_us)
+{
+	struct perf_device *pdev = dev_pdev(dev);
+
+	if (pread_count)
+		*pread_count = pdev->read_count;
+	if (pread_time_us)
+		*pread_time_us = pdev->read_time_us;
+
+	if (pwrite_count)
+		*pwrite_count = pdev->write_count;
+	if (pwrite_time_us)
+		*pwrite_time_us = pdev->write_time_us;
+
+	if (preset_count)
+		*preset_count = pdev->reset_count;
+	if (preset_time_us)
+		*preset_time_us = pdev->reset_time_us;
 }
 
 #define SDEV_BITMAP_WORD		long

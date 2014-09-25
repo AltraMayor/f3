@@ -47,6 +47,8 @@ static struct argp_option options[] = {
 		"Trade speed for less use of memory",		0},
 	{"manual-reset",	'm',	NULL,		0,
 		"Ask user to manually reset the drive",	0},
+	{"time-ops",		't',	NULL,		0,
+		"Time reads, writes, and resets",		0},
 	{ 0 }
 };
 
@@ -62,7 +64,8 @@ struct args {
 	bool		save;
 	bool		min_mem;
 	bool		manual_reset;
-	/* 2 free bytes. */
+	bool		time_ops;
+	/* 1 free bytes. */
 
 	/* Geometry. */
 	uint64_t	real_size_byte;
@@ -148,6 +151,10 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 	case 'm':
 		args->manual_reset = true;
+		break;
+
+	case 't':
+		args->time_ops = true;
 		break;
 
 	case ARGP_KEY_INIT:
@@ -294,14 +301,24 @@ static void report_order(const char *prefix, int order)
 	printf("%s %.2f %s (2^%i Byte)\n", prefix, f, unit, order);
 }
 
+static void report_ops(const char *op, uint64_t count, uint64_t time_us)
+{
+	printf("Probe %s op: count=%" PRIu64
+		", total time=%.2fs, avg op time=%.2fms\n",
+		op, count, time_us / 1e6, (time_us / count) / 1e3);
+}
+
 static int test_device(struct args *args)
 {
 	struct timeval t1, t2;
 	double time_s;
-	struct device *dev;
+	struct device *dev, *pdev;
 	enum fake_type fake_type;
 	uint64_t real_size_byte, announced_size_byte;
 	int wrap, block_order;
+	uint64_t read_count, read_time_us;
+	uint64_t write_count, write_time_us;
+	uint64_t reset_count, reset_time_us;
 
 	dev = args->debug
 		? create_file_device(args->filename, args->real_size_byte,
@@ -309,6 +326,14 @@ static int test_device(struct args *args)
 			args->keep_file)
 		: create_block_device(args->filename, args->manual_reset);
 	assert(dev);
+
+	if (args->time_ops) {
+		pdev = create_perf_device(dev);
+		assert(pdev);
+		dev = pdev;
+	} else {
+		pdev = NULL;
+	}
 
 	if (args->save) {
 		dev = create_safe_device(dev, probe_device_max_blocks(dev),
@@ -333,7 +358,18 @@ static int test_device(struct args *args)
 	 * make sure that the written blocks are recovered when
 	 * @args->save is true.
 	 */
+	if (args->time_ops)
+		perf_device_sample(pdev,
+			&read_count, &read_time_us,
+			&write_count, &write_time_us,
+			&reset_count, &reset_time_us);
+	if (args->save) {
+		printf("Probe finished, recovering blocks...");
+		fflush(stdout);
+	}
 	free_device(dev);
+	if (args->save)
+		printf(" Done\n\n");
 
 	fake_type = dev_param_to_type(real_size_byte, announced_size_byte,
 		wrap, block_order);
@@ -363,6 +399,12 @@ static int test_device(struct args *args)
 	report_order("\t        Module:", wrap);
 	report_order("\t    Block size:", block_order);
 	printf("\nProbe time: %.2f seconds\n", time_s);
+
+	if (args->time_ops) {
+		report_ops("read", read_count, read_time_us);
+		report_ops("write", write_count, write_time_us);
+		report_ops("reset", reset_count, reset_time_us);
+	}
 	return 0;
 }
 
@@ -376,6 +418,7 @@ int main(int argc, char **argv)
 		.save		= true,
 		.min_mem	= false,
 		.manual_reset	= false,
+		.time_ops	= false,
 		.real_size_byte	= 1ULL << 31,
 		.fake_size_byte	= 1ULL << 34,
 		.wrap		= 31,
