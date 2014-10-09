@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <assert.h>
+#include <math.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -142,7 +143,8 @@ static inline int dev_write_and_reset(struct device *dev, const char *buf,
 
 void free_device(struct device *dev)
 {
-	dev->free(dev);
+	if (dev->free)
+		dev->free(dev);
 	free(dev);
 }
 
@@ -615,6 +617,19 @@ static void pdev_free(struct device *dev)
 	free_device(pdev->shadow_dev);
 }
 
+/* Detach the shadow device of @pdev, free @pdev, and return
+ * the shadow device.
+ */
+static struct device *pdev_detach_and_free(struct device *dev)
+{
+	struct perf_device *pdev = dev_pdev(dev);
+	struct device *shadow_dev = pdev->shadow_dev;
+	pdev->shadow_dev = NULL;
+	pdev->dev.free = NULL;
+	free_device(&pdev->dev);
+	return shadow_dev;
+}
+
 struct device *create_perf_device(struct device *dev)
 {
 	struct perf_device *pdev;
@@ -951,28 +966,122 @@ static int search_wrap(struct device *dev,
 	return false;
 }
 
-#define TEST_N_BLOCKS	1024
+#define MAX_N_BLOCK_ORDER	10
 
+static uint64_t estimate_best_n_block(struct device *dev)
+{
+	uint64_t write_count, write_time_us;
+	uint64_t reset_count, reset_time_us;
+	double t_w_us, t_2w_us, t_r_us;
+	uint64_t n_block_order;
+
+	perf_device_sample(dev, NULL, NULL, &write_count, &write_time_us,
+		&reset_count, &reset_time_us);
+	if (!write_count || !reset_count) {
+		/* There is not enough measurements. */
+		return (1 << 2) - 1;
+	}
+
+	/* Let 2^n be the total number of blocks on the drive.
+	 * Let p be the total number of passes.
+	 * Let w = (2^m - 1) be the number of blocks written on each pass,
+	 *   where m >= 1.
+	 *
+	 * A pass is an iteration of the loop in search_edge(), that is,
+	 * a call to write_test_blocks(), dev_reset(), and probe_test_blocks().
+	 *
+	 * The reason to have w = (2^m - 1) instead of w = 2^m is because
+	 * the former leads to a clean relationship between n, p, and m
+	 * when m is constant: 2^n / (w + 1)^p = 1 => p = n/m
+	 *
+	 * Let Tr be the time to reset the device.
+	 * Let Tw be the time to write a block to @dev.
+	 * Let Tw' be the time to write a block to the underlying device
+	 *   of @dev, that is, without overhead due to chaining multiple
+	 *   struct device. For example, when struct safe_device is used
+	 *   Tw > Tw'.
+	 * Let Trd be the time to read a block from @dev.
+	 *
+	 * Notice that each single-block pass reduces the search space in half,
+	 * and that to reduce the search space in half writing blocks,
+	 * one has to increase m of one.
+	 *
+	 * Thus, in order to be better writing more blocks than
+	 * going for another pass, the following relation must be true:
+	 *
+	 * Tr + Tw + Tw' >= (w - 1)(Tw + Tw')
+	 *
+	 * The relation above assumes Trd = 0.
+	 *
+	 * The left side of the relation above is the time to do _another_
+	 * pass writing a single block, whereas the right side is the time to
+	 * stay in the same pass and write (w - 1) more blocks.
+	 * In order words, if there is no advantage to write more blocks,
+	 * we stick to single-block passes.
+	 *
+	 * Tw' is there to account for any operation that writes
+	 * the blocks back (e.g. using struct safe_device), otherwise
+	 * processing operations related per written blocks that is not
+	 * being accounted for (e.g. reading the blocks back to test).
+	 *
+	 * Solving the relation for w: w <= Tr/(Tw + Tw') + 2
+	 *
+	 * However, we are not interested in any w, but only those of
+	 * of the form (2^m - 1) to make sure that we are not better off
+	 * calling another pass. Thus, solving the previous relation for m:
+	 *
+	 * m <= log_2(Tr/(Tw + Tw') + 3)
+	 *
+	 * We approximate Tw' making it equal to Tw.
+	 */
+	t_w_us = (double)write_time_us / write_count;
+	t_r_us = (double)reset_time_us / reset_count;
+	t_2w_us = t_w_us > 0. ? 2. * t_w_us : 1.; /* Avoid zero division. */
+	n_block_order = ilog2(round(t_r_us / t_2w_us + 3.));
+
+	/* Bound the maximum number of blocks per pass to limit
+	 * the necessary amount of memory struct safe_device pre-allocates.
+	 */
+	if (n_block_order > MAX_N_BLOCK_ORDER)
+		n_block_order = MAX_N_BLOCK_ORDER;
+
+	return (1 << n_block_order) - 1;
+}
+
+/* Write blocks whose offsets are after @left_pos but
+ * less or equal to @right_pos.
+ */
 static int write_test_blocks(struct device *dev, const char *stamp_blk,
 	uint64_t left_pos, uint64_t right_pos,
 	uint64_t *pa, uint64_t *pb, uint64_t *pmax_idx)
 {
-	uint64_t pos = left_pos + 1;
-	uint64_t last_pos;
+	uint64_t pos, last_pos;
+	uint64_t n_block = estimate_best_n_block(dev);
+
+	assert(n_block >= 1);
 
 	/* Find coeficients of function a*idx + b where idx <= max_idx. */
 	assert(left_pos < right_pos);
-	*pb = pos;
-	*pa = (right_pos - *pb) / TEST_N_BLOCKS;
+	*pb = left_pos + 1;
+	*pa = round((right_pos - *pb) / (n_block + 1.));
 	*pa = !*pa ? 1ULL : *pa;
 	*pmax_idx = (right_pos - *pb) / *pa;
-	if (*pmax_idx >= TEST_N_BLOCKS)
-		*pmax_idx = TEST_N_BLOCKS - 1;
+	if (*pmax_idx >= n_block) {
+		/* Shift the zero of the function to the right.
+		 * This avoids picking the leftmost block when a more
+		 * informative block to the right is available.
+		 * This also biases toward righter blocks,
+		 * what improves the time to test good flash drives.
+		 */
+		*pb += *pa;
+
+		*pmax_idx = n_block - 1;
+	}
 	last_pos = *pa * *pmax_idx + *pb;
 	assert(last_pos <= right_pos);
 
 	/* Write test blocks. */
-	for (; pos <= last_pos; pos += *pa)
+	for (pos = *pb; pos <= last_pos; pos += *pa)
 		if (dev_write_block(dev, stamp_blk, pos) &&
 			dev_write_block(dev, stamp_blk, pos))
 			return true;
@@ -1069,20 +1178,35 @@ int probe_device_max_blocks(struct device *dev)
 {
 	uint64_t num_blocks = dev_get_size_byte(dev) >>
 		dev_get_block_order(dev);
-	int num_blocks_order = ceiling_log2(num_blocks);
-	div_t div_num_passes = div(num_blocks_order, ilog2(TEST_N_BLOCKS));
-	int num_passes = div_num_passes.quot + (div_num_passes.rem ? 1 : 0);
+	int n = ceiling_log2(num_blocks);
+
+	/* Make sure that there is no overflow in the formula below.
+	 * The number 10 is arbitrary here, that is, it's not tight.
+	 */
+	assert(MAX_N_BLOCK_ORDER < sizeof(int) - 10);
+
 	return
 		/* search_wrap() */
 		1 +
-		/* Search_edge() */
-		num_passes * TEST_N_BLOCKS;
+		/* Search_edge()
+		 *
+		 * The number of used blocks is (p * w); see comments in
+		 * estimate_best_n_block() for the definition of the variables.
+		 *
+		 * p * w = n/m * (2^m - 1) < n/m * 2^m = n * (2^m / m)
+		 *
+		 * Let f(m) be 2^m / m. One can prove that f(m + 1) >= f(m)
+		 * for all m >= 1. Therefore, the following bound is true.
+		 *
+		 * p * w < n * f(max_m)
+		 */
+		((n << MAX_N_BLOCK_ORDER) / MAX_N_BLOCK_ORDER);
 }
 
 /* XXX Properly handle read and write errors.
  * Review each assert to check if them can be removed.
  */
-void probe_device(struct device *dev, uint64_t *preal_size_byte,
+int probe_device(struct device *dev, uint64_t *preal_size_byte,
 	uint64_t *pannounced_size_byte, int *pwrap, int *pblock_order)
 {
 	uint64_t dev_size_byte = dev_get_size_byte(dev);
@@ -1098,9 +1222,14 @@ void probe_device(struct device *dev, uint64_t *preal_size_byte,
 	 */
 	uint64_t left_pos = 10;
 	uint64_t right_pos = (dev_size_byte >> block_order) - 1;
+	struct device *pdev;
 
 	assert(dev_size_byte % block_size == 0);
 	assert(left_pos < right_pos);
+
+	pdev = create_perf_device(dev);
+	if (!pdev)
+		return -ENOMEM;
 
 	/* Aligning these pointers is necessary to directly read and write
 	 * the block device.
@@ -1114,24 +1243,28 @@ void probe_device(struct device *dev, uint64_t *preal_size_byte,
 	/* Make sure that there is at least a good block at the beginning
 	 * of the drive.
 	 */
-	if (test_block(dev, stamp_blk, probe_blk, left_pos))
+	if (test_block(pdev, stamp_blk, probe_blk, left_pos))
 		goto bad;
 
-	if (search_wrap(dev, left_pos, &right_pos, stamp_blk, probe_blk))
+	if (search_wrap(pdev, left_pos, &right_pos, stamp_blk, probe_blk))
 		goto bad;
 
-	if (search_edge(dev, &left_pos, right_pos, stamp_blk, probe_blk))
+	if (search_edge(pdev, &left_pos, right_pos, stamp_blk, probe_blk))
 		goto bad;
 
 	*preal_size_byte = (left_pos + 1) << block_order;
 	*pannounced_size_byte = dev_size_byte;
 	*pwrap = ceiling_log2(right_pos << block_order);
 	*pblock_order = block_order;
-	return;
+	goto out;
 
 bad:
 	*preal_size_byte = 0;
 	*pannounced_size_byte = dev_size_byte;
 	*pwrap = ceiling_log2(dev_size_byte);
 	*pblock_order = block_order;
+
+out:
+	pdev_detach_and_free(pdev);
+	return 0;
 }

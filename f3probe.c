@@ -244,8 +244,8 @@ static int unit_test(const char *filename)
 			false);
 		assert(dev);
 		max_probe_blocks = probe_device_max_blocks(dev);
-		probe_device(dev, &real_size_byte, &announced_size_byte,
-			&wrap, &block_order);
+		assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
+			&wrap, &block_order));
 		free_device(dev);
 		fake_type = dev_param_to_type(real_size_byte,
 			announced_size_byte, wrap, block_order);
@@ -351,8 +351,11 @@ static int test_device(struct args *args)
 	}
 
 	assert(!gettimeofday(&t1, NULL));
-	probe_device(dev, &real_size_byte, &announced_size_byte,
-		&wrap, &block_order);
+	/* XXX Have a better error handling to recover
+	 * the state of the drive.
+	 */
+	assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
+		&wrap, &block_order));
 	assert(!gettimeofday(&t2, NULL));
 	/* Keep free_device() as close of probe_device() as possible to
 	 * make sure that the written blocks are recovered when
