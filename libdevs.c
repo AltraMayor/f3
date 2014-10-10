@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <string.h>
+#include <inttypes.h>
 #include <errno.h>
 #include <err.h>
 #include <sys/ioctl.h>
@@ -192,7 +193,10 @@ static int write_all(int fd, const char *buf, int count)
 	int done = 0;
 	do {
 		ssize_t rc = write(fd, buf + done, count - done);
-		assert(rc >= 0); /* Did the write() went right? */
+		if (rc < 0) {
+			/* The write() failed. */
+			return errno;
+		}
 		done += rc;
 	} while (done < count);
 	return 0;
@@ -746,19 +750,22 @@ static void sdev_free(struct device *dev)
 			dev_get_block_order(sdev->shadow_dev));
 		uint64_t *poffset = &sdev->sb_offsets[sdev->sb_n - 1];
 		int block_size = dev_get_block_size(sdev->shadow_dev);
-		int failed = false;
 
 		/* Restore blocks in reverse order to cope with
 		 * wraparound and chain drives.
 		 */
 		do {
-			failed |= sdev->shadow_dev->write_block(
+			int rc = sdev->shadow_dev->write_block(
 				sdev->shadow_dev, block, block_size, *poffset);
+			if (rc) {
+				/* Do not abort, try to recover all bocks. */
+				warn("Failed to recover block at offset 0x%"
+					PRIx64 " due to a write error",
+					*poffset);
+			}
 			block -= block_size;
 			poffset--;
 		} while (block >= first_block);
-		/* Try to recover all bocks before failing. */
-		assert(!failed);
 	}
 
 	free(sdev->sb_bitmap);
