@@ -38,6 +38,8 @@ static inline uint64_t random_number(uint64_t prv_number)
 
 #if __APPLE__ && __MACH__
 
+#define _DARWIN_C_SOURCE
+
 /* For function fcntl. */
 #include <fcntl.h>
 /* For type off_t. */
