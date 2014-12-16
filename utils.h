@@ -34,6 +34,8 @@ static inline uint64_t random_number(uint64_t prv_number)
 	return prv_number * 4294967311ULL + 17;
 }
 
+#define UNUSED(x)	((void)x)
+
 #if __APPLE__ && __MACH__
 
 #include <unistd.h>	/* For type off_t.	*/

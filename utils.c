@@ -238,6 +238,8 @@ static inline int fdatasync(int fd)
 /* This function is a _rough_ approximation of posix_fadvise(2). */
 int posix_fadvise(int fd, off_t offset, off_t len, int advice)
 {
+	UNUSED(offset);
+	UNUSED(len);
 	switch (advice) {
 	case POSIX_FADV_SEQUENTIAL:
 		return fcntl(fd, F_RDAHEAD, 1);
