@@ -1,11 +1,9 @@
 #ifndef HEADER_UTILS_H
 #define HEADER_UTILS_H
 
-#include <ctype.h>
-#include <assert.h>
-#include <sys/time.h>
-#include <limits.h>
-#include <stdint.h>
+#include <stdio.h>	/* For type FILE.	*/
+#include <sys/time.h>	/* For struct timeval.	*/
+#include <stdint.h>	/* For type uint64_t.	*/
 
 #define SECTOR_SIZE (512)
 #define GIGABYTES   (1024 * 1024 * 1024)
@@ -38,34 +36,13 @@ static inline uint64_t random_number(uint64_t prv_number)
 
 #if __APPLE__ && __MACH__
 
-#define _DARWIN_C_SOURCE
-
-/* For function fcntl. */
-#include <fcntl.h>
-/* For type off_t. */
-#include <unistd.h>
-
-/* This function is a _rough_ approximation of fdatasync(2). */
-static inline int fdatasync(int fd)
-{
-	return fcntl(fd, F_FULLFSYNC);
-}
+#include <unistd.h>	/* For type off_t.	*/
 
 #define POSIX_FADV_SEQUENTIAL	2 /* Expect sequential page references.	*/
 #define POSIX_FADV_DONTNEED	4 /* Don't need these pages.		*/
 
-/* This function is a _rough_ approximation of posix_fadvise(2). */
-static inline int posix_fadvise(int fd, off_t offset, off_t len, int advice)
-{
-	switch (advice) {
-	case POSIX_FADV_SEQUENTIAL:
-		return fcntl(fd, F_RDAHEAD, 1);
-	case POSIX_FADV_DONTNEED:
-		return fcntl(fd, F_NOCACHE, 1);
-	default:
-		assert(0);
-	}
-}
+int fdatasync(int fd);
+int posix_fadvise(int fd, off_t offset, off_t len, int advice);
 
 #endif	/* Apple Macintosh */
 

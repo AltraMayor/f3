@@ -1,8 +1,19 @@
 #define _GNU_SOURCE
 
+#if __APPLE__ && __MACH__
+
+#define _DARWIN_C_SOURCE
+
+#include <fcntl.h>	/* For function fcntl.	*/
+
+#endif	/* Apple Macintosh */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
+#include <assert.h>
+#include <limits.h>
 #include <sys/types.h>
 #include <dirent.h>
 #include <errno.h>
@@ -215,3 +226,26 @@ void print_header(FILE *f, const char *name)
 	"This is free software; see the source for copying conditions.\n"
 	"\n", name);
 }
+
+#if __APPLE__ && __MACH__
+
+/* This function is a _rough_ approximation of fdatasync(2). */
+static inline int fdatasync(int fd)
+{
+	return fcntl(fd, F_FULLFSYNC);
+}
+
+/* This function is a _rough_ approximation of posix_fadvise(2). */
+int posix_fadvise(int fd, off_t offset, off_t len, int advice)
+{
+	switch (advice) {
+	case POSIX_FADV_SEQUENTIAL:
+		return fcntl(fd, F_RDAHEAD, 1);
+	case POSIX_FADV_DONTNEED:
+		return fcntl(fd, F_NOCACHE, 1);
+	default:
+		assert(0);
+	}
+}
+
+#endif	/* Apple Macintosh */
