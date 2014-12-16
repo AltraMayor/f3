@@ -230,7 +230,7 @@ void print_header(FILE *f, const char *name)
 #if __APPLE__ && __MACH__
 
 /* This function is a _rough_ approximation of fdatasync(2). */
-static inline int fdatasync(int fd)
+int fdatasync(int fd)
 {
 	return fcntl(fd, F_FULLFSYNC);
 }
