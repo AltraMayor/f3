@@ -358,7 +358,10 @@ static int test_device(struct args *args)
 			args->fake_size_byte, args->wrap, args->block_order,
 			args->keep_file)
 		: create_block_device(args->filename, args->manual_reset);
-	assert(dev);
+	if (!dev) {
+		fprintf(stderr, "\nApplication cannot continue, finishing...\n");
+		exit(1);
+	}
 
 	if (args->time_ops) {
 		pdev = create_perf_device(dev);

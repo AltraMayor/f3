@@ -441,10 +441,6 @@ static char *map_block_to_usb_dev(const char *block_dev)
  * Use udev to do these tests.
  * Make sure that no partition of the drive is mounted.
  */
-/* XXX Test for write access of the block device to give
- * a nice error message.
- * If it fails, suggest running f3probe as root.
- */
 struct device *create_block_device(const char *filename, int manual_reset)
 {
 	struct block_device *bdev;
@@ -460,7 +456,14 @@ struct device *create_block_device(const char *filename, int manual_reset)
 
 	bdev->fd = bdev_open(filename);
 	if (bdev->fd < 0) {
-		err(errno, "Can't open device `%s'", filename);
+		if (errno == EACCES && getuid()) {
+			fprintf(stderr, "Your username doesn't have access to device `%s'.\n"
+				"Try to run this program as root:\n"
+				"sudo f3probe %s\n",
+				filename, filename);
+		} else {
+			err(errno, "Can't open device `%s'", filename);
+		}
 		goto filename;
 	}
 
