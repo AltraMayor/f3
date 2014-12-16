@@ -336,94 +336,76 @@ static int bdev_manual_reset(struct device *dev)
 	return 0;
 }
 
-static char *map_block_to_usb_dev(const char *block_dev)
+static char *map_block_to_usb_dev(int block_fd)
 {
 	struct udev *udev;
-	struct udev_enumerate *enumerate;
-	struct udev_list_entry *devices, *dev_list_entry;
-	char *usb_dev_path = NULL;
+	struct stat fd_stat;
+	struct udev_device *dev, *parent_dev;
+	char *usb_dev_path;
 
 	udev = udev_new();
 	if (!udev)
 		err(errno, "Can't create udev");
 
-	/* XXX Avoid the enumeration using udev_device_new_from_devnum(). */
-	enumerate = udev_enumerate_new(udev);
-	assert(enumerate);
-	assert(!udev_enumerate_add_match_subsystem(enumerate, "block"));
-	assert(!udev_enumerate_scan_devices(enumerate));
-	devices = udev_enumerate_get_list_entry(enumerate);
-	assert(devices);
+	assert(!fstat(block_fd, &fd_stat));
+	dev = udev_device_new_from_devnum(udev, 'b', fd_stat.st_rdev);
+	assert(dev);
 
-	udev_list_entry_foreach(dev_list_entry, devices) {
-		const char *sys_path, *dev_path;
-		struct udev_device *dev, *parent_dev;
+	/* The device pointed to by dev contains information about
+	 * the USB device.
+	 * In order to get information about the USB device,
+	 * get the parent device with the subsystem/devtype pair of
+	 * "usb"/"usb_device".
+	 * This will be several levels up the tree,
+	 * but the function will find it.
+	 */
+	parent_dev = udev_device_get_parent_with_subsystem_devtype(
+		dev, "usb", "usb_device");
+	if (!parent_dev)
+		err(errno, "Unable to find parent device");
 
-		/* Get the filename of the /sys entry for the device,
-		 * and create a udev_device object (dev) representing it.
-		 */
-		sys_path = udev_list_entry_get_name(dev_list_entry);
-		dev = udev_device_new_from_syspath(udev, sys_path);
+	usb_dev_path = strdup(udev_device_get_devnode(parent_dev));
 
-		/* usb_device_get_devnode() returns the path to
-		 * the device node itself in /dev.
-		 */
-		dev_path = udev_device_get_devnode(dev);
-		if (strcmp(block_dev, dev_path)) {
-			assert(!udev_device_unref(dev));
-			continue;
-		}
-
-		/* The device pointed to by dev contains information about
-		 * the USB device.
-		 * In order to get information about the USB device,
-		 * get the parent device with the subsystem/devtype pair of
-		 * "usb"/"usb_device".
-		 * This will be several levels up the tree,
-		 * but the function will find it.
-		 */
-		parent_dev = udev_device_get_parent_with_subsystem_devtype(
-			dev, "usb", "usb_device");
-		if (!parent_dev)
-			err(errno, "Unable to find parent usb device of `%s'",
-				block_dev);
-
-		usb_dev_path = strdup(udev_device_get_devnode(parent_dev));
-		/* @parent_dev is not referenced, and will be freed when
-		 * the child (i.e. @dev) is freed.
-		 * See udev_device_get_parent_with_subsystem_devtype() for
-		 * details.
-		 */
-		assert(!udev_device_unref(dev));
-		break;
-	}
-	/* Free the enumerator object. */
-	assert(!udev_enumerate_unref(enumerate));
+	/* @parent_dev is not referenced, and will be freed when
+	 * the child (i.e. @dev) is freed.
+	 * See udev_device_get_parent_with_subsystem_devtype() for
+	 * details.
+	 */
+	assert(!udev_device_unref(dev));
 
 	assert(!udev_unref(udev));
 	return usb_dev_path;
 }
 
-static int bdev_usb_reset(struct device *dev)
+/* Return an open fd to the underlying hardware of the block device. */
+static int usb_fd_from_block_dev(int block_fd, int open_flags)
 {
 	const char *usb_filename;
-	int hw_fd; /* Underlying hardware of the block device. */
-	struct block_device *bdev = dev_bdev(dev);
+	int hw_fd;
 
-	usb_filename = map_block_to_usb_dev(bdev->filename);
+	usb_filename = map_block_to_usb_dev(block_fd);
 	if (!usb_filename)
-		err(EINVAL, "Block device `%s' is not backed by a USB device",
-			bdev->filename);
+		err(EINVAL, "Block device is not backed by a USB device");
 
-	hw_fd = open(usb_filename, O_WRONLY | O_NONBLOCK);
-	free((void *)usb_filename);
-	usb_filename = NULL;
+	hw_fd = open(usb_filename, open_flags | O_NONBLOCK);
 	if (hw_fd < 0)
 		err(errno, "Can't open device `%s'", usb_filename);
 
+	free((void *)usb_filename);
+	return hw_fd;
+}
+
+static int bdev_usb_reset(struct device *dev)
+{
+	struct block_device *bdev = dev_bdev(dev);
+	int usb_fd;
+
+	usb_fd = usb_fd_from_block_dev(bdev->fd, O_WRONLY);
+	assert(usb_fd >= 0);
+
 	assert(!close(bdev->fd));
-	assert(!ioctl(hw_fd, USBDEVFS_RESET));
-	assert(!close(hw_fd));
+	assert(!ioctl(usb_fd, USBDEVFS_RESET));
+	assert(!close(usb_fd));
 	bdev->fd = bdev_open(bdev->filename);
 	if (bdev->fd < 0)
 		err(errno, "Can't REopen device `%s'", bdev->filename);
