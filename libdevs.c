@@ -321,9 +321,7 @@ static inline int bdev_open(const char *filename)
 	return open(filename, O_RDWR | O_DIRECT | O_SYNC);
 }
 
-/* XXX Monitor the USB subsytem to know when the drive was unplugged and
- * plugged back to continue instead of waiting for a key.
- */
+/* TODO drop function. */
 static int bdev_manual_reset(struct device *dev)
 {
 	struct block_device *bdev = dev_bdev(dev);
@@ -336,20 +334,9 @@ static int bdev_manual_reset(struct device *dev)
 	return 0;
 }
 
-static char *map_block_to_usb_dev(int block_fd)
+static struct udev_device *map_dev_to_usb_dev(struct udev_device *dev)
 {
-	struct udev *udev;
-	struct stat fd_stat;
-	struct udev_device *dev, *parent_dev;
-	char *usb_dev_path;
-
-	udev = udev_new();
-	if (!udev)
-		err(errno, "Can't create udev");
-
-	assert(!fstat(block_fd, &fd_stat));
-	dev = udev_device_new_from_devnum(udev, 'b', fd_stat.st_rdev);
-	assert(dev);
+	struct udev_device *usb_dev;
 
 	/* The device pointed to by dev contains information about
 	 * the USB device.
@@ -359,40 +346,185 @@ static char *map_block_to_usb_dev(int block_fd)
 	 * This will be several levels up the tree,
 	 * but the function will find it.
 	 */
-	parent_dev = udev_device_get_parent_with_subsystem_devtype(
+	usb_dev = udev_device_get_parent_with_subsystem_devtype(
 		dev, "usb", "usb_device");
-	if (!parent_dev)
+	if (!usb_dev)
 		err(errno, "Unable to find parent device");
 
-	usb_dev_path = strdup(udev_device_get_devnode(parent_dev));
-
-	/* @parent_dev is not referenced, and will be freed when
+	/* @usb_dev is not referenced, and will be freed when
 	 * the child (i.e. @dev) is freed.
 	 * See udev_device_get_parent_with_subsystem_devtype() for
 	 * details.
 	 */
-	assert(!udev_device_unref(dev));
+	return udev_device_ref(usb_dev);
+}
 
+static struct udev_device *map_block_to_usb_dev(struct udev *udev, int block_fd)
+{
+	struct stat fd_stat;
+	struct udev_device *dev, *usb_dev;
+
+	assert(!fstat(block_fd, &fd_stat));
+	dev = udev_device_new_from_devnum(udev, 'b', fd_stat.st_rdev);
+	assert(dev);
+	usb_dev = map_dev_to_usb_dev(dev);
+	assert(!udev_device_unref(dev));
+	return usb_dev;
+}
+
+static struct udev_monitor *create_monitor(struct udev *udev,
+	const char *subsystem, const char *devtype)
+{
+	struct udev_monitor *mon;
+	int mon_fd, flags;
+
+	mon = udev_monitor_new_from_netlink(udev, "udev");
+	assert(mon);
+	assert(!udev_monitor_filter_add_match_subsystem_devtype(mon,
+		subsystem, devtype));
+	assert(!udev_monitor_enable_receiving(mon));
+	mon_fd = udev_monitor_get_fd(mon);
+	assert(mon_fd >= 0);
+	flags = fcntl(mon_fd, F_GETFL);
+	assert(flags >= 0);
+	assert(!fcntl(mon_fd, F_SETFL, flags & ~O_NONBLOCK));
+
+	return mon;
+}
+
+static void wait_for_remove_action(struct udev *udev, const char *devnode)
+{
+	struct udev_monitor *mon;
+	bool done;
+
+	mon = create_monitor(udev, "usb", "usb_device");
+	assert(mon);
+	do {
+		struct udev_device *dev = udev_monitor_receive_device(mon);
+		assert(dev);
+
+		done = !strcmp(udev_device_get_action(dev), "remove") &&
+			!strcmp(udev_device_get_devnode(dev), devnode);
+
+		udev_device_unref(dev);
+	} while (!done);
+	assert(!udev_monitor_unref(mon));
+}
+
+static char *wait_for_add_action(struct udev *udev,
+	const char *id_vendor, const char *id_product, const char *serial)
+{
+	char *devnode = NULL;
+	bool done = false;
+	struct udev_monitor *mon;
+
+	mon = create_monitor(udev, "block", "disk");
+	assert(mon);
+	do {
+		struct udev_device *dev, *usb_dev;
+
+		dev = udev_monitor_receive_device(mon);
+		assert(dev);
+		if (strcmp(udev_device_get_action(dev), "add")) {
+			udev_device_unref(dev);
+			continue;
+		}
+
+		usb_dev = map_dev_to_usb_dev(dev);
+		if (usb_dev &&
+			!strcmp(udev_device_get_sysattr_value(usb_dev,
+				"idVendor"), id_vendor) &&
+			!strcmp(udev_device_get_sysattr_value(usb_dev,
+				"idProduct"), id_product) &&
+			!strcmp(udev_device_get_sysattr_value(usb_dev,
+				"serial"), serial)) {
+			devnode = strdup(udev_device_get_devnode(dev));
+			assert(devnode);
+			done = true;
+		}
+
+		udev_device_unref(usb_dev);
+		udev_device_unref(dev);
+	} while (!done);
+	assert(!udev_monitor_unref(mon));
+
+	return devnode;
+}
+
+static int bdev_manual_usb_reset(struct device *dev)
+{
+	struct block_device *bdev = dev_bdev(dev);
+	struct udev *udev;
+	struct udev_device *usb_dev;
+	const char *devnode, *id_vendor, *id_product, *serial;
+
+	udev = udev_new();
+	if (!udev)
+		err(errno, "Can't create udev");
+
+	/* Obtain @bus_num and @dev_num of the USB device to monitor. */
+	usb_dev = map_block_to_usb_dev(udev, bdev->fd);
+	assert(usb_dev);
+	devnode = udev_device_get_devnode(usb_dev);
+	id_vendor = udev_device_get_sysattr_value(usb_dev, "idVendor");
+	id_product = udev_device_get_sysattr_value(usb_dev, "idProduct");
+	serial = udev_device_get_sysattr_value(usb_dev, "serial");
+
+	/* Close @bdev->fd before the drive is removed to increase
+	 * the chance that the device will receive the same filename.
+	 * The code is robust enough to deal with the case the drive doesn't
+	 * receive the same file name, though.
+	 */
+	assert(!close(bdev->fd));
+
+	printf("Please unplug the USB drive. Waiting...");
+	fflush(stdout);
+	wait_for_remove_action(udev, devnode);
+	printf(" Thanks\n");
+
+	printf("Please plug back the USB drive. Waiting...");
+	fflush(stdout);
+	devnode = wait_for_add_action(udev, id_vendor, id_product, serial);
+	printf(" Thanks\n\n");
+
+	assert(!udev_device_unref(usb_dev));
 	assert(!udev_unref(udev));
-	return usb_dev_path;
+
+	bdev->fd = bdev_open(devnode);
+	if (bdev->fd < 0)
+		err(errno, "Can't REopen device `%s'", devnode);
+	free((void *)bdev->filename);
+	bdev->filename = devnode;
+
+	return 0;
 }
 
 /* Return an open fd to the underlying hardware of the block device. */
 static int usb_fd_from_block_dev(int block_fd, int open_flags)
 {
+	struct udev *udev;
+	struct udev_device *dev;
 	const char *usb_filename;
-	int hw_fd;
+	int usb_fd;
 
-	usb_filename = map_block_to_usb_dev(block_fd);
+	udev = udev_new();
+	if (!udev)
+		err(errno, "Can't create udev");
+
+	dev = map_block_to_usb_dev(udev, block_fd);
+	assert(dev);
+
+	usb_filename = udev_device_get_devnode(dev);
 	if (!usb_filename)
 		err(EINVAL, "Block device is not backed by a USB device");
 
-	hw_fd = open(usb_filename, open_flags | O_NONBLOCK);
-	if (hw_fd < 0)
+	usb_fd = open(usb_filename, open_flags | O_NONBLOCK);
+	if (usb_fd < 0)
 		err(errno, "Can't open device `%s'", usb_filename);
 
-	free((void *)usb_filename);
-	return hw_fd;
+	assert(!udev_device_unref(dev));
+	assert(!udev_unref(udev));
+	return usb_fd;
 }
 
 static int bdev_usb_reset(struct device *dev)
@@ -470,7 +602,10 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 	case RT_MANUAL:
 		bdev->dev.reset	= bdev_manual_reset;
 		break;
-	case RT_USB_RESET:
+	case RT_MANUAL_USB:
+		bdev->dev.reset	= bdev_manual_usb_reset;
+		break;
+	case RT_USB:
 		bdev->dev.reset = bdev_usb_reset;
 		break;
 	default:
