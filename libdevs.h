@@ -23,7 +23,7 @@ enum fake_type {
 	/* Device is a sequence of wraparound and limbo regions. */
 	FKTY_CHAIN,
 
-	FKTY_MAX,
+	FKTY_MAX
 };
 
 const char *fake_type_to_name(enum fake_type fake_type);
@@ -66,7 +66,15 @@ struct device *create_file_device(const char *filename,
 	uint64_t real_size_byte, uint64_t fake_size_byte, int wrap,
 	int block_order, int keep_file);
 
-struct device *create_block_device(const char *filename, int manual_reset);
+/* XXX Add support for block devices backed by SCSI and ATA. */
+enum reset_type {
+	RT_MANUAL = 0,
+	RT_USB_RESET,
+	RT_MAX
+};
+#define RT_DEFAULT	RT_MANUAL
+
+struct device *create_block_device(const char *filename, enum reset_type rt);
 
 struct device *create_perf_device(struct device *dev);
 void perf_device_sample(struct device *dev,

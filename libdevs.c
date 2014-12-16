@@ -275,7 +275,6 @@ struct block_device {
 
 	const char *filename;
 	int fd;
-	int hw_fd; /* Underlying hardware of the block device. */
 };
 
 static inline struct block_device *dev_bdev(struct device *dev)
@@ -335,34 +334,6 @@ static int bdev_manual_reset(struct device *dev)
 	if (bdev->fd < 0)
 		err(errno, "Can't REopen device `%s'", bdev->filename);
 	return 0;
-}
-
-static int bdev_reset(struct device *dev)
-{
-	struct block_device *bdev = dev_bdev(dev);
-	assert(!close(bdev->fd));
-	assert(!ioctl(bdev->hw_fd, USBDEVFS_RESET));
-	bdev->fd = bdev_open(bdev->filename);
-	if (bdev->fd < 0)
-		err(errno, "Can't REopen device `%s'", bdev->filename);
-	return 0;
-}
-
-static void bdev_free(struct device *dev)
-{
-	struct block_device *bdev = dev_bdev(dev);
-	if (bdev->hw_fd >= 0)
-		assert(!close(bdev->hw_fd));
-	if (bdev->fd >= 0)
-		assert(!close(bdev->fd));
-	free((void *)bdev->filename);
-}
-
-static bool is_block_dev(int fd)
-{
-	struct stat stat;
-	assert(!fstat(fd, &stat));
-	return S_ISBLK(stat.st_mode);
 }
 
 static char *map_block_to_usb_dev(const char *block_dev)
@@ -433,6 +404,47 @@ static char *map_block_to_usb_dev(const char *block_dev)
 	return usb_dev_path;
 }
 
+static int bdev_usb_reset(struct device *dev)
+{
+	const char *usb_filename;
+	int hw_fd; /* Underlying hardware of the block device. */
+	struct block_device *bdev = dev_bdev(dev);
+
+	usb_filename = map_block_to_usb_dev(bdev->filename);
+	if (!usb_filename)
+		err(EINVAL, "Block device `%s' is not backed by a USB device",
+			bdev->filename);
+
+	hw_fd = open(usb_filename, O_WRONLY | O_NONBLOCK);
+	free((void *)usb_filename);
+	usb_filename = NULL;
+	if (hw_fd < 0)
+		err(errno, "Can't open device `%s'", usb_filename);
+
+	assert(!close(bdev->fd));
+	assert(!ioctl(hw_fd, USBDEVFS_RESET));
+	assert(!close(hw_fd));
+	bdev->fd = bdev_open(bdev->filename);
+	if (bdev->fd < 0)
+		err(errno, "Can't REopen device `%s'", bdev->filename);
+	return 0;
+}
+
+static void bdev_free(struct device *dev)
+{
+	struct block_device *bdev = dev_bdev(dev);
+	if (bdev->fd >= 0)
+		assert(!close(bdev->fd));
+	free((void *)bdev->filename);
+}
+
+static bool is_block_dev(int fd)
+{
+	struct stat stat;
+	assert(!fstat(fd, &stat));
+	return S_ISBLK(stat.st_mode);
+}
+
 /* XXX Test if it's a device, or a partition.
  * If a partition, warn user, and ask for confirmation before
  * going ahead.
@@ -441,7 +453,7 @@ static char *map_block_to_usb_dev(const char *block_dev)
  * Use udev to do these tests.
  * Make sure that no partition of the drive is mounted.
  */
-struct device *create_block_device(const char *filename, int manual_reset)
+struct device *create_block_device(const char *filename, enum reset_type rt)
 {
 	struct block_device *bdev;
 	int block_size;
@@ -472,25 +484,15 @@ struct device *create_block_device(const char *filename, int manual_reset)
 		goto fd;
 	}
 
-	if (manual_reset) {
-		bdev->hw_fd = -1;
+	switch (rt) {
+	case RT_MANUAL:
 		bdev->dev.reset	= bdev_manual_reset;
-	} else {
-		/* XXX Add support for block devices backed by SCSI and ATA. */
-		const char *usb_filename = map_block_to_usb_dev(filename);
-		if (!usb_filename) {
-			err(EINVAL, "Block device `%s' is not backed by a USB device",
-				filename);
-			goto fd;
-		}
-
-		bdev->hw_fd = open(usb_filename, O_WRONLY | O_NONBLOCK);
-		free((void *)usb_filename);
-		if (bdev->hw_fd < 0) {
-			err(errno, "Can't open device `%s'", usb_filename);
-			goto fd;
-		}
-		bdev->dev.reset = bdev_reset;
+		break;
+	case RT_USB_RESET:
+		bdev->dev.reset = bdev_usb_reset;
+		break;
+	default:
+		assert(0);
 	}
 
 	assert(!ioctl(bdev->fd, BLKGETSIZE64, &bdev->dev.size_byte));

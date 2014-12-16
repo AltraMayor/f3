@@ -45,8 +45,8 @@ static struct argp_option options[] = {
 		"Do not restore blocks of the device after probing it",	2},
 	{"min-memory",		'l',	NULL,		0,
 		"Trade speed for less use of memory",		0},
-	{"manual-reset",	'm',	NULL,		0,
-		"Ask user to manually reset the drive",	0},
+	{"reset-type",		's',	"TYPE",		0,
+		"Reset method to use during the probe",		0},
 	{"time-ops",		't',	NULL,		0,
 		"Time reads, writes, and resets",		0},
 	{ 0 }
@@ -63,7 +63,7 @@ struct args {
 	/* Behavior options. */
 	bool		save;
 	bool		min_mem;
-	bool		manual_reset;
+	enum reset_type	reset_type;
 	bool		time_ops;
 	/* 1 free bytes. */
 
@@ -182,8 +182,13 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		args->min_mem = true;
 		break;
 
-	case 'm':
-		args->manual_reset = true;
+	case 's':
+		ll = arg_to_long_long(state, arg);
+		if (ll < 0 || ll >= RT_MAX)
+			argp_error(state,
+				"Reset type must be in the interval [0, %i]",
+				RT_MAX - 1);
+		args->reset_type = ll;
 		break;
 
 	case 't':
@@ -357,7 +362,7 @@ static int test_device(struct args *args)
 		? create_file_device(args->filename, args->real_size_byte,
 			args->fake_size_byte, args->wrap, args->block_order,
 			args->keep_file)
-		: create_block_device(args->filename, args->manual_reset);
+		: create_block_device(args->filename, args->reset_type);
 	if (!dev) {
 		fprintf(stderr, "\nApplication cannot continue, finishing...\n");
 		exit(1);
@@ -456,7 +461,7 @@ int main(int argc, char **argv)
 		.keep_file	= false,
 		.save		= true,
 		.min_mem	= false,
-		.manual_reset	= false,
+		.reset_type	= RT_DEFAULT,
 		.time_ops	= false,
 		.real_size_byte	= 1ULL << 31,
 		.fake_size_byte	= 1ULL << 34,
