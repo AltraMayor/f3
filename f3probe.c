@@ -79,14 +79,47 @@ static long long arg_to_long_long(const struct argp_state *state,
 {
 	char *end;
 	long long ll = strtoll(arg, &end, 0);
-	if (!arg)
+	if (end == arg)
 		argp_error(state, "An integer must be provided");
-	if (!*arg || *end)
+
+	/* Deal with units. */
+	switch (*end) {
+	case 's':
+	case 'S': /* Sectors */
+		ll <<= 9;
+		end++;
+		break;
+
+	case 'k':
+	case 'K': /* KB */
+		ll <<= 10;
+		end++;
+		break;
+
+	case 'm':
+	case 'M': /* MB */
+		ll <<= 20;
+		end++;
+		break;
+
+	case 'g':
+	case 'G': /* GB */
+		ll <<= 30;
+		end++;
+		break;
+
+	case 't':
+	case 'T': /* TB */
+		ll <<= 40;
+		end++;
+		break;
+	}
+
+	if (*end)
 		argp_error(state, "`%s' is not an integer", arg);
 	return ll;
 }
 
-/* XXX Add a friendly way to enter real and fake sizes: 1, 1k, 1m, 1g... */
 static error_t parse_opt(int key, char *arg, struct argp_state *state)
 {
 	struct args *args = state->input;
