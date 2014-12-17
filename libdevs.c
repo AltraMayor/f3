@@ -374,7 +374,7 @@ static struct udev_device *map_block_to_usb_dev(struct udev *udev, int block_fd)
 	dev = dev_from_block_fd(udev, block_fd);
 	assert(dev);
 	usb_dev = map_dev_to_usb_dev(dev);
-	assert(!udev_device_unref(dev));
+	udev_device_unref(dev);
 	return usb_dev;
 }
 
@@ -495,7 +495,7 @@ static int bdev_manual_usb_reset(struct device *dev)
 	devnode = wait_for_add_action(udev, id_vendor, id_product, serial);
 	printf(" Thanks\n\n");
 
-	assert(!udev_device_unref(usb_dev));
+	udev_device_unref(usb_dev);
 	assert(!udev_unref(udev));
 
 	bdev->fd = bdev_open(devnode);
@@ -530,7 +530,7 @@ static int usb_fd_from_block_dev(int block_fd, int open_flags)
 	if (usb_fd < 0)
 		err(errno, "Can't open device `%s'", usb_filename);
 
-	assert(!udev_device_unref(dev));
+	udev_device_unref(dev);
 	assert(!udev_unref(udev));
 	return usb_fd;
 }
@@ -628,10 +628,7 @@ struct device *create_block_device(const char *filename, int block_order,
 		fprintf(stderr, "Device `%s' is a partition of disk device `%s'.\n"
 			"You can run this program as follows:\nf3probe %s\n",
 			filename, s, s);
-		/* For some reason, there already was a reference to @disk_dev
-		 * before the call map_partition_to_disk().
-		 */
-		assert(udev_device_unref(disk_dev) == disk_dev);
+		udev_device_unref(disk_dev);
 		goto fd_dev;
 	} else if (strcmp(s, "disk")) {
 		fprintf(stderr, "Device `%s' is not a disk, but `%s'",
@@ -644,8 +641,8 @@ struct device *create_block_device(const char *filename, int block_order,
 			filename);
 		goto fd_dev;
 	}
-	assert(!udev_device_unref(usb_dev));
-	assert(!udev_device_unref(fd_dev));
+	udev_device_unref(usb_dev);
+	udev_device_unref(fd_dev);
 	assert(!udev_unref(udev));
 
 	switch (rt) {
@@ -676,7 +673,7 @@ struct device *create_block_device(const char *filename, int block_order,
 	return &bdev->dev;
 
 fd_dev:
-	assert(!udev_device_unref(fd_dev));
+	udev_device_unref(fd_dev);
 udev:
 	assert(!udev_unref(udev));
 fd:
