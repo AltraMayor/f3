@@ -583,7 +583,8 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 		if (errno == EACCES && getuid()) {
 			fprintf(stderr, "Your username doesn't have access to device `%s'.\n"
 				"Try to run this program as root:\n"
-				"sudo f3probe %s\n",
+				"sudo f3probe %s\n"
+				"In case you don't have access to root, use f3write/f3read.\n",
 				filename, filename);
 		} else {
 			err(errno, "Can't open device `%s'", filename);
