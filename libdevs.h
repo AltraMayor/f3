@@ -68,8 +68,7 @@ struct device *create_file_device(const char *filename,
 
 /* XXX Add support for block devices backed by SCSI and ATA. */
 enum reset_type {
-	RT_MANUAL = 0,
-	RT_MANUAL_USB,
+	RT_MANUAL_USB = 0,
 	RT_USB,
 	RT_MAX
 };

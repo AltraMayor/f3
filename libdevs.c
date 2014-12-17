@@ -321,19 +321,6 @@ static inline int bdev_open(const char *filename)
 	return open(filename, O_RDWR | O_DIRECT | O_SYNC);
 }
 
-/* TODO drop function. */
-static int bdev_manual_reset(struct device *dev)
-{
-	struct block_device *bdev = dev_bdev(dev);
-	assert(!close(bdev->fd));
-	printf("Please unplug and plug back the USB drive, and press a key to continue...\n");
-	getchar();
-	bdev->fd = bdev_open(bdev->filename);
-	if (bdev->fd < 0)
-		err(errno, "Can't REopen device `%s'", bdev->filename);
-	return 0;
-}
-
 static struct udev_device *map_dev_to_usb_dev(struct udev_device *dev)
 {
 	struct udev_device *usb_dev;
@@ -599,9 +586,6 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 	}
 
 	switch (rt) {
-	case RT_MANUAL:
-		bdev->dev.reset	= bdev_manual_reset;
-		break;
 	case RT_MANUAL_USB:
 		bdev->dev.reset	= bdev_manual_usb_reset;
 		break;
