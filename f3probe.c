@@ -398,6 +398,13 @@ static int test_device(struct args *args)
 	assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
 		&wrap, &block_order));
 	assert(!gettimeofday(&t2, NULL));
+
+	if (!args->debug && args->reset_type == RT_MANUAL_USB) {
+		printf("CAUTION\tCAUTION\tCAUTION\n");
+		printf("No more resets are needed, so do not unplug the drive\n");
+		fflush(stdout);
+	}
+
 	/* Keep free_device() as close of probe_device() as possible to
 	 * make sure that the written blocks are recovered when
 	 * @args->save is true.
