@@ -232,9 +232,6 @@ struct device *create_file_device(const char *filename,
 {
 	struct file_device *fdev;
 
-	if (!dev_param_valid(real_size_byte, fake_size_byte, wrap, block_order))
-		goto error;
-
 	fdev = malloc(sizeof(*fdev));
 	if (!fdev)
 		goto error;
@@ -251,6 +248,18 @@ struct device *create_file_device(const char *filename,
 		assert(!unlink(filename));
 	}
 
+	if (!block_order) {
+		struct stat fd_stat;
+		blksize_t block_size;
+		assert(!fstat(fdev->fd, &fd_stat));
+		block_size = fd_stat.st_blksize;
+		block_order = ilog2(block_size);
+		assert(block_size == (1 << block_order));
+	}
+
+	if (!dev_param_valid(real_size_byte, fake_size_byte, wrap, block_order))
+		goto keep_file;
+
 	fdev->real_size_byte = real_size_byte;
 	fdev->address_mask = (((uint64_t)1) << wrap) - 1;
 
@@ -263,6 +272,10 @@ struct device *create_file_device(const char *filename,
 
 	return &fdev->dev;
 
+keep_file:
+	if (keep_file)
+		unlink(filename);
+	assert(!close(fdev->fd));
 fdev:
 	free(fdev);
 error:
@@ -562,13 +575,13 @@ static struct udev_device *map_partition_to_disk(struct udev_device *dev)
 	return udev_device_ref(disk_dev);
 }
 
-struct device *create_block_device(const char *filename, enum reset_type rt)
+struct device *create_block_device(const char *filename, int block_order,
+	enum reset_type rt)
 {
 	struct block_device *bdev;
 	struct udev *udev;
 	struct udev_device *fd_dev, *usb_dev;
 	const char *s;
-	int block_size;
 
 	bdev = malloc(sizeof(*bdev));
 	if (!bdev)
@@ -648,9 +661,13 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 
 	assert(!ioctl(bdev->fd, BLKGETSIZE64, &bdev->dev.size_byte));
 
-	assert(!ioctl(bdev->fd, BLKBSZGET, &block_size));
-	bdev->dev.block_order = ilog2(block_size);
-	assert(block_size == (1 << bdev->dev.block_order));
+	if (!block_order) {
+		int block_size;
+		assert(!ioctl(bdev->fd, BLKBSZGET, &block_size));
+		block_order = ilog2(block_size);
+		assert(block_size == (1 << block_order));
+	}
+	bdev->dev.block_order = block_order;
 
 	bdev->dev.read_block = bdev_read_block;
 	bdev->dev.write_block = bdev_write_block;

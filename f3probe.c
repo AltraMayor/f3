@@ -35,14 +35,14 @@ static struct argp_option options[] = {
 		"Fake size of the emulated drive",	0},
 	{"debug-wrap",		'w',	"N",		OPTION_HIDDEN,
 		"Wrap parameter of the emulated drive",	0},
-	{"debug-block-order",	'b',	"ORDER",	OPTION_HIDDEN,
-		"Block size the emulated drive is 2^ORDER Byte",	0},
 	{"debug-keep-file",	'k',	NULL,		OPTION_HIDDEN,
 		"Don't remove file used for emulating the drive",	0},
 	{"debug-unit-test",	'u',	NULL,		OPTION_HIDDEN,
 		"Run a unit test; it ignores all other debug options",	0},
+	{"block-order",		'b',	"ORDER",	0,
+		"Force block size of the drive to 2^ORDER Bytes",	2},
 	{"destructive",		'n',	NULL,		0,
-		"Do not restore blocks of the device after probing it",	2},
+		"Do not restore blocks of the device after probing it",	0},
 	{"min-memory",		'l',	NULL,		0,
 		"Trade speed for less use of memory",		0},
 	{"reset-type",		's',	"TYPE",		0,
@@ -159,9 +159,9 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 	case 'b':
 		ll = arg_to_long_long(state, arg);
-		if (ll < 9 || ll > 20)
+		if (ll != 0 && (ll < 9 || ll > 20))
 			argp_error(state,
-				"Block order must be in the interval [9, 20]");
+				"Block order must be in the interval [9, 20] or be zero");
 		args->block_order = ll;
 		args->debug = true;
 		break;
@@ -367,7 +367,8 @@ static int test_device(struct args *args)
 		? create_file_device(args->filename, args->real_size_byte,
 			args->fake_size_byte, args->wrap, args->block_order,
 			args->keep_file)
-		: create_block_device(args->filename, args->reset_type);
+		: create_block_device(args->filename, args->block_order,
+			args->reset_type);
 	if (!dev) {
 		fprintf(stderr, "\nApplication cannot continue, finishing...\n");
 		exit(1);
@@ -480,7 +481,7 @@ int main(int argc, char **argv)
 		.real_size_byte	= 1ULL << 31,
 		.fake_size_byte	= 1ULL << 34,
 		.wrap		= 31,
-		.block_order	= 9,
+		.block_order	= 0,
 	};
 
 	/* Read parameters. */
