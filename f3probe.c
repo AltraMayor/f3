@@ -323,20 +323,19 @@ static int unit_test(const char *filename)
 	return 0;
 }
 
-static void report_size(const char *prefix, uint64_t bytes)
+static void report_size(const char *prefix, uint64_t bytes, int block_order)
 {
 	double f = bytes;
 	const char *unit = adjust_unit(&f);
-	assert(bytes % SECTOR_SIZE == 0);
-	printf("%s %.2f %s (%" PRIu64 " sector)\n", prefix, f, unit,
-		bytes / SECTOR_SIZE);
+	printf("%s %.2f %s (%" PRIu64 " blocks)\n", prefix, f, unit,
+		bytes >> block_order);
 }
 
 static void report_order(const char *prefix, int order)
 {
 	double f = (1ULL << order);
 	const char *unit = adjust_unit(&f);
-	printf("%s %.2f %s (2^%i Byte)\n", prefix, f, unit, order);
+	printf("%s %.2f %s (2^%i Bytes)\n", prefix, f, unit, order);
 }
 
 static void report_sector(const char *prefix, uint64_t sector)
@@ -451,8 +450,8 @@ static int test_device(struct args *args)
 
 	time_s = (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec)/1000000.;
 	printf("\nDevice geometry:\n");
-	  report_size("\t     *Real* size:", real_size_byte);
-	  report_size("\t  Announced size:", announced_size_byte);
+	  report_size("\t     *Real* size:", real_size_byte, block_order);
+	  report_size("\t  Announced size:", announced_size_byte, block_order);
 	 report_order("\t          Module:", wrap);
 	 report_order("\t      Block size:", block_order);
 	assert(block_order >= 9);
