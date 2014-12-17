@@ -1,7 +1,7 @@
-Version 5.0 - ??? ??, 201?
+Version 5.0 - Dec 24, 2014
 
     * add f3probe (experimental).
-    * add f3brew  (experimental).
+    * fix building issue on Macs.
 
 Version 4.0 - Sep 9, 2014
 
