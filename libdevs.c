@@ -335,8 +335,6 @@ static struct udev_device *map_dev_to_usb_dev(struct udev_device *dev)
 	 */
 	usb_dev = udev_device_get_parent_with_subsystem_devtype(
 		dev, "usb", "usb_device");
-	if (!usb_dev)
-		err(errno, "Unable to find parent device");
 
 	/* @usb_dev is not referenced, and will be freed when
 	 * the child (i.e. @dev) is freed.
@@ -346,13 +344,21 @@ static struct udev_device *map_dev_to_usb_dev(struct udev_device *dev)
 	return udev_device_ref(usb_dev);
 }
 
-static struct udev_device *map_block_to_usb_dev(struct udev *udev, int block_fd)
+static struct udev_device *dev_from_block_fd(struct udev *udev, int block_fd)
 {
 	struct stat fd_stat;
-	struct udev_device *dev, *usb_dev;
 
 	assert(!fstat(block_fd, &fd_stat));
-	dev = udev_device_new_from_devnum(udev, 'b', fd_stat.st_rdev);
+	if (!S_ISBLK(fd_stat.st_mode))
+		err(EINVAL, "FD %i is not a block device", block_fd);
+	return udev_device_new_from_devnum(udev, 'b', fd_stat.st_rdev);
+}
+
+static struct udev_device *map_block_to_usb_dev(struct udev *udev, int block_fd)
+{
+	struct udev_device *dev, *usb_dev;
+
+	dev = dev_from_block_fd(udev, block_fd);
 	assert(dev);
 	usb_dev = map_dev_to_usb_dev(dev);
 	assert(!udev_device_unref(dev));
@@ -451,7 +457,9 @@ static int bdev_manual_usb_reset(struct device *dev)
 
 	/* Obtain @bus_num and @dev_num of the USB device to monitor. */
 	usb_dev = map_block_to_usb_dev(udev, bdev->fd);
-	assert(usb_dev);
+	if (!usb_dev)
+		errx(1, "Unable to find USB parent device of block device `%s'",
+			bdev->filename);
 	devnode = udev_device_get_devnode(usb_dev);
 	id_vendor = udev_device_get_sysattr_value(usb_dev, "idVendor");
 	id_product = udev_device_get_sysattr_value(usb_dev, "idProduct");
@@ -539,24 +547,27 @@ static void bdev_free(struct device *dev)
 	free((void *)bdev->filename);
 }
 
-static bool is_block_dev(int fd)
+static struct udev_device *map_partition_to_disk(struct udev_device *dev)
 {
-	struct stat stat;
-	assert(!fstat(fd, &stat));
-	return S_ISBLK(stat.st_mode);
+	struct udev_device *disk_dev;
+
+	disk_dev = udev_device_get_parent_with_subsystem_devtype(
+		dev, "block", "disk");
+
+	/* @disk_dev is not referenced, and will be freed when
+	 * the child (i.e. @dev) is freed.
+	 * See udev_device_get_parent_with_subsystem_devtype() for
+	 * details.
+	 */
+	return udev_device_ref(disk_dev);
 }
 
-/* XXX Test if it's a device, or a partition.
- * If a partition, warn user, and ask for confirmation before
- * going ahead.
- * Suggest how to call f3probe with the correct device name if
- * the block device is a partition.
- * Use udev to do these tests.
- * Make sure that no partition of the drive is mounted.
- */
 struct device *create_block_device(const char *filename, enum reset_type rt)
 {
 	struct block_device *bdev;
+	struct udev *udev;
+	struct udev_device *fd_dev, *usb_dev;
+	const char *s;
 	int block_size;
 
 	bdev = malloc(sizeof(*bdev));
@@ -580,10 +591,48 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 		goto filename;
 	}
 
-	if (!is_block_dev(bdev->fd)) {
-		err(EINVAL, "File `%s' is not a block device", filename);
+	/* Make sure that @bdev->fd is a disk, not a partition, and that
+	 * it is in fact backed by a USB device.
+	 */
+	udev = udev_new();
+	if (!udev) {
+		warn("Can't create udev");
 		goto fd;
 	}
+	fd_dev = dev_from_block_fd(udev, bdev->fd);
+	if (!fd_dev) {
+		fprintf(stderr, "Can't create udev device from `%s'\n",
+			filename);
+		goto udev;
+	}
+	assert(!strcmp(udev_device_get_subsystem(fd_dev), "block"));
+	s = udev_device_get_devtype(fd_dev);
+	if (!strcmp(s, "partition")) {
+		struct udev_device *disk_dev = map_partition_to_disk(fd_dev);
+		assert(disk_dev);
+		s = udev_device_get_devnode(disk_dev);
+		fprintf(stderr, "Device `%s' is a partition of disk device `%s'.\n"
+			"You can run this program as follows:\nf3probe %s\n",
+			filename, s, s);
+		/* For some reason, there already was a reference to @disk_dev
+		 * before the call map_partition_to_disk().
+		 */
+		assert(udev_device_unref(disk_dev) == disk_dev);
+		goto fd_dev;
+	} else if (strcmp(s, "disk")) {
+		fprintf(stderr, "Device `%s' is not a disk, but `%s'",
+			filename, s);
+		goto fd_dev;
+	}
+	usb_dev = map_dev_to_usb_dev(fd_dev);
+	if (!usb_dev) {
+		fprintf(stderr, "Device `%s' is not backed by a USB device",
+			filename);
+		goto fd_dev;
+	}
+	assert(!udev_device_unref(usb_dev));
+	assert(!udev_device_unref(fd_dev));
+	assert(!udev_unref(udev));
 
 	switch (rt) {
 	case RT_MANUAL_USB:
@@ -608,6 +657,10 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 
 	return &bdev->dev;
 
+fd_dev:
+	assert(!udev_device_unref(fd_dev));
+udev:
+	assert(!udev_unref(udev));
 fd:
 	assert(!close(bdev->fd));
 filename:
