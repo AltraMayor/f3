@@ -339,6 +339,11 @@ static void report_order(const char *prefix, int order)
 	printf("%s %.2f %s (2^%i Byte)\n", prefix, f, unit, order);
 }
 
+static void report_sector(const char *prefix, uint64_t sector)
+{
+	printf("%s %" PRIu64 "\n", prefix, sector);
+}
+
 static void report_ops(const char *op, uint64_t count, uint64_t time_us)
 {
 	printf("Probe %s op: count=%" PRIu64
@@ -445,10 +450,12 @@ static int test_device(struct args *args)
 
 	time_s = (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec)/1000000.;
 	printf("\nDevice geometry:\n");
-	 report_size("\t   *Real* size:", real_size_byte);
-	 report_size("\tAnnounced size:", announced_size_byte);
-	report_order("\t        Module:", wrap);
-	report_order("\t    Block size:", block_order);
+	  report_size("\t     *Real* size:", real_size_byte);
+	  report_size("\t  Announced size:", announced_size_byte);
+	 report_order("\t          Module:", wrap);
+	 report_order("\t      Block size:", block_order);
+	assert(block_order >= 9);
+	report_sector("\tLast good sector:", (real_size_byte >> 9) - 1);
 	printf("\nProbe time: %.2f seconds\n", time_s);
 
 	if (args->time_ops) {
