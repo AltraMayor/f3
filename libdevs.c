@@ -398,25 +398,6 @@ static struct udev_monitor *create_monitor(struct udev *udev,
 	return mon;
 }
 
-static void wait_for_remove_action(struct udev *udev, const char *devnode)
-{
-	struct udev_monitor *mon;
-	bool done;
-
-	mon = create_monitor(udev, "usb", "usb_device");
-	assert(mon);
-	do {
-		struct udev_device *dev = udev_monitor_receive_device(mon);
-		assert(dev);
-
-		done = !strcmp(udev_device_get_action(dev), "remove") &&
-			!strcmp(udev_device_get_devnode(dev), devnode);
-
-		udev_device_unref(dev);
-	} while (!done);
-	assert(!udev_monitor_unref(mon));
-}
-
 static char *wait_for_add_action(struct udev *udev,
 	const char *id_vendor, const char *id_product, const char *serial)
 {
@@ -462,7 +443,7 @@ static int bdev_manual_usb_reset(struct device *dev)
 	struct block_device *bdev = dev_bdev(dev);
 	struct udev *udev;
 	struct udev_device *usb_dev;
-	const char *devnode, *id_vendor, *id_product, *serial;
+	const char *id_vendor, *id_product, *serial, *devnode;
 
 	udev = udev_new();
 	if (!udev)
@@ -473,7 +454,6 @@ static int bdev_manual_usb_reset(struct device *dev)
 	if (!usb_dev)
 		errx(1, "Unable to find USB parent device of block device `%s'",
 			bdev->filename);
-	devnode = udev_device_get_devnode(usb_dev);
 	id_vendor = udev_device_get_sysattr_value(usb_dev, "idVendor");
 	id_product = udev_device_get_sysattr_value(usb_dev, "idProduct");
 	serial = udev_device_get_sysattr_value(usb_dev, "serial");
@@ -485,14 +465,10 @@ static int bdev_manual_usb_reset(struct device *dev)
 	 */
 	assert(!close(bdev->fd));
 
-	printf("Please unplug the USB drive. Waiting...");
-	fflush(stdout);
-	wait_for_remove_action(udev, devnode);
-	printf(" Thanks\n");
-
-	printf("Please plug back the USB drive. Waiting...");
+	printf("Please unplug and plug back the USB drive. Waiting...");
 	fflush(stdout);
 	devnode = wait_for_add_action(udev, id_vendor, id_product, serial);
+	assert(devnode);
 	printf(" Thanks\n\n");
 
 	udev_device_unref(usb_dev);
