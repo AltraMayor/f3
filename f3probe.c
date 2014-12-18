@@ -405,7 +405,7 @@ static int test_device(struct args *args)
 	assert(!gettimeofday(&t2, NULL));
 
 	if (!args->debug && args->reset_type == RT_MANUAL_USB) {
-		printf("CAUTION\tCAUTION\tCAUTION\n");
+		printf("CAUTION\t\tCAUTION\t\tCAUTION\n");
 		printf("No more resets are needed, so do not unplug the drive\n");
 		fflush(stdout);
 	}

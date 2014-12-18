@@ -602,7 +602,8 @@ struct device *create_block_device(const char *filename, int block_order,
 		assert(disk_dev);
 		s = udev_device_get_devnode(disk_dev);
 		fprintf(stderr, "Device `%s' is a partition of disk device `%s'.\n"
-			"You can run this program as follows:\nf3probe %s\n",
+			"You must run f3probe on the disk device as follows:\n"
+			"f3probe %s\n",
 			filename, s, s);
 		udev_device_unref(disk_dev);
 		goto fd_dev;
