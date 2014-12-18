@@ -163,7 +163,6 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 			argp_error(state,
 				"Block order must be in the interval [9, 20] or be zero");
 		args->block_order = ll;
-		args->debug = true;
 		break;
 
 	case 'k':
