@@ -16,7 +16,7 @@ NOTES:
      help to port them, or find someone that can port them for you.
      If you do port the software, please send me a patch to help others.
    - Currently, f3probe and f3brew are experimental.
-   - f3proble and f3brew require version 1 of the library libudev to compile.
+   - f3probe and f3brew require version 1 of the library libudev to compile.
      On Ubuntu, you can install this library with the following command:
      sudo apt-get install libudev1 libudev-dev
 

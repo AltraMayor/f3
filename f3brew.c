@@ -177,4 +177,5 @@ int main(void)
 	write_and_read_blocks(dev, first_block, last_block);
 
 	free_device(dev);
+	return 0;
 }
