@@ -2,7 +2,7 @@ CC ?= gcc
 CFLAGS += -std=c99 -Wall -Wextra -pedantic -MMD -ggdb
 
 TARGETS = f3write f3read
-EXPERIMENTAL_TARGETS = f3probe f3brew
+EXPERIMENTAL_TARGETS = f3probe f3brew f3fix
 
 all: $(TARGETS)
 experimental: $(EXPERIMENTAL_TARGETS)
@@ -18,6 +18,9 @@ f3probe: libutils.o libdevs.o libprobe.o utils.o f3probe.o
 
 f3brew: libutils.o libdevs.o f3brew.o
 	$(CC) -o $@ $^ -lm -ludev
+
+f3fix: f3fix.o
+	$(CC) -o $@ $^ -lparted
 
 -include *.d
 
