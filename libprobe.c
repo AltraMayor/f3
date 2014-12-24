@@ -122,7 +122,7 @@ static uint64_t estimate_best_n_block(struct device *dev)
 
 	perf_device_sample(dev, NULL, NULL, &write_count, &write_time_us,
 		&reset_count, &reset_time_us);
-	if (!write_count || !reset_count) {
+	if (write_count < 3 || reset_count < 2) {
 		/* There is not enough measurements. */
 		return (1 << 2) - 1;
 	}
