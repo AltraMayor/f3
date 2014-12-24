@@ -279,6 +279,7 @@ int main (int argc, char *argv[])
 
 	ret = !fix_disk(dev, args.disk_type, args.fs_type, args.boot,
 		args.first_sec, args.last_sec);
+	printf("Drive `%s' was successfully fixed\n", args.dev_filename);
 	ped_device_destroy(dev);
 	return ret;
 }
