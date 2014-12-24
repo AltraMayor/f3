@@ -50,6 +50,10 @@ int dev_read_block(struct device *dev, char *buf, uint64_t block);
 int dev_write_block(struct device *dev, const char *buf, uint64_t block);
 int dev_reset(struct device *dev);
 void free_device(struct device *dev);
+/* File name of the device.
+ * This information is important because the filename may change due to resets.
+ */
+const char *dev_get_filename(struct device *dev);
 
 static inline int dev_write_and_reset(struct device *dev, const char *buf,
 	uint64_t block)

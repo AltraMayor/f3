@@ -1,4 +1,4 @@
-#define _POSIX_C_SOURCE 200112L
+#define _POSIX_C_SOURCE 200809L
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -360,6 +360,7 @@ static int test_device(struct args *args)
 	uint64_t read_count, read_time_us;
 	uint64_t write_count, write_time_us;
 	uint64_t reset_count, reset_time_us;
+	const char *final_dev_filename;
 
 	dev = args->debug
 		? create_file_device(args->filename, args->real_size_byte,
@@ -381,18 +382,18 @@ static int test_device(struct args *args)
 	}
 
 	if (args->save) {
-		dev = create_safe_device(dev, probe_device_max_blocks(dev),
-			args->min_mem);
-		if (!dev) {
+		struct device *sdev = create_safe_device(dev,
+			probe_device_max_blocks(dev), args->min_mem);
+		if (!sdev) {
 			if (!args->min_mem)
 				fprintf(stderr, "Out of memory, try `f3probe --min-memory %s'\n",
-					args->filename);
+					dev_get_filename(dev));
 			else
 				fprintf(stderr, "Out of memory, try `f3probe --destructive %s'\nPlease back your data up before using option --destructive.\nAlternatively, you could use a machine with more memory to run f3probe.\n",
-					args->filename);
+					dev_get_filename(dev));
 			exit(1);
 		}
-		assert(dev);
+		dev = sdev;
 	}
 
 	assert(!gettimeofday(&t1, NULL));
@@ -422,16 +423,24 @@ static int test_device(struct args *args)
 		printf("Probe finished, recovering blocks...");
 		fflush(stdout);
 	}
+
+	final_dev_filename = strdup(dev_get_filename(dev));
 	free_device(dev);
+	assert(final_dev_filename);
+
 	if (args->save)
 		printf(" Done\n\n");
+
+	if (strcmp(args->filename, final_dev_filename))
+		printf("\nWARNING: device `%s' moved to `%s' due to the resets\n\n",
+			args->filename, final_dev_filename);
 
 	fake_type = dev_param_to_type(real_size_byte, announced_size_byte,
 		wrap, block_order);
 	switch (fake_type) {
 	case FKTY_GOOD:
 		printf("Good news: The device `%s' is the real thing\n",
-			args->filename);
+			final_dev_filename);
 		break;
 
 	case FKTY_BAD:
@@ -439,7 +448,7 @@ static int test_device(struct args *args)
 	case FKTY_WRAPAROUND:
 	case FKTY_CHAIN:
 		printf("Bad news: The device `%s' is a counterfeit of type %s\n",
-			args->filename, fake_type_to_name(fake_type));
+			final_dev_filename, fake_type_to_name(fake_type));
 		break;
 
 	default:

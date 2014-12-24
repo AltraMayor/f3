@@ -95,6 +95,7 @@ struct device {
 		uint64_t offset);
 	int (*reset)(struct device *dev);
 	void (*free)(struct device *dev);
+	const char *(*get_filename)(struct device *dev);
 };
 
 uint64_t dev_get_size_byte(struct device *dev)
@@ -140,10 +141,16 @@ void free_device(struct device *dev)
 	free(dev);
 }
 
+const char *dev_get_filename(struct device *dev)
+{
+	return dev->get_filename(dev);
+}
+
 struct file_device {
 	/* This must be the first field. See dev_fdev() for details. */
 	struct device dev;
 
+	const char *filename;
 	int fd;
 	uint64_t real_size_byte;
 	uint64_t address_mask;
@@ -223,7 +230,13 @@ static int fdev_write_block(struct device *dev, const char *buf, int length,
 static void fdev_free(struct device *dev)
 {
 	struct file_device *fdev = dev_fdev(dev);
+	free((void *)fdev->filename);
 	assert(!close(fdev->fd));
+}
+
+static const char *fdev_get_filename(struct device *dev)
+{
+	return dev_fdev(dev)->filename;
 }
 
 struct device *create_file_device(const char *filename,
@@ -236,10 +249,14 @@ struct device *create_file_device(const char *filename,
 	if (!fdev)
 		goto error;
 
+	fdev->filename = strdup(filename);
+	if (!fdev->filename)
+		goto fdev;
+
 	fdev->fd = open(filename, O_RDWR | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR);
 	if (fdev->fd < 0) {
 		err(errno, "Can't create file `%s'", filename);
-		goto fdev;
+		goto filename;
 	}
 	if (!keep_file) {
 		/* Unlinking the file now guarantees that it won't exist if
@@ -269,6 +286,7 @@ struct device *create_file_device(const char *filename,
 	fdev->dev.write_block = fdev_write_block;
 	fdev->dev.reset = NULL;
 	fdev->dev.free = fdev_free;
+	fdev->dev.get_filename = fdev_get_filename;
 
 	return &fdev->dev;
 
@@ -276,6 +294,8 @@ keep_file:
 	if (keep_file)
 		unlink(filename);
 	assert(!close(fdev->fd));
+filename:
+	free((void *)fdev->filename);
 fdev:
 	free(fdev);
 error:
@@ -536,6 +556,11 @@ static void bdev_free(struct device *dev)
 	free((void *)bdev->filename);
 }
 
+static const char *bdev_get_filename(struct device *dev)
+{
+	return dev_bdev(dev)->filename;
+}
+
 static struct udev_device *map_partition_to_disk(struct udev_device *dev)
 {
 	struct udev_device *disk_dev;
@@ -646,6 +671,7 @@ struct device *create_block_device(const char *filename, int block_order,
 	bdev->dev.read_block = bdev_read_block;
 	bdev->dev.write_block = bdev_write_block;
 	bdev->dev.free = bdev_free;
+	bdev->dev.get_filename = bdev_get_filename;
 
 	return &bdev->dev;
 
@@ -741,6 +767,11 @@ static void pdev_free(struct device *dev)
 	free_device(pdev->shadow_dev);
 }
 
+static const char *pdev_get_filename(struct device *dev)
+{
+	return dev_get_filename(dev_pdev(dev)->shadow_dev);
+}
+
 struct device *pdev_detach_and_free(struct device *dev)
 {
 	struct perf_device *pdev = dev_pdev(dev);
@@ -773,6 +804,7 @@ struct device *create_perf_device(struct device *dev)
 	pdev->dev.write_block = pdev_write_block;
 	pdev->dev.reset	= pdev_reset;
 	pdev->dev.free = pdev_free;
+	pdev->dev.get_filename = pdev_get_filename;
 
 	return &pdev->dev;
 }
@@ -925,6 +957,11 @@ static void sdev_free(struct device *dev)
 	free_device(sdev->shadow_dev);
 }
 
+static const char *sdev_get_filename(struct device *dev)
+{
+	return dev_get_filename(dev_sdev(dev)->shadow_dev);
+}
+
 struct device *create_safe_device(struct device *dev, int max_blocks,
 	int min_memory)
 {
@@ -968,6 +1005,7 @@ struct device *create_safe_device(struct device *dev, int max_blocks,
 	sdev->dev.write_block = sdev_write_block;
 	sdev->dev.reset	= sdev_reset;
 	sdev->dev.free = sdev_free;
+	sdev->dev.get_filename = sdev_get_filename;
 
 	return &sdev->dev;
 
