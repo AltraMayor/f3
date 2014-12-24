@@ -19,7 +19,7 @@
 const char *argp_program_version = "F3 Probe " F3_STR_VERSION;
 
 /* Arguments. */
-static char adoc[] = "<BLOCK_DEV>";
+static char adoc[] = "<DISK_DEV>";
 
 static char doc[] = "F3 Probe -- probe a block device for "
 	"counterfeit flash memory. If counterfeit, "
@@ -208,7 +208,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 	case ARGP_KEY_END:
 		if (!args->filename)
 			argp_error(state,
-				"The block device was not specified");
+				"The disk device was not specified");
 		if (args->debug &&
 			!dev_param_valid(args->real_size_byte,
 				args->fake_size_byte, args->wrap,
