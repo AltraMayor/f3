@@ -21,18 +21,59 @@ static void list_fs_types(void)
 		puts(fs_type->name);
 }
 
+/* 0 on failure, 1 otherwise. */
+static int fix_disk(PedDevice *dev, PedDiskType *type,
+	PedFileSystemType *fs_type, int boot, PedSector start, PedSector end)
+{
+	PedDisk *disk;
+	PedPartition *part;
+	PedGeometry *geom;
+	PedConstraint *constraint;
+	int ret = 0;
+
+	disk = ped_disk_new_fresh(dev, type);
+	if (!disk)
+		goto out;
+
+	part = ped_partition_new(disk, PED_PARTITION_NORMAL,
+		fs_type, start, end);
+	if (!part)
+		goto disk;
+	if (boot && !ped_partition_set_flag(part, PED_PARTITION_BOOT, 1))
+		goto part;
+
+	geom = ped_geometry_new(dev, start, end - start + 1);
+	if (!geom)
+		goto part;
+	constraint = ped_constraint_exact(geom);
+	ped_geometry_destroy(geom);
+	if (!constraint)
+		goto part;
+
+	ret = ped_disk_add_partition(disk, part, constraint);
+	ped_constraint_destroy(constraint);
+	if (!ret)
+		goto part;
+	/* ped_disk_print(disk); */
+
+	ret = ped_disk_commit(disk);
+	goto disk;
+
+part:
+	ped_partition_destroy(part);
+disk:
+	ped_disk_destroy(disk);
+out:
+	return ret;
+}
+
 /* Use example: sudo ./f3fix /dev/sdb msdos 2048 15010455 */
 
-/* TODO This code needs a careful review to deal with errors. */
 int main (int argc, char *argv[])
 {
 	PedDevice *dev;
 	PedDiskType *type;
-	PedDisk *disk;
-	PedPartition *part; 
-	PedConstraint *constraint;
 	PedFileSystemType *fs_type;
-	PedGeometry *geom;
 	PedSector start = atoi(argv[3]);
 	PedSector   end = atoi(argv[4]);
 	int ret = 1;
@@ -48,35 +89,15 @@ int main (int argc, char *argv[])
 	if (!type)
 		goto device;
 
-	disk = ped_disk_new_fresh(dev, type);
-	if (!disk)
+	fs_type = ped_file_system_type_get("fat32");
+	if (!fs_type)
 		goto device;
 
-	fs_type = ped_file_system_type_get("fat32");
-	assert(fs_type);
+	ret = !fix_disk(dev, type, fs_type, true, start, end);
 
-	part = ped_partition_new(disk, PED_PARTITION_NORMAL,
-		fs_type, start, end);
-	if (!part)
-		goto disk;
-	assert(ped_partition_set_flag(part, PED_PARTITION_BOOT, 1));
-
-	geom = ped_geometry_new(dev, start, end - start + 1);
-	assert(geom);
-	constraint = ped_constraint_exact(geom);
-	assert(constraint);
-	assert(ped_disk_add_partition(disk, part, constraint));
-
-	ped_disk_print(disk);
-
-	assert(ped_disk_commit(disk));
-
-	ret = 0;
-
-disk:
-	ped_disk_destroy(disk);
 device:
 	ped_device_destroy(dev);
 out:
 	return ret;
+
 }
