@@ -26,10 +26,10 @@ NOTES:
 
 ### Use example of f3write/f3read
 
-./f3write /media/5EBD-5C80/
-./f3read /media/5EBD-5C80/
+./f3write /media/michel/5EBD-5C80/
+./f3read /media/michel/5EBD-5C80/
 
-Please replace "/media/5EBD-5C80/" with the appropriate path.
+Please replace "/media/michel/5EBD-5C80/" with the appropriate path.
 USB devices are mounted in "/Volumes" on Macs.
 
 For more information see http://oss.digirati.com.br/f3/
@@ -55,11 +55,11 @@ they are really meant to help you to write your own scripts.
 So you can personalize F3 to your specific needs.
 
 f3write.h2w	- Script to create files exactly like H2testw.
-		  Use example: 'f3write.h2w /media/5EBD-5C80/'
+		  Use example: 'f3write.h2w /media/michel/5EBD-5C80/'
 
 log-f3wr	- Script that runs f3write and f3read, and records
 		  their output into a log file.
-		  Use example: 'log-f3wr log-filename /media/5EBD-5C80/'
+		  Use example: 'log-f3wr log-filename /media/michel/5EBD-5C80/'
 
 Please notice that all scripts and use examples above assume that
 f3write, f3read, and the scripts are reachable from
@@ -68,6 +68,6 @@ If that is not the case, but all of them are in your current path,
 prefix the use examples above with 'PATH=$PATH:./' as shown below
 for the script log-f3wr:
 
-PATH=$PATH:./ log-f3wr log-filename /media/5EBD-5C80/
+PATH=$PATH:./ log-f3wr log-filename /media/michel/5EBD-5C80/
 
 The current path is represented by './' in the previous example.
