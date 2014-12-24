@@ -7,10 +7,6 @@
 /* XXX Refactor utils library since f3probe barely uses it. */
 #include "utils.h"
 
-/* TODO Modify f3probe to suggest using f3fix when the drive is fake.
- * Wait until f3fix is stable to implement this.
- */
-
 /* Argp's global variables. */
 const char *argp_program_version = "F3 Fix " F3_STR_VERSION;
 

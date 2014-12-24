@@ -361,6 +361,7 @@ static int test_device(struct args *args)
 	uint64_t write_count, write_time_us;
 	uint64_t reset_count, reset_time_us;
 	const char *final_dev_filename;
+	uint64_t last_good_sector;
 
 	dev = args->debug
 		? create_file_device(args->filename, args->real_size_byte,
@@ -435,6 +436,7 @@ static int test_device(struct args *args)
 		printf("\nWARNING: device `%s' moved to `%s' due to the resets\n\n",
 			args->filename, final_dev_filename);
 
+	last_good_sector = (real_size_byte >> 9) - 1;
 	fake_type = dev_param_to_type(real_size_byte, announced_size_byte,
 		wrap, block_order);
 	switch (fake_type) {
@@ -444,11 +446,18 @@ static int test_device(struct args *args)
 		break;
 
 	case FKTY_BAD:
+		printf("Bad news: The device `%s' is damaged\n",
+			final_dev_filename);
+		break;
+
 	case FKTY_LIMBO:
 	case FKTY_WRAPAROUND:
 	case FKTY_CHAIN:
-		printf("Bad news: The device `%s' is a counterfeit of type %s\n",
-			final_dev_filename, fake_type_to_name(fake_type));
+		printf("Bad news: The device `%s' is a counterfeit of type %s\n\n"
+			"You can \"fix\" this device using the following command:\n"
+			"f3fix --last-sec=%" PRIu64 " %s\n",
+			final_dev_filename, fake_type_to_name(fake_type),
+			last_good_sector, final_dev_filename);
 		break;
 
 	default:
@@ -463,7 +472,7 @@ static int test_device(struct args *args)
 	 report_order("\t          Module:", wrap);
 	 report_order("\t      Block size:", block_order);
 	assert(block_order >= 9);
-	report_sector("\tLast good sector:", (real_size_byte >> 9) - 1);
+	report_sector("\tLast good sector:", last_good_sector);
 	printf("\nProbe time: %.2f seconds\n", time_s);
 
 	if (args->time_ops) {
