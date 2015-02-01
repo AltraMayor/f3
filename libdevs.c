@@ -390,17 +390,6 @@ static struct udev_device *dev_from_block_fd(struct udev *udev, int block_fd)
 	return udev_device_new_from_devnum(udev, 'b', fd_stat.st_rdev);
 }
 
-static struct udev_device *map_block_to_usb_dev(struct udev *udev, int block_fd)
-{
-	struct udev_device *dev, *usb_dev;
-
-	dev = dev_from_block_fd(udev, block_fd);
-	assert(dev);
-	usb_dev = map_dev_to_usb_dev(dev);
-	udev_device_unref(dev);
-	return usb_dev;
-}
-
 static struct udev_monitor *create_monitor(struct udev *udev,
 	const char *subsystem, const char *devtype)
 {
@@ -431,8 +420,7 @@ static uint64_t get_udev_dev_size_byte(struct udev_device *dev)
 	return ll * 512LL;
 }
 
-static char *wait_for_add_action(struct udev *udev,
-	const char *id_vendor, const char *id_product, const char *serial,
+static char *wait_for_add_action(struct udev *udev, const char *id_serial,
 	const char *original_devnode, uint64_t size_byte)
 {
 	char *devnode = NULL;
@@ -442,55 +430,48 @@ static char *wait_for_add_action(struct udev *udev,
 	mon = create_monitor(udev, "block", "disk");
 	assert(mon);
 	do {
+		struct udev_device *dev;
 		const char *action;
-		struct udev_device *dev, *usb_dev;
+		uint64_t new_size_byte;
 
 		dev = udev_monitor_receive_device(mon);
 		assert(dev);
+		if (strcmp(udev_device_get_property_value(dev, "ID_SERIAL"),
+			id_serial))
+			goto next;
+
 		action = udev_device_get_action(dev);
-		if (strcmp(action, "add") &&
-			strcmp(action, "change"))
-			goto next_dev;
-
-		usb_dev = map_dev_to_usb_dev(dev);
-		if (!usb_dev ||
-			strcmp(udev_device_get_sysattr_value(usb_dev,
-				"idVendor"), id_vendor) ||
-			strcmp(udev_device_get_sysattr_value(usb_dev,
-				"idProduct"), id_product) ||
-			strcmp(udev_device_get_sysattr_value(usb_dev,
-				"serial"), serial))
-			goto next_usb_dev;
-
-		/* Deal with the case in wich the user pulls
-		 * the memory card from the card reader.
-		 */
-		if (!strcmp(action, "change")) {
-			uint64_t new_size_byte;
+		if (!strcmp(action, "add")) {
+			new_size_byte = get_udev_dev_size_byte(dev);
+		} else if (!strcmp(action, "change")) {
+			/* Deal with the case in wich the user pulls
+			 * the memory card from the card reader.
+			 */
 
 			if (strcmp(udev_device_get_devnode(dev),
 				original_devnode))
-				goto next_usb_dev;
+				goto next;
 
 			new_size_byte = get_udev_dev_size_byte(dev);
 			if (!new_size_byte) {
 				/* Memory card removed. */
 				went_to_zero = true;
-				goto next_usb_dev;
+				goto next;
 			}
 
 			if (!went_to_zero || new_size_byte != size_byte)
-				goto next_usb_dev;
+				goto next;
+		} else {
+			/* Ignore all other actions. */
+			goto next;
 		}
 
-		assert(get_udev_dev_size_byte(dev) == size_byte);
+		assert(new_size_byte == size_byte);
 		devnode = strdup(udev_device_get_devnode(dev));
 		assert(devnode);
 		done = true;
 
-next_usb_dev:
-		udev_device_unref(usb_dev);
-next_dev:
+next:
 		udev_device_unref(dev);
 	} while (!done);
 	assert(!udev_monitor_unref(mon));
@@ -502,21 +483,21 @@ static int bdev_manual_usb_reset(struct device *dev)
 {
 	struct block_device *bdev = dev_bdev(dev);
 	struct udev *udev;
-	struct udev_device *usb_dev;
-	const char *id_vendor, *id_product, *serial, *devnode;
+	struct udev_device *udev_dev, *usb_dev;
+	const char *id_serial, *devnode;
 
 	udev = udev_new();
 	if (!udev)
 		err(errno, "Can't create udev");
 
-	/* Obtain @bus_num and @dev_num of the USB device to monitor. */
-	usb_dev = map_block_to_usb_dev(udev, bdev->fd);
+	/* Identify which drive we are going to reset. */
+	udev_dev = dev_from_block_fd(udev, bdev->fd);
+	assert(udev_dev);
+	usb_dev = map_dev_to_usb_dev(udev_dev);
 	if (!usb_dev)
 		errx(1, "Unable to find USB parent device of block device `%s'",
 			bdev->filename);
-	id_vendor = udev_device_get_sysattr_value(usb_dev, "idVendor");
-	id_product = udev_device_get_sysattr_value(usb_dev, "idProduct");
-	serial = udev_device_get_sysattr_value(usb_dev, "serial");
+	id_serial = udev_device_get_property_value(udev_dev, "ID_SERIAL");
 
 	/* Close @bdev->fd before the drive is removed to increase
 	 * the chance that the device will receive the same filename.
@@ -527,12 +508,13 @@ static int bdev_manual_usb_reset(struct device *dev)
 
 	printf("Please unplug and plug back the USB drive. Waiting...");
 	fflush(stdout);
-	devnode = wait_for_add_action(udev, id_vendor, id_product, serial,
+	devnode = wait_for_add_action(udev, id_serial,
 		dev_get_filename(dev), dev_get_size_byte(dev));
 	assert(devnode);
 	printf(" Thanks\n\n");
 
 	udev_device_unref(usb_dev);
+	udev_device_unref(udev_dev);
 	assert(!udev_unref(udev));
 
 	bdev->fd = bdev_open(devnode);
@@ -542,6 +524,17 @@ static int bdev_manual_usb_reset(struct device *dev)
 	bdev->filename = devnode;
 
 	return 0;
+}
+
+static struct udev_device *map_block_to_usb_dev(struct udev *udev, int block_fd)
+{
+	struct udev_device *dev, *usb_dev;
+
+	dev = dev_from_block_fd(udev, block_fd);
+	assert(dev);
+	usb_dev = map_dev_to_usb_dev(dev);
+	udev_device_unref(dev);
+	return usb_dev;
 }
 
 /* Return an open fd to the underlying hardware of the block device. */
