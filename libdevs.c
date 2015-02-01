@@ -320,7 +320,10 @@ static int read_all(int fd, char *buf, int count)
 	int done = 0;
 	do {
 		ssize_t rc = read(fd, buf + done, count - done);
-		assert(rc >= 0); /* Did the read() went right? */
+		if (rc < 0) {
+			assert(errno == EIO);
+			return errno;
+		}
 		assert(rc != 0); /* We should never hit the end of the file. */
 		done += rc;
 	} while (done < count);
