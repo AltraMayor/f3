@@ -421,39 +421,76 @@ static struct udev_monitor *create_monitor(struct udev *udev,
 	return mon;
 }
 
+static uint64_t get_udev_dev_size_byte(struct udev_device *dev)
+{
+	const char *str_size_sector =
+		udev_device_get_sysattr_value(dev, "size");
+	char *end;
+	long long ll = strtoll(str_size_sector, &end, 10);
+	assert(str_size_sector && !*end);
+	return ll * 512LL;
+}
+
 static char *wait_for_add_action(struct udev *udev,
-	const char *id_vendor, const char *id_product, const char *serial)
+	const char *id_vendor, const char *id_product, const char *serial,
+	const char *original_devnode, uint64_t size_byte)
 {
 	char *devnode = NULL;
-	bool done = false;
+	bool done = false, went_to_zero = false;
 	struct udev_monitor *mon;
 
 	mon = create_monitor(udev, "block", "disk");
 	assert(mon);
 	do {
+		const char *action;
 		struct udev_device *dev, *usb_dev;
 
 		dev = udev_monitor_receive_device(mon);
 		assert(dev);
-		if (strcmp(udev_device_get_action(dev), "add")) {
-			udev_device_unref(dev);
-			continue;
-		}
+		action = udev_device_get_action(dev);
+		if (strcmp(action, "add") &&
+			strcmp(action, "change"))
+			goto next_dev;
 
 		usb_dev = map_dev_to_usb_dev(dev);
-		if (usb_dev &&
-			!strcmp(udev_device_get_sysattr_value(usb_dev,
-				"idVendor"), id_vendor) &&
-			!strcmp(udev_device_get_sysattr_value(usb_dev,
-				"idProduct"), id_product) &&
-			!strcmp(udev_device_get_sysattr_value(usb_dev,
-				"serial"), serial)) {
-			devnode = strdup(udev_device_get_devnode(dev));
-			assert(devnode);
-			done = true;
+		if (!usb_dev ||
+			strcmp(udev_device_get_sysattr_value(usb_dev,
+				"idVendor"), id_vendor) ||
+			strcmp(udev_device_get_sysattr_value(usb_dev,
+				"idProduct"), id_product) ||
+			strcmp(udev_device_get_sysattr_value(usb_dev,
+				"serial"), serial))
+			goto next_usb_dev;
+
+		/* Deal with the case in wich the user pulls
+		 * the memory card from the card reader.
+		 */
+		if (!strcmp(action, "change")) {
+			uint64_t new_size_byte;
+
+			if (strcmp(udev_device_get_devnode(dev),
+				original_devnode))
+				goto next_usb_dev;
+
+			new_size_byte = get_udev_dev_size_byte(dev);
+			if (!new_size_byte) {
+				/* Memory card removed. */
+				went_to_zero = true;
+				goto next_usb_dev;
+			}
+
+			if (!went_to_zero || new_size_byte != size_byte)
+				goto next_usb_dev;
 		}
 
+		assert(get_udev_dev_size_byte(dev) == size_byte);
+		devnode = strdup(udev_device_get_devnode(dev));
+		assert(devnode);
+		done = true;
+
+next_usb_dev:
 		udev_device_unref(usb_dev);
+next_dev:
 		udev_device_unref(dev);
 	} while (!done);
 	assert(!udev_monitor_unref(mon));
@@ -490,7 +527,8 @@ static int bdev_manual_usb_reset(struct device *dev)
 
 	printf("Please unplug and plug back the USB drive. Waiting...");
 	fflush(stdout);
-	devnode = wait_for_add_action(udev, id_vendor, id_product, serial);
+	devnode = wait_for_add_action(udev, id_vendor, id_product, serial,
+		dev_get_filename(dev), dev_get_size_byte(dev));
 	assert(devnode);
 	printf(" Thanks\n\n");
 
