@@ -384,9 +384,16 @@ static struct udev_device *dev_from_block_fd(struct udev *udev, int block_fd)
 {
 	struct stat fd_stat;
 
-	assert(!fstat(block_fd, &fd_stat));
-	if (!S_ISBLK(fd_stat.st_mode))
-		err(EINVAL, "FD %i is not a block device", block_fd);
+	if (fstat(block_fd, &fd_stat)) {
+		warn("Can't fstat() FD %i", block_fd);
+		return NULL;
+	}
+
+	if (!S_ISBLK(fd_stat.st_mode)) {
+		warnx("FD %i is not a block device", block_fd);
+		return NULL;
+	}
+
 	return udev_device_new_from_devnum(udev, 'b', fd_stat.st_rdev);
 }
 
@@ -423,22 +430,32 @@ static uint64_t get_udev_dev_size_byte(struct udev_device *dev)
 	return size_sector * 512LL;
 }
 
-static char *wait_for_reset(struct udev *udev, const char *id_serial,
-	uint64_t original_size_byte)
+static int wait_for_reset(struct udev *udev, const char *id_serial,
+	uint64_t original_size_byte, const char **final_dev_filename)
 {
-	char *devnode = NULL;
 	bool done = false, went_to_zero = false, already_changed_size = false;
 	struct udev_monitor *mon;
+	int rc;
 
 	mon = create_monitor(udev, "block", "disk");
-	assert(mon);
+	if (!mon) {
+		warnx("%s(): Can't instantiate a monitor", __func__);
+		rc = - ENOMEM;
+		goto out;
+	}
+
 	do {
 		struct udev_device *dev;
 		const char *action;
 		uint64_t new_size_byte;
+		const char *devnode;
 
 		dev = udev_monitor_receive_device(mon);
-		assert(dev);
+		if (!dev) {
+			warnx("%s(): Can't monitor device", __func__);
+			rc = - ENOMEM;
+			goto mon;
+		}
 		if (strcmp(udev_device_get_property_value(dev, "ID_SERIAL"),
 			id_serial))
 			goto next;
@@ -483,21 +500,32 @@ static char *wait_for_reset(struct udev *udev, const char *id_serial,
 				goto next;
 			}
 
-			printf("\nThe reset failed. The drive has not returned to its original size.\n");
+			printf("\nThe reset failed. The drive has not returned to its original size.\n\n");
 			fflush(stdout);
-			exit(1);
+			rc = - ENXIO;
+			goto mon;
 		}
 
 		devnode = strdup(udev_device_get_devnode(dev));
-		assert(devnode);
+		if (!devnode) {
+			warnx("%s(): Out of memory", __func__);
+			rc = - ENOMEM;
+			goto mon;
+		}
+		free((void *)*final_dev_filename);
+		*final_dev_filename = devnode;
 		done = true;
 
 next:
 		udev_device_unref(dev);
 	} while (!done);
-	assert(!udev_monitor_unref(mon));
 
-	return devnode;
+	rc = 0;
+
+mon:
+	assert(!udev_monitor_unref(mon));
+out:
+	return rc;
 }
 
 static int bdev_manual_usb_reset(struct device *dev)
@@ -505,20 +533,46 @@ static int bdev_manual_usb_reset(struct device *dev)
 	struct block_device *bdev = dev_bdev(dev);
 	struct udev *udev;
 	struct udev_device *udev_dev, *usb_dev;
-	const char *id_serial, *devnode;
+	const char *id_serial;
+	int rc;
+
+	if (bdev->fd < 0) {
+		/* We don't have a device open.
+		 * This can happen when the previous reset failed, and
+		 * a reset is being called again.
+		 */
+		rc = - EBADF;
+		goto out;
+	}
 
 	udev = udev_new();
-	if (!udev)
-		err(errno, "Can't create udev");
+	if (!udev) {
+		warnx("Can't load library udev");
+		rc = - EOPNOTSUPP;
+		goto out;
+	}
 
 	/* Identify which drive we are going to reset. */
 	udev_dev = dev_from_block_fd(udev, bdev->fd);
-	assert(udev_dev);
+	if (!udev_dev) {
+		warnx("Library udev can't find device `%s'",
+			dev_get_filename(dev));
+		rc = - EINVAL;
+		goto udev;
+	}
 	usb_dev = map_dev_to_usb_dev(udev_dev);
-	if (!usb_dev)
-		errx(1, "Unable to find USB parent device of block device `%s'",
-			bdev->filename);
+	if (!usb_dev) {
+		warnx("Block device `%s' is not backed by a USB device",
+			dev_get_filename(dev));
+		rc = - EINVAL;
+		goto udev_dev;
+	}
 	id_serial = udev_device_get_property_value(udev_dev, "ID_SERIAL");
+	if (!id_serial) {
+		warnx("%s(): Out of memory", __func__);
+		rc = - ENOMEM;
+		goto usb_dev;
+	}
 
 	/* Close @bdev->fd before the drive is removed to increase
 	 * the chance that the device will receive the same filename.
@@ -526,24 +580,35 @@ static int bdev_manual_usb_reset(struct device *dev)
 	 * receive the same file name, though.
 	 */
 	assert(!close(bdev->fd));
+	bdev->fd = -1;
 
 	printf("Please unplug and plug back the USB drive. Waiting...");
 	fflush(stdout);
-	devnode = wait_for_reset(udev, id_serial, dev_get_size_byte(dev));
-	assert(devnode);
+	rc = wait_for_reset(udev, id_serial, dev_get_size_byte(dev),
+		&bdev->filename);
+	if (rc) {
+		assert(rc < 0);
+		goto usb_dev;
+	}
 	printf(" Thanks\n\n");
 
+	bdev->fd = bdev_open(bdev->filename);
+	if (bdev->fd < 0) {
+		rc = - errno;
+		warn("Can't REopen device `%s'", bdev->filename);
+		goto usb_dev;
+	}
+
+	rc = 0;
+
+usb_dev:
 	udev_device_unref(usb_dev);
+udev_dev:
 	udev_device_unref(udev_dev);
+udev:
 	assert(!udev_unref(udev));
-
-	bdev->fd = bdev_open(devnode);
-	if (bdev->fd < 0)
-		err(errno, "Can't REopen device `%s'", devnode);
-	free((void *)bdev->filename);
-	bdev->filename = devnode;
-
-	return 0;
+out:
+	return rc;
 }
 
 static struct udev_device *map_block_to_usb_dev(struct udev *udev, int block_fd)
@@ -551,7 +616,8 @@ static struct udev_device *map_block_to_usb_dev(struct udev *udev, int block_fd)
 	struct udev_device *dev, *usb_dev;
 
 	dev = dev_from_block_fd(udev, block_fd);
-	assert(dev);
+	if (!dev)
+		return NULL;
 	usb_dev = map_dev_to_usb_dev(dev);
 	udev_device_unref(dev);
 	return usb_dev;
@@ -561,26 +627,36 @@ static struct udev_device *map_block_to_usb_dev(struct udev *udev, int block_fd)
 static int usb_fd_from_block_dev(int block_fd, int open_flags)
 {
 	struct udev *udev;
-	struct udev_device *dev;
+	struct udev_device *usb_dev;
 	const char *usb_filename;
 	int usb_fd;
 
 	udev = udev_new();
-	if (!udev)
-		err(errno, "Can't create udev");
+	if (!udev) {
+		warnx("Can't load library udev");
+		return - EOPNOTSUPP;
+	}
 
-	dev = map_block_to_usb_dev(udev, block_fd);
-	assert(dev);
+	usb_dev = map_block_to_usb_dev(udev, block_fd);
+	if (!usb_dev) {
+		warnx("Block device is not backed by a USB device");
+		return - EINVAL;
+	}
 
-	usb_filename = udev_device_get_devnode(dev);
-	if (!usb_filename)
-		err(EINVAL, "Block device is not backed by a USB device");
+	usb_filename = udev_device_get_devnode(usb_dev);
+	if (!usb_filename) {
+		warnx("%s(): Out of memory", __func__);
+		return - ENOMEM;
+	}
 
 	usb_fd = open(usb_filename, open_flags | O_NONBLOCK);
-	if (usb_fd < 0)
-		err(errno, "Can't open device `%s'", usb_filename);
+	if (usb_fd < 0) {
+		int rc = - errno;
+		warn("Can't open device `%s'", usb_filename);
+		return rc;
+	}
 
-	udev_device_unref(dev);
+	udev_device_unref(usb_dev);
 	assert(!udev_unref(udev));
 	return usb_fd;
 }
@@ -590,15 +666,28 @@ static int bdev_usb_reset(struct device *dev)
 	struct block_device *bdev = dev_bdev(dev);
 	int usb_fd;
 
+	if (bdev->fd < 0) {
+		/* We don't have a device open.
+		 * This can happen when the previous reset failed, and
+		 * a reset is being called again.
+		 */
+		return - EBADF;
+	}
+
 	usb_fd = usb_fd_from_block_dev(bdev->fd, O_WRONLY);
-	assert(usb_fd >= 0);
+	if (usb_fd < 0)
+		return usb_fd;
 
 	assert(!close(bdev->fd));
+	bdev->fd = -1;
 	assert(!ioctl(usb_fd, USBDEVFS_RESET));
 	assert(!close(usb_fd));
 	bdev->fd = bdev_open(bdev->filename);
-	if (bdev->fd < 0)
-		err(errno, "Can't REopen device `%s'", bdev->filename);
+	if (bdev->fd < 0) {
+		int rc = - errno;
+		warn("Can't REopen device `%s'", bdev->filename);
+		return rc;
+	}
 	return 0;
 }
 
@@ -665,7 +754,7 @@ struct device *create_block_device(const char *filename, int block_order,
 	 */
 	udev = udev_new();
 	if (!udev) {
-		warn("Can't create udev");
+		warnx("Can't load library udev");
 		goto fd;
 	}
 	fd_dev = dev_from_block_fd(udev, bdev->fd);
