@@ -322,7 +322,7 @@ static int read_all(int fd, char *buf, int count)
 		ssize_t rc = read(fd, buf + done, count - done);
 		if (rc < 0) {
 			assert(errno == EIO);
-			return errno;
+			return - errno;
 		}
 		assert(rc != 0); /* We should never hit the end of the file. */
 		done += rc;
