@@ -415,16 +415,19 @@ static uint64_t get_udev_dev_size_byte(struct udev_device *dev)
 	const char *str_size_sector =
 		udev_device_get_sysattr_value(dev, "size");
 	char *end;
-	long long ll = strtoll(str_size_sector, &end, 10);
-	assert(str_size_sector && !*end);
-	return ll * 512LL;
+	long long size_sector;
+	if (!str_size_sector)
+		return 0;
+	size_sector = strtoll(str_size_sector, &end, 10);
+	assert(!*end);
+	return size_sector * 512LL;
 }
 
-static char *wait_for_add_action(struct udev *udev, const char *id_serial,
-	const char *original_devnode, uint64_t size_byte)
+static char *wait_for_reset(struct udev *udev, const char *id_serial,
+	uint64_t original_size_byte)
 {
 	char *devnode = NULL;
-	bool done = false, went_to_zero = false;
+	bool done = false, went_to_zero = false, already_changed_size = false;
 	struct udev_monitor *mon;
 
 	mon = create_monitor(udev, "block", "disk");
@@ -441,32 +444,50 @@ static char *wait_for_add_action(struct udev *udev, const char *id_serial,
 			goto next;
 
 		action = udev_device_get_action(dev);
+		new_size_byte = get_udev_dev_size_byte(dev);
 		if (!strcmp(action, "add")) {
-			new_size_byte = get_udev_dev_size_byte(dev);
+			/* Deal with the case in wich the user pulls
+			 * the USB device.
+			 *
+			 * DO NOTHING.
+			 */
 		} else if (!strcmp(action, "change")) {
 			/* Deal with the case in wich the user pulls
 			 * the memory card from the card reader.
 			 */
 
-			if (strcmp(udev_device_get_devnode(dev),
-				original_devnode))
-				goto next;
-
-			new_size_byte = get_udev_dev_size_byte(dev);
 			if (!new_size_byte) {
 				/* Memory card removed. */
 				went_to_zero = true;
 				goto next;
 			}
 
-			if (!went_to_zero || new_size_byte != size_byte)
+			if (!went_to_zero)
 				goto next;
 		} else {
 			/* Ignore all other actions. */
 			goto next;
 		}
 
-		assert(new_size_byte == size_byte);
+		if (new_size_byte != original_size_byte) {
+			/* This is an edge case. */
+
+			if (!already_changed_size) {
+				already_changed_size = true;
+				went_to_zero = false;
+				printf("\nThe drive changed its size of %"
+					PRIu64 " Bytes to %" PRIu64
+					" Bytes after the reset.\nPlease try to unplug and plug it back again...",
+					original_size_byte, new_size_byte);
+				fflush(stdout);
+				goto next;
+			}
+
+			printf("\nThe reset failed. The drive has not returned to its original size.\n");
+			fflush(stdout);
+			exit(1);
+		}
+
 		devnode = strdup(udev_device_get_devnode(dev));
 		assert(devnode);
 		done = true;
@@ -508,8 +529,7 @@ static int bdev_manual_usb_reset(struct device *dev)
 
 	printf("Please unplug and plug back the USB drive. Waiting...");
 	fflush(stdout);
-	devnode = wait_for_add_action(udev, id_serial,
-		dev_get_filename(dev), dev_get_size_byte(dev));
+	devnode = wait_for_reset(udev, id_serial, dev_get_size_byte(dev));
 	assert(devnode);
 	printf(" Thanks\n\n");
 
