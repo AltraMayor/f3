@@ -431,7 +431,7 @@ static uint64_t get_udev_dev_size_byte(struct udev_device *dev)
 }
 
 static int wait_for_reset(struct udev *udev, const char *id_serial,
-	uint64_t original_size_byte, const char **final_dev_filename)
+	uint64_t original_size_byte, const char **pfinal_dev_filename)
 {
 	bool done = false, went_to_zero = false, already_changed_size = false;
 	struct udev_monitor *mon;
@@ -512,8 +512,8 @@ static int wait_for_reset(struct udev *udev, const char *id_serial,
 			rc = - ENOMEM;
 			goto mon;
 		}
-		free((void *)*final_dev_filename);
-		*final_dev_filename = devnode;
+		free((void *)*pfinal_dev_filename);
+		*pfinal_dev_filename = devnode;
 		done = true;
 
 next:
