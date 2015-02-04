@@ -446,7 +446,7 @@ static int wait_for_reset(struct udev *udev, const char *id_serial,
 
 	do {
 		struct udev_device *dev;
-		const char *action;
+		const char *dev_id_serial, *action;
 		uint64_t new_size_byte;
 		const char *devnode;
 
@@ -456,8 +456,9 @@ static int wait_for_reset(struct udev *udev, const char *id_serial,
 			rc = - ENOMEM;
 			goto mon;
 		}
-		if (strcmp(udev_device_get_property_value(dev, "ID_SERIAL"),
-			id_serial))
+		dev_id_serial = udev_device_get_property_value(dev,
+			"ID_SERIAL");
+		if (!dev_id_serial || strcmp(dev_id_serial, id_serial))
 			goto next;
 
 		action = udev_device_get_action(dev);
