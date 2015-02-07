@@ -1,3 +1,5 @@
+#include <stdlib.h>	/* For strtoll().	*/
+
 #include "libutils.h"
 
 /* Count the number of 1 bits. */
@@ -45,4 +47,50 @@ void *align_mem(void *p, int order)
 	uintptr_t ip = (uintptr_t)p;
 	uintptr_t head = align_head(order);
 	return (void *)(   (ip + head) & ~head   );
+}
+
+long long arg_to_ll_bytes(const struct argp_state *state,
+	const char *arg)
+{
+	char *end;
+	long long ll = strtoll(arg, &end, 0);
+	if (end == arg)
+		argp_error(state, "An integer must be provided");
+
+	/* Deal with units. */
+	switch (*end) {
+	case 's':
+	case 'S': /* Sectors */
+		ll <<= 9;
+		end++;
+		break;
+
+	case 'k':
+	case 'K': /* KB */
+		ll <<= 10;
+		end++;
+		break;
+
+	case 'm':
+	case 'M': /* MB */
+		ll <<= 20;
+		end++;
+		break;
+
+	case 'g':
+	case 'G': /* GB */
+		ll <<= 30;
+		end++;
+		break;
+
+	case 't':
+	case 'T': /* TB */
+		ll <<= 40;
+		end++;
+		break;
+	}
+
+	if (*end)
+		argp_error(state, "`%s' is not an integer", arg);
+	return ll;
 }

@@ -28,7 +28,7 @@ f3read: utils.o f3read.o
 f3probe: libutils.o libdevs.o libprobe.o utils.o f3probe.o
 	$(CC) -o $@ $^ -lm -ludev
 
-f3brew: libutils.o libdevs.o f3brew.o
+f3brew: libutils.o libdevs.o utils.o f3brew.o
 	$(CC) -o $@ $^ -lm -ludev
 
 f3fix: utils.o f3fix.o

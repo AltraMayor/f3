@@ -11,6 +11,7 @@
 
 #include "version.h"
 #include "libprobe.h"
+#include "libutils.h"
 
 /* XXX Refactor utils library since f3probe barely uses it. */
 #include "utils.h"
@@ -74,52 +75,6 @@ struct args {
 	int		block_order;
 };
 
-static long long arg_to_long_long(const struct argp_state *state,
-	const char *arg)
-{
-	char *end;
-	long long ll = strtoll(arg, &end, 0);
-	if (end == arg)
-		argp_error(state, "An integer must be provided");
-
-	/* Deal with units. */
-	switch (*end) {
-	case 's':
-	case 'S': /* Sectors */
-		ll <<= 9;
-		end++;
-		break;
-
-	case 'k':
-	case 'K': /* KB */
-		ll <<= 10;
-		end++;
-		break;
-
-	case 'm':
-	case 'M': /* MB */
-		ll <<= 20;
-		end++;
-		break;
-
-	case 'g':
-	case 'G': /* GB */
-		ll <<= 30;
-		end++;
-		break;
-
-	case 't':
-	case 'T': /* TB */
-		ll <<= 40;
-		end++;
-		break;
-	}
-
-	if (*end)
-		argp_error(state, "`%s' is not an integer", arg);
-	return ll;
-}
-
 static error_t parse_opt(int key, char *arg, struct argp_state *state)
 {
 	struct args *args = state->input;
@@ -131,7 +86,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		break;
 
 	case 'r':
-		ll = arg_to_long_long(state, arg);
+		ll = arg_to_ll_bytes(state, arg);
 		if (ll < 0)
 			argp_error(state,
 				"Real size must be greater or equal to zero");
@@ -140,7 +95,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		break;
 
 	case 'f':
-		ll = arg_to_long_long(state, arg);
+		ll = arg_to_ll_bytes(state, arg);
 		if (ll < 0)
 			argp_error(state,
 				"Fake size must be greater or equal to zero");
@@ -149,7 +104,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		break;
 
 	case 'w':
-		ll = arg_to_long_long(state, arg);
+		ll = arg_to_ll_bytes(state, arg);
 		if (ll < 0 || ll >= 64)
 			argp_error(state,
 				"Wrap must be in the interval [0, 63]");
@@ -158,7 +113,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		break;
 
 	case 'b':
-		ll = arg_to_long_long(state, arg);
+		ll = arg_to_ll_bytes(state, arg);
 		if (ll != 0 && (ll < 9 || ll > 20))
 			argp_error(state,
 				"Block order must be in the interval [9, 20] or be zero");
@@ -184,7 +139,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		break;
 
 	case 's':
-		ll = arg_to_long_long(state, arg);
+		ll = arg_to_ll_bytes(state, arg);
 		if (ll < 0 || ll >= RT_MAX)
 			argp_error(state,
 				"Reset type must be in the interval [0, %i]",
