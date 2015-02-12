@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <assert.h>
 #include <argp.h>
 #include <parted/parted.h>
 
@@ -190,6 +191,14 @@ static void list_fs_types(void)
 	printf("\n");
 }
 
+static PedSector map_sector_to_logical_sector(PedSector sector,
+	int logical_sector_size)
+{
+	assert(logical_sector_size >= 512);
+	assert(logical_sector_size % 512 == 0);
+	return sector / (logical_sector_size / 512);
+}
+
 /* 0 on failure, 1 otherwise. */
 static int fix_disk(PedDevice *dev, PedDiskType *type,
 	PedFileSystemType *fs_type, int boot, PedSector start, PedSector end)
@@ -204,6 +213,8 @@ static int fix_disk(PedDevice *dev, PedDiskType *type,
 	if (!disk)
 		goto out;
 
+	start = map_sector_to_logical_sector(start, dev->sector_size);
+	end = map_sector_to_logical_sector(end, dev->sector_size);
 	part = ped_partition_new(disk, PED_PARTITION_NORMAL,
 		fs_type, start, end);
 	if (!part)
@@ -265,7 +276,7 @@ int main (int argc, char *argv[])
 
 	if (args.list_disk_types || args.list_fs_types) {
 		/* If the user has asked for the types,
-		 * so she doesn't want to fix the drive yet.
+		 * she doesn't want to fix the drive yet.
 		 */
 		return 0;
 	}
