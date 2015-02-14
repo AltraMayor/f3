@@ -720,13 +720,13 @@ static struct udev_device *map_partition_to_disk(struct udev_device *dev)
 	return udev_device_ref(disk_dev);
 }
 
-struct device *create_block_device(const char *filename, int block_order,
-	enum reset_type rt)
+struct device *create_block_device(const char *filename, enum reset_type rt)
 {
 	struct block_device *bdev;
 	struct udev *udev;
 	struct udev_device *fd_dev, *usb_dev;
 	const char *s;
+	int block_size, block_order;
 
 	bdev = malloc(sizeof(*bdev));
 	if (!bdev)
@@ -804,12 +804,9 @@ struct device *create_block_device(const char *filename, int block_order,
 
 	assert(!ioctl(bdev->fd, BLKGETSIZE64, &bdev->dev.size_byte));
 
-	if (!block_order) {
-		int block_size;
-		assert(!ioctl(bdev->fd, BLKBSZGET, &block_size));
-		block_order = ilog2(block_size);
-		assert(block_size == (1 << block_order));
-	}
+	assert(!ioctl(bdev->fd, BLKSSZGET, &block_size));
+	block_order = ilog2(block_size);
+	assert(block_size == (1 << block_order));
 	bdev->dev.block_order = block_order;
 
 	bdev->dev.read_block = bdev_read_block;

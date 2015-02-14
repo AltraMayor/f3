@@ -35,14 +35,14 @@ static struct argp_option options[] = {
 		"Fake size of the emulated drive",	0},
 	{"debug-wrap",		'w',	"N",		OPTION_HIDDEN,
 		"Wrap parameter of the emulated drive",	0},
+	{"debug-block-order",	'b',	"ORDER",	OPTION_HIDDEN,
+		"Block size of the emulated drive is 2^ORDER Bytes",	0},
 	{"debug-keep-file",	'k',	NULL,		OPTION_HIDDEN,
 		"Don't remove file used for emulating the drive",	0},
 	{"debug-unit-test",	'u',	NULL,		OPTION_HIDDEN,
 		"Run a unit test; it ignores all other debug options",	0},
-	{"block-order",		'b',	"ORDER",	0,
-		"Force block size of the drive to 2^ORDER Bytes",	2},
 	{"destructive",		'n',	NULL,		0,
-		"Do not restore blocks of the device after probing it",	0},
+		"Do not restore blocks of the device after probing it",	2},
 	{"min-memory",		'l',	NULL,		0,
 		"Trade speed for less use of memory",		0},
 	{"reset-type",		's',	"TYPE",		0,
@@ -361,8 +361,7 @@ static int test_device(struct args *args)
 		? create_file_device(args->filename, args->real_size_byte,
 			args->fake_size_byte, args->wrap, args->block_order,
 			args->keep_file)
-		: create_block_device(args->filename, args->block_order,
-			args->reset_type);
+		: create_block_device(args->filename, args->reset_type);
 	if (!dev) {
 		fprintf(stderr, "\nApplication cannot continue, finishing...\n");
 		exit(1);
@@ -463,10 +462,11 @@ static int test_device(struct args *args)
 
 	time_s = (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec)/1000000.;
 	printf("\nDevice geometry:\n");
-	  report_size("\t     *Real* size:", real_size_byte, block_order);
-	  report_size("\t  Announced size:", announced_size_byte, block_order);
-	 report_order("\t          Module:", wrap);
-	 report_order("\t      Block size:", block_order);
+	  report_size("\t        *Real* size:", real_size_byte, block_order);
+	  report_size("\t     Announced size:", announced_size_byte,
+		block_order);
+	 report_order("\t             Module:", wrap);
+	 report_order("\tPhysical block size:", block_order);
 	printf("\nProbe time: %.2f seconds\n", time_s);
 
 	if (args->time_ops) {

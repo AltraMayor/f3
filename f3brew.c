@@ -171,7 +171,7 @@ int main(void)
 			22,		/* Wrap.	*/
 			9,		/* Block order. */
 			false)		/* Keep file?	*/
-		: create_block_device("/dev/sdc", 0, RT_MANUAL_USB);
+		: create_block_device("/dev/sdc", RT_MANUAL_USB);
 	assert(dev);
 
 	write_and_read_blocks(dev, first_block, last_block);
