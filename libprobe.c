@@ -339,7 +339,7 @@ int probe_device(struct device *dev, uint64_t *preal_size_byte,
 	uint64_t dev_size_byte = dev_get_size_byte(dev);
 	const int block_size = dev_get_block_size(dev);
 	const int block_order = dev_get_block_order(dev);
-	char stack[511 + (2 << block_order)];
+	char stack[align_head(block_order) + (2 << block_order)];
 	char *stamp_blk, *probe_blk;
 	/* XXX Don't write at the very beginning of the card to avoid
 	 * losing the partition table.
@@ -362,7 +362,7 @@ int probe_device(struct device *dev, uint64_t *preal_size_byte,
 	 * the block device.
 	 * For the file device, this is superfluous.
 	 */
-	stamp_blk = align_512(stack);
+	stamp_blk = align_mem(stack, block_order);
 	probe_blk = stamp_blk + block_size;
 
 	fill_buffer(stamp_blk, block_size);

@@ -140,9 +140,10 @@ static void read_blocks(char *probe_blk, struct device *dev,
 static void write_and_read_blocks(struct device *dev,
 	uint64_t first_block, uint64_t last_block)
 {
+	const int block_order = dev_get_block_order(dev);
 	const int block_size = dev_get_block_size(dev);
-	char stack[511 + block_size];
-	char *blk = align_512(stack);
+	char stack[align_head(block_order) + block_size];
+	char *blk = align_mem(stack, block_order);
 
 	printf("Writing blocks from 0x%" PRIx64 " to 0x%" PRIx64 "...",
 		first_block, last_block);

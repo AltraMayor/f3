@@ -39,3 +39,10 @@ int ceiling_log2(uint64_t x)
 {
 	return ilog2(clp2(x));
 }
+
+void *align_mem(void *p, int order)
+{
+	uintptr_t ip = (uintptr_t)p;
+	uintptr_t head = align_head(order);
+	return (void *)(   (ip + head) & ~head   );
+}

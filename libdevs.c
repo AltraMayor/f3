@@ -1029,7 +1029,7 @@ static int sdev_save_block(struct safe_device *sdev,
 
 	/* The block at @offset hasn't been saved before. Save this block. */
 	assert(sdev->sb_n < sdev->sb_max);
-	block = (char *)align_512(sdev->saved_blocks) +
+	block = (char *)align_mem(sdev->saved_blocks, block_order) +
 		(sdev->sb_n << block_order);
 	rc = sdev->shadow_dev->read_block(sdev->shadow_dev, block,
 		length, offset);
@@ -1068,10 +1068,9 @@ static void sdev_free(struct device *dev)
 	struct safe_device *sdev = dev_sdev(dev);
 
 	if (sdev->sb_n > 0) {
-		char *first_block = align_512(sdev->saved_blocks);
-		char *block = first_block +
-			((sdev->sb_n - 1) <<
-			dev_get_block_order(sdev->shadow_dev));
+		const int block_order = dev_get_block_order(sdev->shadow_dev);
+		char *first_block = align_mem(sdev->saved_blocks, block_order);
+		char *block = first_block + ((sdev->sb_n - 1) << block_order);
 		uint64_t *poffset = &sdev->sb_offsets[sdev->sb_n - 1];
 		int block_size = dev_get_block_size(sdev->shadow_dev);
 
@@ -1114,7 +1113,7 @@ struct device *create_safe_device(struct device *dev, int max_blocks,
 	if (!sdev)
 		goto error;
 
-	length = 511 + (max_blocks << block_order);
+	length = align_head(block_order) + (max_blocks << block_order);
 	sdev->saved_blocks = malloc(length);
 	if (!sdev->saved_blocks)
 		goto sdev;
