@@ -635,30 +635,36 @@ static int usb_fd_from_block_dev(int block_fd, int open_flags)
 	udev = udev_new();
 	if (!udev) {
 		warnx("Can't load library udev");
-		return - EOPNOTSUPP;
+		usb_fd = -EOPNOTSUPP;
+		goto out;
 	}
 
 	usb_dev = map_block_to_usb_dev(udev, block_fd);
 	if (!usb_dev) {
 		warnx("Block device is not backed by a USB device");
-		return - EINVAL;
+		usb_fd = -EINVAL;
+		goto udev;
 	}
 
 	usb_filename = udev_device_get_devnode(usb_dev);
 	if (!usb_filename) {
 		warnx("%s(): Out of memory", __func__);
-		return - ENOMEM;
+		usb_fd = -ENOMEM;
+		goto usb_dev;
 	}
 
 	usb_fd = open(usb_filename, open_flags | O_NONBLOCK);
 	if (usb_fd < 0) {
-		int rc = - errno;
+		usb_fd = - errno;
 		warn("Can't open device `%s'", usb_filename);
-		return rc;
+		goto usb_dev;
 	}
 
+usb_dev:
 	udev_device_unref(usb_dev);
+udev:
 	assert(!udev_unref(udev));
+out:
 	return usb_fd;
 }
 
