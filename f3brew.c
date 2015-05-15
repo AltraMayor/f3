@@ -41,6 +41,10 @@ static struct argp_option options[] = {
 		"Where test begins; the default is block zero",	0},
 	{"end-at",		'e',	"BLOCK",	0,
 		"Where test ends; the default is the very last block",	0},
+	{"do-not-write",	'W',	NULL,		0,
+		"Do not write blocks",				0},
+	{"do-not-read",		'R',	NULL,		0,
+		"Do not read blocks",				0},
 	{ 0 }
 };
 
@@ -53,6 +57,8 @@ struct args {
 
 	/* Behavior options. */
 	enum reset_type	reset_type;
+	bool test_write;
+	bool test_read;
 	/* 3 free bytes. */
 
 	/* Geometry. */
@@ -140,6 +146,14 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 			argp_error(state,
 				"The last block must be greater or equal to zero");
 		args->last_block = ll;
+		break;
+
+	case 'W':
+		args->test_write = false;
+		break;
+
+	case 'R':
+		args->test_read = false;
 		break;
 
 	case ARGP_KEY_INIT:
@@ -306,7 +320,7 @@ static void read_blocks(char *probe_blk, struct device *dev,
 }
 
 /* XXX Properly handle return errors. */
-static void write_and_read_blocks(struct device *dev,
+static void test_write_blocks(struct device *dev,
 	uint64_t first_block, uint64_t last_block)
 {
 	const int block_order = dev_get_block_order(dev);
@@ -319,10 +333,19 @@ static void write_and_read_blocks(struct device *dev,
 	fflush(stdout);
 	write_blocks(blk, dev, first_block, last_block);
 	printf(" Done\n\n");
+}
 
-	assert(!dev_reset(dev));
+/* XXX Properly handle return errors. */
+static void test_read_blocks(struct device *dev,
+	uint64_t first_block, uint64_t last_block)
+{
+	const int block_order = dev_get_block_order(dev);
+	const int block_size = dev_get_block_size(dev);
+	char stack[align_head(block_order) + block_size];
+	char *blk = align_mem(stack, block_order);
 
-	printf("Reading those blocks...");
+	printf("Reading blocks from 0x%" PRIx64 " to 0x%" PRIx64 "...",
+		first_block, last_block);
 	fflush(stdout);
 	read_blocks(blk, dev, first_block, last_block);
 	printf(" Done\n\n");
@@ -335,6 +358,8 @@ int main(int argc, char **argv)
 		.debug		= false,
 		.keep_file	= false,
 		.reset_type	= RT_DEFAULT,
+		.test_write	= true,
+		.test_read	= true,
 		.real_size_byte	= 1ULL << 31,
 		.fake_size_byte	= 1ULL << 34,
 		.wrap		= 31,
@@ -362,7 +387,12 @@ int main(int argc, char **argv)
 	if (args.last_block > very_last_block)
 		args.last_block = very_last_block;
 
-	write_and_read_blocks(dev, args.first_block, args.last_block);
+	if (args.test_write)
+		test_write_blocks(dev, args.first_block, args.last_block);
+	if (args.test_write && args.test_read)
+		assert(!dev_reset(dev));
+	if (args.test_read)
+		test_read_blocks(dev, args.first_block, args.last_block);
 
 	free_device(dev);
 	return 0;
