@@ -4,7 +4,7 @@
 
 #define _DARWIN_C_SOURCE
 
-#include <fcntl.h>	/* For function fcntl.	*/
+#include <fcntl.h>	/* For fcntl().	*/
 
 #endif	/* Apple Macintosh */
 
