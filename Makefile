@@ -4,8 +4,20 @@ CFLAGS += -std=c99 -Wall -Wextra -pedantic -MMD -ggdb
 TARGETS = f3write f3read
 EXPERIMENTAL_TARGETS = f3probe f3brew f3fix
 
+PREFIX = /usr/local
+INSTALL = install
+LN = ln
+
 all: $(TARGETS)
 experimental: $(EXPERIMENTAL_TARGETS)
+
+install: all
+	$(INSTALL) -oroot -groot -m755 $(TARGETS) $(PREFIX)/bin
+	$(INSTALL) -oroot -groot -m644 f3read.1 $(PREFIX)/share/man/man1
+	$(LN) -sf f3read.1 $(PREFIX)/share/man/man1/f3write.1
+
+install-experimental: experimental
+	$(INSTALL) -oroot -groot -m755 $(EXPERIMENTAL_TARGETS) $(PREFIX)/bin
 
 f3write: utils.o f3write.o
 	$(CC) -o $@ $^ -lm
