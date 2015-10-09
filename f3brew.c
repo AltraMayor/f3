@@ -238,15 +238,30 @@ static void write_blocks(char *stamp_blk, struct device *dev,
 	}
 }
 
+enum block_state {
+	bs_unknown,
+	bs_good,
+	bs_changed,
+	bs_bad,
+	bs_overwritten,
+	bs_overwritten_changed,
+};
+
+struct block_range {
+	enum block_state	state;
+	uint64_t		start_sector_offset;
+	uint64_t		end_sector_offset;
+
+	/* Only used for states bs_overwritten and bs_overwritten_changed. */
+	uint64_t		found_sector_offset;
+};
+
 /* XXX Avoid code duplication. Some code of this function is copied from
  * f3read.c.
  */
-/* XXX Group the results so it is not too verbose.
- * For now, the less important reports are commented.
- */
 #define TOLERANCE	2
-static void validate_sector(uint64_t expected_sector_offset,
-	const char *sector)
+static enum block_state validate_sector(uint64_t expected_sector_offset,
+	const char *sector, uint64_t *found_sector_offset)
 {
 	uint64_t sector_offset, rn;
 	const char *p, *ptr_end;
@@ -265,37 +280,98 @@ static void validate_sector(uint64_t expected_sector_offset,
 
 	if (sector_offset == expected_sector_offset) {
 		if (error_count == 0)
-			/*printf("GOOD sector 0x%" PRIx64 "\n",
-				expected_sector_offset)*/;
+			return bs_good;
 		else if (error_count <= TOLERANCE)
-			printf("Changed sector 0x%" PRIx64 "\n",
-				expected_sector_offset);
+			return bs_changed;
 		else
-			printf("BAD matching sector 0x%" PRIx64 "\n",
-				expected_sector_offset);
+			return bs_bad;
 	} else if (error_count == 0) {
-		printf("Overwritten sector 0x%" PRIx64
-			", found 0x%" PRIx64 "\n",
-			expected_sector_offset, sector_offset);
+		*found_sector_offset = sector_offset;
+		return bs_overwritten;
 	} else if (error_count <= TOLERANCE) {
-		printf("Overwritten and changed sector 0x%" PRIx64
-			", found 0x%" PRIx64 "\n",
-			expected_sector_offset, sector_offset);
+		*found_sector_offset = sector_offset;
+		return bs_overwritten_changed;
 	} else {
-		/*printf("BAD sector 0x%" PRIx64 "\n", expected_sector_offset)*/;
+		return bs_bad;
 	}
 }
 
+static const char *block_state_to_str(enum block_state state)
+{
+	const char *conv_array[] = {
+		[bs_unknown] = "Unknown",
+		[bs_good] = "Good",
+		[bs_changed] = "Changed",
+		[bs_bad] = "Bad",
+		[bs_overwritten] = "Overwritten",
+		[bs_overwritten_changed] = "Overwritten and changed",
+	};
+	return conv_array[state];
+}
+
+static void print_block_range(const struct block_range *range)
+{
+	printf("[%s] sectors from offset 0x%" PRIx64 " to 0x%" PRIx64,
+			block_state_to_str(range->state),
+			range->start_sector_offset, range->end_sector_offset);
+
+	switch (range->state) {
+	case bs_good:
+	case bs_changed:
+	case bs_bad:
+		break;
+
+	case bs_overwritten:
+	case bs_overwritten_changed:
+		printf(", found 0x%" PRIx64, range->found_sector_offset);
+		break;
+
+	default:
+		assert(0);
+		break;
+	}
+	printf("\n");
+}
+
 static void validate_block(uint64_t expected_sector_offset,
-	const char *probe_blk, int block_size)
+	const char *probe_blk, int block_size, struct block_range *range)
 {
 	const char *sector = probe_blk;
 	const char *stop_sector = sector + block_size;
+	enum block_state state;
+	uint64_t found_sector_offset;
 
 	assert(block_size % SECTOR_SIZE == 0);
 
 	while (sector < stop_sector) {
-		validate_sector(expected_sector_offset, sector);
+		bool push_range;
+		state = validate_sector(expected_sector_offset, sector,
+			&found_sector_offset);
+		assert(state != bs_unknown);
+
+		push_range = (range->state != state) || (
+				(state == bs_overwritten ||
+					state == bs_overwritten_changed)
+				&& (
+					(expected_sector_offset
+						- range->start_sector_offset)
+					!=
+					(found_sector_offset
+						- range->found_sector_offset)
+				)
+			);
+
+		if (push_range) {
+			if (range->state != bs_unknown)
+				print_block_range(range);	
+			range->state = state;
+			range->start_sector_offset = expected_sector_offset;
+			range->end_sector_offset = expected_sector_offset;
+			range->found_sector_offset = found_sector_offset;
+		} else {
+			range->end_sector_offset = expected_sector_offset;
+		}
+
 		expected_sector_offset += SECTOR_SIZE;
 		sector += SECTOR_SIZE;
 	}
@@ -307,16 +383,26 @@ static void read_blocks(char *probe_blk, struct device *dev,
 	const int block_size = dev_get_block_size(dev);
 	uint64_t expected_sector_offset =
 		first_block << dev_get_block_order(dev);
+	struct block_range range = {
+		.state = bs_unknown,
+		.start_sector_offset = 0,
+		.end_sector_offset = 0,
+		.found_sector_offset = 0,
+	};
 	uint64_t i;
 
 	for (i = first_block; i <= last_block; i++) {
 		if (!dev_read_block(dev, probe_blk, i))
 			validate_block(expected_sector_offset, probe_blk,
-				block_size);
+				block_size, &range);
 		else
 			warn("Failed reading block 0x%" PRIx64, i);
 		expected_sector_offset += block_size;
 	}
+	if (range.state != bs_unknown)
+		print_block_range(&range);
+	else
+		assert(first_block > last_block);
 }
 
 /* XXX Properly handle return errors. */
@@ -344,11 +430,10 @@ static void test_read_blocks(struct device *dev,
 	char stack[align_head(block_order) + block_size];
 	char *blk = align_mem(stack, block_order);
 
-	printf("Reading blocks from 0x%" PRIx64 " to 0x%" PRIx64 "...",
+	printf("Reading blocks from 0x%" PRIx64 " to 0x%" PRIx64 ":\n",
 		first_block, last_block);
-	fflush(stdout);
 	read_blocks(blk, dev, first_block, last_block);
-	printf(" Done\n\n");
+	printf("\n");
 }
 
 int main(int argc, char **argv)
