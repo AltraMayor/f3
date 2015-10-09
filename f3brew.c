@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdbool.h>
 #include <assert.h>
 #include <string.h>
@@ -481,7 +482,10 @@ int main(int argc, char **argv)
 			args.fake_size_byte, args.wrap, args.block_order,
 			args.keep_file)
 		: create_block_device(args.filename, args.reset_type);
-	assert(dev);
+	if (!dev) {
+		fprintf(stderr, "\nApplication cannot continue, finishing...\n");
+		exit(1);
+	}
 
 	printf("Physical block size: 2^%i Bytes\n\n", dev_get_block_order(dev));
 
