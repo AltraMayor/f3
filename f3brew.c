@@ -375,13 +375,14 @@ int main(int argc, char **argv)
 	print_header(stdout, "brew");
 
 	dev = args.debug
-		? create_block_device(args.filename, args.reset_type)
-		: create_file_device(args.filename, args.real_size_byte,
+		? create_file_device(args.filename, args.real_size_byte,
 			args.fake_size_byte, args.wrap, args.block_order,
-			args.keep_file);
+			args.keep_file)
+		: create_block_device(args.filename, args.reset_type);
 	assert(dev);
 
-	very_last_block = dev_get_size_byte(dev) >> dev_get_block_order(dev);
+	very_last_block =
+		(dev_get_size_byte(dev) >> dev_get_block_order(dev)) - 1;
 	if (args.first_block > very_last_block)
 		args.first_block = very_last_block;
 	if (args.last_block > very_last_block)
