@@ -249,6 +249,7 @@ enum block_state {
 
 struct block_range {
 	enum block_state	state;
+	int			block_order;
 	uint64_t		start_sector_offset;
 	uint64_t		end_sector_offset;
 
@@ -309,11 +310,25 @@ static const char *block_state_to_str(enum block_state state)
 	return conv_array[state];
 }
 
+static int is_block(uint64_t offset, int block_order)
+{
+	return !(((1ULL << block_order) - 1) & offset);
+}
+
+static void print_offset(uint64_t offset, int block_order)
+{
+	if (is_block(offset, block_order))
+		printf("block 0x%" PRIx64, offset >> block_order);
+	else
+		printf("offset 0x%" PRIx64, offset);
+}
+
 static void print_block_range(const struct block_range *range)
 {
-	printf("[%s] sectors from offset 0x%" PRIx64 " to 0x%" PRIx64,
-			block_state_to_str(range->state),
-			range->start_sector_offset, range->end_sector_offset);
+	printf("[%s] from ", block_state_to_str(range->state));
+	print_offset(range->start_sector_offset, range->block_order);
+	printf(" to ");
+	print_offset(range->end_sector_offset, range->block_order);
 
 	switch (range->state) {
 	case bs_good:
@@ -323,7 +338,8 @@ static void print_block_range(const struct block_range *range)
 
 	case bs_overwritten:
 	case bs_overwritten_changed:
-		printf(", found 0x%" PRIx64, range->found_sector_offset);
+		printf(", found ");
+		print_offset(range->found_sector_offset, range->block_order);
 		break;
 
 	default:
@@ -381,10 +397,11 @@ static void read_blocks(char *probe_blk, struct device *dev,
 	uint64_t first_block, uint64_t last_block)
 {
 	const int block_size = dev_get_block_size(dev);
-	uint64_t expected_sector_offset =
-		first_block << dev_get_block_order(dev);
+	const int block_order = dev_get_block_order(dev);
+	uint64_t expected_sector_offset = first_block << block_order;
 	struct block_range range = {
 		.state = bs_unknown,
+		.block_order = block_order,
 		.start_sector_offset = 0,
 		.end_sector_offset = 0,
 		.found_sector_offset = 0,
@@ -465,6 +482,8 @@ int main(int argc, char **argv)
 			args.keep_file)
 		: create_block_device(args.filename, args.reset_type);
 	assert(dev);
+
+	printf("Physical block size: 2^%i Bytes\n\n", dev_get_block_order(dev));
 
 	very_last_block =
 		(dev_get_size_byte(dev) >> dev_get_block_order(dev)) - 1;
