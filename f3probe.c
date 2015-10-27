@@ -419,7 +419,7 @@ static int test_device(struct args *args)
 
 	time_s = (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec)/1000000.;
 	printf("\nDevice geometry:\n");
-	  report_size("\t        *Real* size:", real_size_byte, block_order);
+	  report_size("\t      *Usable* size:", real_size_byte, block_order);
 	  report_size("\t     Announced size:", announced_size_byte,
 		block_order);
 	 report_order("\t             Module:", wrap);
