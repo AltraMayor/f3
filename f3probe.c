@@ -254,14 +254,18 @@ static int unit_test(const char *filename)
 		enum fake_type origin_type = dev_param_to_type(
 			item->real_size_byte, item->fake_size_byte,
 			item->wrap, item->block_order);
+		uint64_t item_cache_byte = item->cache_order < 0 ? 0 :
+			1ULL << (item->cache_order + item->block_order);
 		double f_real = item->real_size_byte;
 		double f_fake = item->fake_size_byte;
+		double f_cache = item_cache_byte;
 		const char *unit_real = adjust_unit(&f_real);
 		const char *unit_fake = adjust_unit(&f_fake);
+		const char *unit_cache = adjust_unit(&f_cache);
 
 		enum fake_type fake_type;
-		uint64_t real_size_byte, announced_size_byte;
-		int wrap, block_order, max_probe_blocks;
+		uint64_t real_size_byte, announced_size_byte, cache_size_block;
+		int wrap, need_reset, block_order, max_probe_blocks;
 		struct device *dev;
 
 		dev = create_file_device(filename, item->real_size_byte,
@@ -270,21 +274,23 @@ static int unit_test(const char *filename)
 		assert(dev);
 		max_probe_blocks = probe_device_max_blocks(dev);
 		assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
-			&wrap, &block_order));
+			&wrap, &cache_size_block, &need_reset, &block_order));
 		free_device(dev);
 		fake_type = dev_param_to_type(real_size_byte,
 			announced_size_byte, wrap, block_order);
 
 		/* Report */
-		printf("Test %i\t\ttype/real size/fake size/module/block size\n",
+		printf("Test %i\t\ttype/real size/fake size/module/cache size/reset/block size\n",
 			i + 1);
-		printf("\t\t%s/%.2f %s/%.2f %s/2^%i Byte/2^%i Byte\n",
+		printf("\t\t%s/%.2f %s/%.2f %s/2^%i Byte/%.2f %s/no/2^%i Byte\n",
 			fake_type_to_name(origin_type),
 			f_real, unit_real, f_fake, unit_fake, item->wrap,
-			item->block_order);
+			f_cache, unit_cache, item->block_order);
 		if (real_size_byte == item->real_size_byte &&
 			announced_size_byte == item->fake_size_byte &&
 			wrap == item->wrap &&
+			item_cache_byte == (cache_size_block << block_order) &&
+			!need_reset &&
 			block_order == item->block_order) {
 			success++;
 			printf("\t\tPerfect!\tMax # of probed blocks: %i\n\n",
@@ -292,12 +298,16 @@ static int unit_test(const char *filename)
 		} else {
 			double ret_f_real = real_size_byte;
 			double ret_f_fake = announced_size_byte;
+			double ret_f_cache = cache_size_block << block_order;
 			const char *ret_unit_real = adjust_unit(&ret_f_real);
 			const char *ret_unit_fake = adjust_unit(&ret_f_fake);
-			printf("\tError\t%s/%.2f %s/%.2f %s/2^%i Byte/2^%i Byte\n\n",
+			const char *ret_unit_cache = adjust_unit(&f_cache);
+			printf("\tError\t%s/%.2f %s/%.2f %s/2^%i Byte/%.2f %s/%s/2^%i Byte\n\n",
 				fake_type_to_name(fake_type),
 				ret_f_real, ret_unit_real,
-				ret_f_fake, ret_unit_fake, wrap, block_order);
+				ret_f_fake, ret_unit_fake, wrap,
+				ret_f_cache, ret_unit_cache,
+				need_reset ? "yes" : "no", block_order);
 		}
 	}
 
@@ -325,6 +335,16 @@ static void report_order(const char *prefix, int order)
 	printf("%s %.2f %s (2^%i Bytes)\n", prefix, f, unit, order);
 }
 
+static void report_cache(const char *prefix, uint64_t cache_size_block,
+	int need_reset, int order)
+{
+	double f = (cache_size_block << order);
+	const char *unit = adjust_unit(&f);
+	printf("%s %.2f %s (%" PRIu64 " blocks), need-reset=%s\n",
+		prefix, f, unit, cache_size_block,
+		need_reset ? "yes" : "no");
+}
+
 static void report_ops(const char *op, uint64_t count, uint64_t time_us)
 {
 	printf("Probe %s op: count=%" PRIu64
@@ -338,8 +358,8 @@ static int test_device(struct args *args)
 	double time_s;
 	struct device *dev, *pdev;
 	enum fake_type fake_type;
-	uint64_t real_size_byte, announced_size_byte;
-	int wrap, block_order;
+	uint64_t real_size_byte, announced_size_byte, cache_size_block;
+	int wrap, need_reset, block_order;
 	uint64_t read_count, read_time_us;
 	uint64_t write_count, write_time_us;
 	uint64_t reset_count, reset_time_us;
@@ -383,7 +403,7 @@ static int test_device(struct args *args)
 	 * the state of the drive.
 	 */
 	assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
-		&wrap, &block_order));
+		&wrap, &cache_size_block, &need_reset, &block_order));
 	assert(!gettimeofday(&t2, NULL));
 
 	if (!args->debug && args->reset_type == RT_MANUAL_USB) {
@@ -450,11 +470,14 @@ static int test_device(struct args *args)
 
 	time_s = (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec)/1000000.;
 	printf("\nDevice geometry:\n");
-	  report_size("\t      *Usable* size:", real_size_byte, block_order);
-	  report_size("\t     Announced size:", announced_size_byte,
+	  report_size("\t       *Usable* size:", real_size_byte,
 		block_order);
-	 report_order("\t             Module:", wrap);
-	 report_order("\tPhysical block size:", block_order);
+	  report_size("\t      Announced size:", announced_size_byte,
+		block_order);
+	 report_order("\t              Module:", wrap);
+	 report_cache("\tPermanent cache size:", cache_size_block,
+		need_reset, block_order);
+	 report_order("\t Physical block size:", block_order);
 	printf("\nProbe time: %.2f seconds\n", time_s);
 
 	if (args->time_ops) {

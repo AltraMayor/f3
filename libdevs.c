@@ -918,13 +918,6 @@ static inline struct perf_device *dev_pdev(struct device *dev)
 	return (struct perf_device *)dev;
 }
 
-static inline uint64_t diff_timeval_us(const struct timeval *t1,
-	const struct timeval *t2)
-{
-	return (t2->tv_sec - t1->tv_sec) * 1000000ULL +
-		t2->tv_usec - t1->tv_usec;
-}
-
 static int pdev_read_block(struct device *dev, char *buf, int length,
 	uint64_t offset)
 {

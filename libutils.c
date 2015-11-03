@@ -28,8 +28,7 @@ int ilog2(uint64_t x)
 	return pop(x) - 1;
 }
 
-/* Least power of 2 greater than or equal to x. */
-static uint64_t clp2(uint64_t x)
+uint64_t clp2(uint64_t x)
 {
 	x = x - 1;
 	x = x | (x >>  1);
