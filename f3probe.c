@@ -431,6 +431,8 @@ static int test_device(struct args *args)
 		report_ops("write", write_count, write_time_us);
 		report_ops("reset", reset_count, reset_time_us);
 	}
+
+	free((void *)final_dev_filename);
 	return 0;
 }
 
