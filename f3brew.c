@@ -498,8 +498,17 @@ int main(int argc, char **argv)
 
 	if (args.test_write)
 		test_write_blocks(dev, args.first_block, args.last_block);
-	if (args.test_write && args.test_read)
+
+	if (args.test_write && args.test_read) {
+		const char *final_dev_filename;
+
 		assert(!dev_reset(dev));
+		final_dev_filename = dev_get_filename(dev);
+		if (strcmp(args.filename, final_dev_filename))
+			printf("\nWARNING: device `%s' moved to `%s' due to the reset\n\n",
+				args.filename, final_dev_filename);
+	}
+
 	if (args.test_read)
 		test_read_blocks(dev, args.first_block, args.last_block);
 
