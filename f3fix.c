@@ -4,9 +4,7 @@
 #include <parted/parted.h>
 
 #include "version.h"
-
-/* XXX Refactor utils library since f3probe barely uses it. */
-#include "utils.h"
+#include "libutils.h"
 
 /* Argp's global variables. */
 const char *argp_program_version = "F3 Fix " F3_STR_VERSION;

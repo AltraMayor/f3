@@ -10,7 +10,6 @@
 #include "version.h"
 #include "libutils.h"
 #include "libdevs.h"
-#include "utils.h"
 
 /* Argp's global variables. */
 const char *argp_program_version = "F3 BREW " F3_STR_VERSION;
@@ -195,57 +194,43 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
 
-/* XXX Avoid code duplication. This function is copied from f3write.c. */
-static uint64_t fill_buffer(void *buf, size_t size, uint64_t offset)
-{
-	uint8_t *p, *ptr_next_sector, *ptr_end;
-	uint64_t rn;
-
-	assert(size > 0);
-	assert(size % SECTOR_SIZE == 0);
-	assert(SECTOR_SIZE >= sizeof(offset) + sizeof(rn));
-	assert((SECTOR_SIZE - sizeof(offset)) % sizeof(rn) == 0);
-
-	p = buf;
-	ptr_end = p + size;
-	while (p < ptr_end) {
-		rn = offset;
-		memmove(p, &offset, sizeof(offset));
-		ptr_next_sector = p + SECTOR_SIZE;
-		p += sizeof(offset);
-		for (; p < ptr_next_sector; p += sizeof(rn)) {
-			rn = random_number(rn);
-			memmove(p, &rn, sizeof(rn));
-		}
-		assert(p == ptr_next_sector);
-		offset += SECTOR_SIZE;
-	}
-
-	return offset;
-}
-
 static void write_blocks(char *stamp_blk, struct device *dev,
 	uint64_t first_block, uint64_t last_block)
 {
 	const int block_size = dev_get_block_size(dev);
-	uint64_t sector_offset = first_block << dev_get_block_order(dev);
+	const int block_order = dev_get_block_order(dev);
+	uint64_t offset = first_block << block_order;
 	uint64_t i;
 
 	for (i = first_block; i <= last_block; i++) {
-		sector_offset =
-			fill_buffer(stamp_blk, block_size, sector_offset);
+		fill_buffer_with_block(stamp_blk, block_order, offset, 0);
 		if (dev_write_block(dev, stamp_blk, i))
 			warn("Failed writing block 0x%" PRIx64, i);
+		offset += block_size;
 	}
+}
+
+/* XXX Properly handle return errors. */
+static void test_write_blocks(struct device *dev,
+	uint64_t first_block, uint64_t last_block)
+{
+	const int block_order = dev_get_block_order(dev);
+	const int block_size = dev_get_block_size(dev);
+	char stack[align_head(block_order) + block_size];
+	char *blk = align_mem(stack, block_order);
+
+	printf("Writing blocks from 0x%" PRIx64 " to 0x%" PRIx64 "...",
+		first_block, last_block);
+	fflush(stdout);
+	write_blocks(blk, dev, first_block, last_block);
+	printf(" Done\n\n");
 }
 
 enum block_state {
 	bs_unknown,
 	bs_good,
-	bs_changed,
 	bs_bad,
 	bs_overwritten,
-	bs_overwritten_changed,
 };
 
 struct block_range {
@@ -254,59 +239,17 @@ struct block_range {
 	uint64_t		start_sector_offset;
 	uint64_t		end_sector_offset;
 
-	/* Only used for states bs_overwritten and bs_overwritten_changed. */
+	/* Only used by state bs_overwritten. */
 	uint64_t		found_sector_offset;
 };
-
-/* XXX Avoid code duplication. Some code of this function is copied from
- * f3read.c.
- */
-#define TOLERANCE	2
-static enum block_state validate_sector(uint64_t expected_sector_offset,
-	const char *sector, uint64_t *found_sector_offset)
-{
-	uint64_t sector_offset, rn;
-	const char *p, *ptr_end;
-	int error_count;
-
-	sector_offset = *((__typeof__(sector_offset) *) sector);
-	rn = sector_offset;
-	p = sector + sizeof(sector_offset);
-	ptr_end = sector + SECTOR_SIZE;
-	error_count = 0;
-	for (; error_count <= TOLERANCE && p < ptr_end; p += sizeof(rn)) {
-		rn = random_number(rn);
-		if (rn != *((__typeof__(rn) *) p))
-			error_count++;
-	}
-
-	if (sector_offset == expected_sector_offset) {
-		if (error_count == 0)
-			return bs_good;
-		else if (error_count <= TOLERANCE)
-			return bs_changed;
-		else
-			return bs_bad;
-	} else if (error_count == 0) {
-		*found_sector_offset = sector_offset;
-		return bs_overwritten;
-	} else if (error_count <= TOLERANCE) {
-		*found_sector_offset = sector_offset;
-		return bs_overwritten_changed;
-	} else {
-		return bs_bad;
-	}
-}
 
 static const char *block_state_to_str(enum block_state state)
 {
 	const char *conv_array[] = {
 		[bs_unknown] = "Unknown",
 		[bs_good] = "Good",
-		[bs_changed] = "Changed",
 		[bs_bad] = "Bad",
 		[bs_overwritten] = "Overwritten",
-		[bs_overwritten_changed] = "Overwritten and changed",
 	};
 	return conv_array[state];
 }
@@ -318,10 +261,8 @@ static int is_block(uint64_t offset, int block_order)
 
 static void print_offset(uint64_t offset, int block_order)
 {
-	if (is_block(offset, block_order))
-		printf("block 0x%" PRIx64, offset >> block_order);
-	else
-		printf("offset 0x%" PRIx64, offset);
+	assert(is_block(offset, block_order));
+	printf("block 0x%" PRIx64, offset >> block_order);
 }
 
 static void print_block_range(const struct block_range *range)
@@ -333,12 +274,10 @@ static void print_block_range(const struct block_range *range)
 
 	switch (range->state) {
 	case bs_good:
-	case bs_changed:
 	case bs_bad:
 		break;
 
 	case bs_overwritten:
-	case bs_overwritten_changed:
 		printf(", found ");
 		print_offset(range->found_sector_offset, range->block_order);
 		break;
@@ -351,46 +290,40 @@ static void print_block_range(const struct block_range *range)
 }
 
 static void validate_block(uint64_t expected_sector_offset,
-	const char *probe_blk, int block_size, struct block_range *range)
+	const char *probe_blk, int block_order, struct block_range *range)
 {
-	const char *sector = probe_blk;
-	const char *stop_sector = sector + block_size;
-	enum block_state state;
 	uint64_t found_sector_offset;
+	enum block_state state;
+	bool push_range;
 
-	assert(block_size % SECTOR_SIZE == 0);
+	if (validate_buffer_with_block(probe_blk, block_order,
+		&found_sector_offset, 0))
+		state = bs_bad; /* Bad block. */
+	else if (expected_sector_offset == found_sector_offset)
+		state = bs_good; /* Good block. */
+	else
+		state = bs_overwritten; /* Overwritten block. */
 
-	while (sector < stop_sector) {
-		bool push_range;
-		state = validate_sector(expected_sector_offset, sector,
-			&found_sector_offset);
-		assert(state != bs_unknown);
+	push_range = (range->state != state) || (
+			state == bs_overwritten
+			&& (
+				(expected_sector_offset
+					- range->start_sector_offset)
+				!=
+				(found_sector_offset
+					- range->found_sector_offset)
+			)
+		);
 
-		push_range = (range->state != state) || (
-				(state == bs_overwritten ||
-					state == bs_overwritten_changed)
-				&& (
-					(expected_sector_offset
-						- range->start_sector_offset)
-					!=
-					(found_sector_offset
-						- range->found_sector_offset)
-				)
-			);
-
-		if (push_range) {
-			if (range->state != bs_unknown)
-				print_block_range(range);	
-			range->state = state;
-			range->start_sector_offset = expected_sector_offset;
-			range->end_sector_offset = expected_sector_offset;
-			range->found_sector_offset = found_sector_offset;
-		} else {
-			range->end_sector_offset = expected_sector_offset;
-		}
-
-		expected_sector_offset += SECTOR_SIZE;
-		sector += SECTOR_SIZE;
+	if (push_range) {
+		if (range->state != bs_unknown)
+			print_block_range(range);
+		range->state = state;
+		range->start_sector_offset = expected_sector_offset;
+		range->end_sector_offset = expected_sector_offset;
+		range->found_sector_offset = found_sector_offset;
+	} else {
+		range->end_sector_offset = expected_sector_offset;
 	}
 }
 
@@ -412,7 +345,7 @@ static void read_blocks(char *probe_blk, struct device *dev,
 	for (i = first_block; i <= last_block; i++) {
 		if (!dev_read_block(dev, probe_blk, i))
 			validate_block(expected_sector_offset, probe_blk,
-				block_size, &range);
+				block_order, &range);
 		else
 			warn("Failed reading block 0x%" PRIx64, i);
 		expected_sector_offset += block_size;
@@ -421,22 +354,6 @@ static void read_blocks(char *probe_blk, struct device *dev,
 		print_block_range(&range);
 	else
 		assert(first_block > last_block);
-}
-
-/* XXX Properly handle return errors. */
-static void test_write_blocks(struct device *dev,
-	uint64_t first_block, uint64_t last_block)
-{
-	const int block_order = dev_get_block_order(dev);
-	const int block_size = dev_get_block_size(dev);
-	char stack[align_head(block_order) + block_size];
-	char *blk = align_mem(stack, block_order);
-
-	printf("Writing blocks from 0x%" PRIx64 " to 0x%" PRIx64 "...",
-		first_block, last_block);
-	fflush(stdout);
-	write_blocks(blk, dev, first_block, last_block);
-	printf(" Done\n\n");
 }
 
 /* XXX Properly handle return errors. */
