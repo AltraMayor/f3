@@ -68,7 +68,8 @@ static inline int dev_write_and_reset(struct device *dev, const char *buf,
 
 struct device *create_file_device(const char *filename,
 	uint64_t real_size_byte, uint64_t fake_size_byte, int wrap,
-	int block_order, int keep_file);
+	int block_order, int cache_order, int strict_cache,
+	int keep_file);
 
 /* XXX Add support for block devices backed by SCSI and ATA. */
 enum reset_type {

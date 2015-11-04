@@ -33,6 +33,10 @@ static struct argp_option options[] = {
 		"Wrap parameter of the emulated drive",	0},
 	{"debug-block-order",	'b',	"ORDER",	OPTION_HIDDEN,
 		"Block size of the emulated drive is 2^ORDER Bytes",	0},
+	{"debug-cache-order",	'c',	"ORDER",	OPTION_HIDDEN,
+		"Cache size of the emulated drive is 2^ORDER blocks",	0},
+	{"debug-strict-cache",	'o',	NULL,		OPTION_HIDDEN,
+		"Force the cache to be strict",				0},
 	{"debug-keep-file",	'k',	NULL,		OPTION_HIDDEN,
 		"Don't remove file used for emulating the drive",	0},
 	{"reset-type",		's',	"TYPE",		0,
@@ -66,6 +70,8 @@ struct args {
 	uint64_t	fake_size_byte;
 	int		wrap;
 	int		block_order;
+	int		cache_order;
+	int		strict_cache;
 
 	/* What to do. */
 	uint64_t	first_block;
@@ -115,6 +121,20 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 			argp_error(state,
 				"Block order must be in the interval [9, 20] or be zero");
 		args->block_order = ll;
+		args->debug = true;
+		break;
+
+	case 'c':
+		ll = arg_to_ll_bytes(state, arg);
+		if (ll < -1 || ll > 64)
+			argp_error(state,
+				"Cache order must be in the interval [-1, 64]");
+		args->cache_order = ll;
+		args->debug = true;
+		break;
+
+	case 'o':
+		args->strict_cache = true;
 		args->debug = true;
 		break;
 
@@ -384,6 +404,8 @@ int main(int argc, char **argv)
 		.fake_size_byte	= 1ULL << 34,
 		.wrap		= 31,
 		.block_order	= 0,
+		.cache_order	= -1,
+		.strict_cache	= false,
 		.first_block	= 0,
 		.last_block	= -1ULL,
 	};
@@ -397,7 +419,7 @@ int main(int argc, char **argv)
 	dev = args.debug
 		? create_file_device(args.filename, args.real_size_byte,
 			args.fake_size_byte, args.wrap, args.block_order,
-			args.keep_file)
+			args.cache_order, args.strict_cache, args.keep_file)
 		: create_block_device(args.filename, args.reset_type);
 	if (!dev) {
 		fprintf(stderr, "\nApplication cannot continue, finishing...\n");

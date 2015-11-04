@@ -150,10 +150,13 @@ struct file_device {
 	/* This must be the first field. See dev_fdev() for details. */
 	struct device dev;
 
-	const char *filename;
-	int fd;
-	uint64_t real_size_byte;
-	uint64_t address_mask;
+	const char	*filename;
+	int		fd;
+	uint64_t	real_size_byte;
+	uint64_t	address_mask;
+	uint64_t	cache_mask;
+	uint64_t	*cache_entries;
+	char		*cache_blocks;
 };
 
 static inline struct file_device *dev_fdev(struct device *dev)
@@ -170,7 +173,22 @@ static int fdev_read_block(struct device *dev, char *buf, int length,
 
 	offset &= fdev->address_mask;
 	if (offset >= fdev->real_size_byte) {
-		memset(buf, 0, length);
+		int block_order;
+		uint64_t cache_pos;
+
+		if (!fdev->cache_blocks)
+			goto no_block; /* No cache available. */
+
+		block_order = dev_get_block_order(&fdev->dev);
+		cache_pos = (offset >> block_order) & fdev->cache_mask;
+		assert(length == (1LL << block_order));
+
+		if (fdev->cache_entries &&
+			fdev->cache_entries[cache_pos] != offset)
+			goto no_block;
+
+		memmove(buf, &fdev->cache_blocks[cache_pos << block_order],
+			length);
 		return 0;
 	}
 
@@ -192,6 +210,10 @@ static int fdev_read_block(struct device *dev, char *buf, int length,
 		done += rc;
 	} while (done < length);
 
+	return 0;
+
+no_block:
+	memset(buf, 0, length);
 	return 0;
 }
 
@@ -216,8 +238,24 @@ static int fdev_write_block(struct device *dev, const char *buf, int length,
 	off_t off_ret;
 
 	offset &= fdev->address_mask;
-	if (offset >= fdev->real_size_byte)
+	if (offset >= fdev->real_size_byte) {
+		/* Block beyond real memory. */
+		int block_order;
+		uint64_t cache_pos;
+
+		if (!fdev->cache_blocks)
+			return 0; /* No cache available. */
+		block_order = dev_get_block_order(&fdev->dev);
+		cache_pos = (offset >> block_order) & fdev->cache_mask;
+		assert(length == (1LL << block_order));
+		memmove(&fdev->cache_blocks[cache_pos << block_order],
+			buf, length);
+
+		if (fdev->cache_entries)
+			fdev->cache_entries[cache_pos] = offset;
+
 		return 0;
+	}
 
 	off_ret = lseek(fdev->fd, offset, SEEK_SET);
 	if (off_ret < 0)
@@ -230,6 +268,8 @@ static int fdev_write_block(struct device *dev, const char *buf, int length,
 static void fdev_free(struct device *dev)
 {
 	struct file_device *fdev = dev_fdev(dev);
+	free(fdev->cache_blocks);
+	free(fdev->cache_entries);
 	free((void *)fdev->filename);
 	assert(!close(fdev->fd));
 }
@@ -241,7 +281,8 @@ static const char *fdev_get_filename(struct device *dev)
 
 struct device *create_file_device(const char *filename,
 	uint64_t real_size_byte, uint64_t fake_size_byte, int wrap,
-	int block_order, int keep_file)
+	int block_order, int cache_order, int strict_cache,
+	int keep_file)
 {
 	struct file_device *fdev;
 
@@ -253,10 +294,29 @@ struct device *create_file_device(const char *filename,
 	if (!fdev->filename)
 		goto fdev;
 
+	fdev->cache_mask = 0;
+	fdev->cache_entries = NULL;
+	fdev->cache_blocks = NULL;
+	if (cache_order >= 0) {
+		fdev->cache_mask = (((uint64_t)1) << cache_order) - 1;
+		if (strict_cache) {
+			size_t size = sizeof(*fdev->cache_entries) <<
+				cache_order;
+			fdev->cache_entries = malloc(size);
+			if (!fdev->cache_entries)
+				goto cache;
+			memset(fdev->cache_entries, 0, size);
+		}
+		fdev->cache_blocks = malloc(((uint64_t)1) <<
+			(cache_order + block_order));
+		if (!fdev->cache_blocks)
+			goto cache;
+	}
+
 	fdev->fd = open(filename, O_RDWR | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR);
 	if (fdev->fd < 0) {
 		err(errno, "Can't create file `%s'", filename);
-		goto filename;
+		goto cache;
 	}
 	if (!keep_file) {
 		/* Unlinking the file now guarantees that it won't exist if
@@ -294,7 +354,10 @@ keep_file:
 	if (keep_file)
 		unlink(filename);
 	assert(!close(fdev->fd));
-filename:
+cache:
+	free(fdev->cache_blocks);
+	free(fdev->cache_entries);
+/* filename:	this label is not being used. */
 	free((void *)fdev->filename);
 fdev:
 	free(fdev);

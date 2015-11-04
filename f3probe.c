@@ -35,6 +35,10 @@ static struct argp_option options[] = {
 		"Wrap parameter of the emulated drive",	0},
 	{"debug-block-order",	'b',	"ORDER",	OPTION_HIDDEN,
 		"Block size of the emulated drive is 2^ORDER Bytes",	0},
+	{"debug-cache-order",	'c',	"ORDER",	OPTION_HIDDEN,
+		"Cache size of the emulated drive is 2^ORDER blocks",	0},
+	{"debug-strict-cache",	'o',	NULL,		OPTION_HIDDEN,
+		"Force the cache to be strict",				0},
 	{"debug-keep-file",	'k',	NULL,		OPTION_HIDDEN,
 		"Don't remove file used for emulating the drive",	0},
 	{"debug-unit-test",	'u',	NULL,		OPTION_HIDDEN,
@@ -70,6 +74,8 @@ struct args {
 	uint64_t	fake_size_byte;
 	int		wrap;
 	int		block_order;
+	int		cache_order;
+	int		strict_cache;
 };
 
 static error_t parse_opt(int key, char *arg, struct argp_state *state)
@@ -115,6 +121,20 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 			argp_error(state,
 				"Block order must be in the interval [9, 20] or be zero");
 		args->block_order = ll;
+		args->debug = true;
+		break;
+
+	case 'c':
+		ll = arg_to_ll_bytes(state, arg);
+		if (ll < -1 || ll > 64)
+			argp_error(state,
+				"Cache order must be in the interval [-1, 64]");
+		args->cache_order = ll;
+		args->debug = true;
+		break;
+
+	case 'o':
+		args->strict_cache = true;
 		args->debug = true;
 		break;
 
@@ -184,29 +204,43 @@ struct unit_test_item {
 	uint64_t	fake_size_byte;
 	int		wrap;
 	int		block_order;
+	int		cache_order;
+	int		strict_cache;
 };
 
 static const struct unit_test_item ftype_to_params[] = {
 	/* Smallest good drive. */
-	{1ULL << 20,	1ULL << 20,	20,	9},
+	{1ULL << 21,	1ULL << 21,	21,	9,	-1,	false},
 
 	/* Good, 4KB-block, 1GB drive. */
-	{1ULL << 30,	1ULL << 30,	30,	12},
+	{1ULL << 30,	1ULL << 30,	30,	12,	-1,	false},
 
 	/* Bad drive. */
-	{0,		1ULL << 30,	30,	9},
+	{0,		1ULL << 30,	30,	9,	-1,	false},
 
 	/* Geometry of a real limbo drive. */
-	{1777645568ULL,	32505331712ULL,	35,	9},
+	{1777645568ULL,	32505331712ULL,	35,	9,	-1,	false},
 
 	/* Wraparound drive. */
-	{1ULL << 31,	1ULL << 34,	31,	9},
+	{1ULL << 31,	1ULL << 34,	31,	9,	-1,	false},
 
 	/* Chain drive. */
-	{1ULL << 31,	1ULL << 34,	32,	9},
+	{1ULL << 31,	1ULL << 34,	32,	9,	-1,	false},
 
 	/* Extreme case for memory usage (limbo drive). */
-	{1ULL << 20,	1ULL << 40,	40,	9},
+	{(1ULL<<20)+512,1ULL << 40,	40,	9,	-1,	false},
+
+	/* Geomerty of a real limbo drive with 256MB of strict cache. */
+	{7600799744ULL,	67108864000ULL,	36,	9,	19,	true},
+
+	/* The drive before with a non-strict cache. */
+	{7600799744ULL,	67108864000ULL,	36,	9,	19,	false},
+
+	/* The devil drive I. */
+	{0,		1ULL << 40,	40,	9,	21,	true},
+
+	/* The devil drive II. */
+	{0,		1ULL << 40,	40,	9,	21,	false},
 };
 
 #define UNIT_TEST_N_CASES \
@@ -232,7 +266,7 @@ static int unit_test(const char *filename)
 
 		dev = create_file_device(filename, item->real_size_byte,
 			item->fake_size_byte, item->wrap, item->block_order,
-			false);
+			item->cache_order, item->strict_cache, false);
 		assert(dev);
 		max_probe_blocks = probe_device_max_blocks(dev);
 		assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
@@ -314,7 +348,7 @@ static int test_device(struct args *args)
 	dev = args->debug
 		? create_file_device(args->filename, args->real_size_byte,
 			args->fake_size_byte, args->wrap, args->block_order,
-			args->keep_file)
+			args->cache_order, args->strict_cache, args->keep_file)
 		: create_block_device(args->filename, args->reset_type);
 	if (!dev) {
 		fprintf(stderr, "\nApplication cannot continue, finishing...\n");
@@ -448,6 +482,8 @@ int main(int argc, char **argv)
 		.fake_size_byte	= 1ULL << 34,
 		.wrap		= 31,
 		.block_order	= 0,
+		.cache_order	= -1,
+		.strict_cache	= false,
 	};
 
 	/* Read parameters. */
