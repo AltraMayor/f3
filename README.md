@@ -72,3 +72,27 @@ for the script log-f3wr:
 `PATH=$PATH:./ log-f3wr log-filename /media/michel/5EBD-5C80/`
 
 The current path is represented by `./` in the previous example.
+
+## Auto reset hardware
+
+In order to achieve auto reseting you can build a piece of hardware following
+the schematics in `hw/schematic.pdf`.
+
+The `DTR` and `GND` have to be connected to the corresponding pins of a USB to
+SERIAL/UART converter like the FTDI ones, which in turn is connected to a USB
+port in your computer.
+
+The auto reset hardware is connected to the computer using the USB B connector,
+and the target USB drive is connected to it directly in the USB A connector.
+
+Please note that f3 looks for auto reseting hardware in `/dev/ttyUSB0`, if your
+device is using other device file please make a symbolic link like this:
+
+        # ln -s /dev/ttyYOURDEVICE /dev/ttyUSB0
+
+You can find a preview of the hardware in `hw/preview.jpg".
+
+Once your hardware is fully connected and powered, and the target USB drive
+connected to it specify the reset-type to be 2, like this:
+
+        # f3probe --reset-type=2 /dev/TARGET
