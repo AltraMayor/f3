@@ -73,14 +73,16 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		args->disk_type = ped_disk_type_get(arg);
 		if (!args->disk_type)
 			argp_error(state,
-				"Disk type `%s' is not supported; use --list-disk-types to see the supported types");
+				"Disk type `%s' is not supported; use --list-disk-types to see the supported types",
+				arg);
 		break;
 
 	case 'f':
 		args->fs_type = ped_file_system_type_get(arg);
 		if (!args->fs_type)
 			argp_error(state,
-				"File system type `%s' is not supported; use --list-fs-types to see the supported types");
+				"File system type `%s' is not supported; use --list-fs-types to see the supported types",
+				arg);
 		break;
 
 	case 'b':
