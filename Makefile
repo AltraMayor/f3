@@ -28,10 +28,10 @@ f3write: utils.o f3write.o
 f3read: utils.o f3read.o
 	$(CC) -o $@ $^
 
-f3probe: libutils.o libdevs.o libprobe.o f3probe.o
+f3probe: libutils.o libhw.o libdevs.o libprobe.o f3probe.o
 	$(CC) -o $@ $^ -lm -ludev
 
-f3brew: libutils.o libdevs.o f3brew.o
+f3brew: libutils.o libhw.o libdevs.o f3brew.o
 	$(CC) -o $@ $^ -lm -ludev
 
 f3fix: libutils.o f3fix.o

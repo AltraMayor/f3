@@ -22,6 +22,7 @@
 
 #include "libutils.h"
 #include "libdevs.h"
+#include "libhw.h"
 
 static const char const *ftype_to_name[FKTY_MAX] = {
 	[FKTY_GOOD]		= "good",
@@ -612,6 +613,91 @@ out:
 	return rc;
 }
 
+static int bdev_hw_reset(struct device *dev)
+{
+	struct block_device *bdev = dev_bdev(dev);
+	struct udev *udev;
+	struct udev_device *udev_dev, *usb_dev;
+	const char *id_serial;
+	int rc;
+
+	if (bdev->fd < 0) {
+		/* We don't have a device open.
+		 * This can happen when the previous reset failed, and
+		 * a reset is being called again.
+		 */
+		rc = - EBADF;
+		goto out;
+	}
+
+	udev = udev_new();
+	if (!udev) {
+		warnx("Can't load library udev");
+		rc = - EOPNOTSUPP;
+		goto out;
+	}
+
+	/* Identify which drive we are going to reset. */
+	udev_dev = dev_from_block_fd(udev, bdev->fd);
+	if (!udev_dev) {
+		warnx("Library udev can't find device `%s'",
+			dev_get_filename(dev));
+		rc = - EINVAL;
+		goto udev;
+	}
+	usb_dev = map_dev_to_usb_dev(udev_dev);
+	if (!usb_dev) {
+		warnx("Block device `%s' is not backed by a USB device",
+			dev_get_filename(dev));
+		rc = - EINVAL;
+		goto udev_dev;
+	}
+	id_serial = udev_device_get_property_value(udev_dev, "ID_SERIAL");
+	if (!id_serial) {
+		warnx("%s(): Out of memory", __func__);
+		rc = - ENOMEM;
+		goto usb_dev;
+	}
+
+	/* Close @bdev->fd before the drive is removed to increase
+	 * the chance that the device will receive the same filename.
+	 * The code is robust enough to deal with the case the drive doesn't
+	 * receive the same file name, though.
+	 */
+	assert(!close(bdev->fd));
+	bdev->fd = -1;
+
+
+    hw_toggle();
+	printf("Reseting USB drive...");
+	fflush(stdout);
+	rc = wait_for_reset(udev, id_serial, dev_get_size_byte(dev),
+		&bdev->filename);
+	if (rc) {
+		assert(rc < 0);
+		goto usb_dev;
+	}
+	printf(" Done!\n\n");
+
+	bdev->fd = bdev_open(bdev->filename);
+	if (bdev->fd < 0) {
+		rc = - errno;
+		warn("Can't REopen device `%s'", bdev->filename);
+		goto usb_dev;
+	}
+
+	rc = 0;
+
+usb_dev:
+	udev_device_unref(usb_dev);
+udev_dev:
+	udev_device_unref(udev_dev);
+udev:
+	assert(!udev_unref(udev));
+out:
+	return rc;
+}
+
 static struct udev_device *map_block_to_usb_dev(struct udev *udev, int block_fd)
 {
 	struct udev_device *dev, *usb_dev;
@@ -803,6 +889,9 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 		break;
 	case RT_USB:
 		bdev->dev.reset = bdev_usb_reset;
+		break;
+	case RT_HW:
+		bdev->dev.reset = bdev_hw_reset;
 		break;
 	default:
 		assert(0);

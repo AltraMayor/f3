@@ -12,6 +12,7 @@
 #include "version.h"
 #include "libprobe.h"
 #include "libutils.h"
+#include "libhw.h"
 
 /* Argp's global variables. */
 const char *argp_program_version = "F3 Probe " F3_STR_VERSION;
@@ -311,6 +312,11 @@ static int test_device(struct args *args)
 	uint64_t reset_count, reset_time_us;
 	const char *final_dev_filename;
 
+	if (!args->debug && args->reset_type == RT_HW) {
+        int ret = hw_open_com("/dev/ttyUSB0");
+        if (ret < 0 ){ exit(-1); }
+    }
+
 	dev = args->debug
 		? create_file_device(args->filename, args->real_size_byte,
 			args->fake_size_byte, args->wrap, args->block_order,
@@ -430,6 +436,11 @@ static int test_device(struct args *args)
 	}
 
 	free((void *)final_dev_filename);
+
+	if (!args->debug && args->reset_type == RT_HW) {
+        hw_close_com();
+    }
+
 	return 0;
 }
 
