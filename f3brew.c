@@ -214,19 +214,37 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
 
-static void write_blocks(char *stamp_blk, struct device *dev,
+/* It must be a power of 2 greater than, or equal to 2^20.
+ * The current vaule is 1MB.
+ */
+#define BIG_BLOCK_SIZE_BYTE (1 << 20)
+
+static void write_blocks(struct device *dev,
 	uint64_t first_block, uint64_t last_block)
 {
-	const int block_size = dev_get_block_size(dev);
 	const int block_order = dev_get_block_order(dev);
+	const int block_size = dev_get_block_size(dev);
+	char stack[align_head(block_order) + BIG_BLOCK_SIZE_BYTE];
+	char *buffer = align_mem(stack, block_order);
+	char *stamp_blk = buffer;
+	char *flush_blk = buffer + BIG_BLOCK_SIZE_BYTE;
 	uint64_t offset = first_block << block_order;
-	uint64_t i;
+	uint64_t pos, first_pos = first_block;
 
-	for (i = first_block; i <= last_block; i++) {
+	assert(BIG_BLOCK_SIZE_BYTE >= block_size);
+
+	for (pos = first_block; pos <= last_block; pos++) {
 		fill_buffer_with_block(stamp_blk, block_order, offset, 0);
-		if (dev_write_block(dev, stamp_blk, i))
-			warn("Failed writing block 0x%" PRIx64, i);
+		stamp_blk += block_size;
 		offset += block_size;
+
+		if (stamp_blk == flush_blk || pos == last_block) {
+			if (dev_write_blocks(dev, buffer, first_pos, pos))
+				warn("Failed to write blocks from 0x%" PRIx64
+					" to 0x%" PRIx64, first_pos, pos);
+			stamp_blk = buffer;
+			first_pos = pos + 1;
+		}
 	}
 }
 
@@ -234,15 +252,10 @@ static void write_blocks(char *stamp_blk, struct device *dev,
 static void test_write_blocks(struct device *dev,
 	uint64_t first_block, uint64_t last_block)
 {
-	const int block_order = dev_get_block_order(dev);
-	const int block_size = dev_get_block_size(dev);
-	char stack[align_head(block_order) + block_size];
-	char *blk = align_mem(stack, block_order);
-
 	printf("Writing blocks from 0x%" PRIx64 " to 0x%" PRIx64 "...",
 		first_block, last_block);
 	fflush(stdout);
-	write_blocks(blk, dev, first_block, last_block);
+	write_blocks(dev, first_block, last_block);
 	printf(" Done\n\n");
 }
 
@@ -347,12 +360,16 @@ static void validate_block(uint64_t expected_sector_offset,
 	}
 }
 
-static void read_blocks(char *probe_blk, struct device *dev,
+static void read_blocks(struct device *dev,
 	uint64_t first_block, uint64_t last_block)
 {
 	const int block_size = dev_get_block_size(dev);
 	const int block_order = dev_get_block_order(dev);
+	char stack[align_head(block_order) + BIG_BLOCK_SIZE_BYTE];
+	char *buffer = align_mem(stack, block_order);
 	uint64_t expected_sector_offset = first_block << block_order;
+	uint64_t first_pos = first_block;
+	uint64_t step = (BIG_BLOCK_SIZE_BYTE >> block_order) - 1;
 	struct block_range range = {
 		.state = bs_unknown,
 		.block_order = block_order,
@@ -360,15 +377,28 @@ static void read_blocks(char *probe_blk, struct device *dev,
 		.end_sector_offset = 0,
 		.found_sector_offset = 0,
 	};
-	uint64_t i;
 
-	for (i = first_block; i <= last_block; i++) {
-		if (!dev_read_block(dev, probe_blk, i))
+	assert(BIG_BLOCK_SIZE_BYTE >= block_size);
+
+	while (first_pos <= last_block) {
+		uint64_t next_pos = first_pos + step;
+		char *probe_blk = buffer;
+		uint64_t pos;
+
+		if (next_pos > last_block)
+			next_pos = last_block;
+		if (dev_read_blocks(dev, buffer, first_pos, next_pos))
+			warn("Failed to read blocks from 0x%" PRIx64
+				" to 0x%" PRIx64, first_pos, next_pos);
+
+		for (pos = first_pos; pos <= next_pos; pos++) {
 			validate_block(expected_sector_offset, probe_blk,
 				block_order, &range);
-		else
-			warn("Failed reading block 0x%" PRIx64, i);
-		expected_sector_offset += block_size;
+			expected_sector_offset += block_size;
+			probe_blk += block_size;
+		}
+
+		first_pos = next_pos + 1;
 	}
 	if (range.state != bs_unknown)
 		print_block_range(&range);
@@ -380,14 +410,9 @@ static void read_blocks(char *probe_blk, struct device *dev,
 static void test_read_blocks(struct device *dev,
 	uint64_t first_block, uint64_t last_block)
 {
-	const int block_order = dev_get_block_order(dev);
-	const int block_size = dev_get_block_size(dev);
-	char stack[align_head(block_order) + block_size];
-	char *blk = align_mem(stack, block_order);
-
 	printf("Reading blocks from 0x%" PRIx64 " to 0x%" PRIx64 ":\n",
 		first_block, last_block);
-	read_blocks(blk, dev, first_block, last_block);
+	read_blocks(dev, first_block, last_block);
 	printf("\n");
 }
 

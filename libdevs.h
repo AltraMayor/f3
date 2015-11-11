@@ -40,27 +40,40 @@ enum fake_type dev_param_to_type(uint64_t real_size_byte,
 
 struct device;
 
-/* Properties. */
+/*
+ *	Properties
+ */
+
 uint64_t dev_get_size_byte(struct device *dev);
 int dev_get_block_order(struct device *dev);
 int dev_get_block_size(struct device *dev);
-
-/* Methods. */
-int dev_read_block(struct device *dev, char *buf, uint64_t block);
-int dev_write_block(struct device *dev, const char *buf, uint64_t block);
-int dev_reset(struct device *dev);
-void free_device(struct device *dev);
 /* File name of the device.
  * This information is important because the filename may change due to resets.
  */
 const char *dev_get_filename(struct device *dev);
 
-static inline int dev_write_and_reset(struct device *dev, const char *buf,
+/*
+ *	Methods
+ */
+
+int dev_read_blocks(struct device *dev, char *buf,
+	uint64_t first_pos, uint64_t last_pos);
+int dev_write_blocks(struct device *dev, const char *buf,
+	uint64_t first_pos, uint64_t last_pos);
+
+static inline int dev_read_block(struct device *dev, char *buf, uint64_t block)
+{
+	return dev_read_blocks(dev, buf, block, block);
+}
+
+static inline int dev_write_block(struct device *dev, const char *buf,
 	uint64_t block)
 {
-	int rc = dev_write_block(dev, buf, block);
-	return rc ? rc : dev_reset(dev);
+	return dev_write_blocks(dev, buf, block, block);
 }
+
+int dev_reset(struct device *dev);
+void free_device(struct device *dev);
 
 /*
  *	Concrete devices
@@ -71,7 +84,6 @@ struct device *create_file_device(const char *filename,
 	int block_order, int cache_order, int strict_cache,
 	int keep_file);
 
-/* XXX Add support for block devices backed by SCSI and ATA. */
 enum reset_type {
 	RT_MANUAL_USB = 0,
 	RT_USB,

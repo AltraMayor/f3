@@ -89,10 +89,10 @@ struct device {
 	uint64_t	size_byte;
 	int		block_order;
 
-	int (*read_block)(struct device *dev, char *buf, int length,
-		uint64_t offset);
-	int (*write_block)(struct device *dev, const char *buf, int length,
-		uint64_t offset);
+	int (*read_blocks)(struct device *dev, char *buf,
+		uint64_t first_pos, uint64_t last_pos);
+	int (*write_blocks)(struct device *dev, const char *buf,
+		uint64_t first_pos, uint64_t last_pos);
 	int (*reset)(struct device *dev);
 	void (*free)(struct device *dev);
 	const char *(*get_filename)(struct device *dev);
@@ -113,20 +113,27 @@ int dev_get_block_size(struct device *dev)
 	return 1 << dev->block_order;
 }
 
-int dev_read_block(struct device *dev, char *buf, uint64_t block)
+const char *dev_get_filename(struct device *dev)
 {
-	const int block_size = 1 << dev->block_order;
-	uint64_t offset = block << dev->block_order;
-	assert(offset + block_size <= dev->size_byte);
-	return dev->read_block(dev, buf, block_size, offset);
+	return dev->get_filename(dev);
 }
 
-int dev_write_block(struct device *dev, const char *buf, uint64_t block)
+int dev_read_blocks(struct device *dev, char *buf,
+	uint64_t first_pos, uint64_t last_pos)
 {
-	const int block_size = 1 << dev->block_order;
-	uint64_t offset = block << dev->block_order;
-	assert(offset + block_size <= dev->size_byte);
-	return dev->write_block(dev, buf, block_size, offset);
+	if (first_pos > last_pos)
+		return false;
+	assert(last_pos < (dev->size_byte >> dev->block_order));
+	return dev->read_blocks(dev, buf, first_pos, last_pos);
+}
+
+int dev_write_blocks(struct device *dev, const char *buf,
+	uint64_t first_pos, uint64_t last_pos)
+{
+	if (first_pos > last_pos)
+		return false;
+	assert(last_pos < (dev->size_byte >> dev->block_order));
+	return dev->write_blocks(dev, buf, first_pos, last_pos);
 }
 
 int dev_reset(struct device *dev)
@@ -139,11 +146,6 @@ void free_device(struct device *dev)
 	if (dev->free)
 		dev->free(dev);
 	free(dev);
-}
-
-const char *dev_get_filename(struct device *dev)
-{
-	return dev->get_filename(dev);
 }
 
 struct file_device {
@@ -164,62 +166,75 @@ static inline struct file_device *dev_fdev(struct device *dev)
 	return (struct file_device *)dev;
 }
 
-static int fdev_read_block(struct device *dev, char *buf, int length,
-	uint64_t offset)
+static int fdev_read_block(struct device *dev, char *buf, uint64_t block_pos)
 {
 	struct file_device *fdev = dev_fdev(dev);
-	off_t off_ret;
+	const int block_size = dev_get_block_size(dev);
+	const int block_order = dev_get_block_order(dev);
+	off_t off_ret, offset = block_pos << block_order;
 	int done;
 
 	offset &= fdev->address_mask;
-	if (offset >= fdev->real_size_byte) {
-		int block_order;
+	if ((uint64_t)offset >= fdev->real_size_byte) {
 		uint64_t cache_pos;
 
 		if (!fdev->cache_blocks)
 			goto no_block; /* No cache available. */
 
-		block_order = dev_get_block_order(&fdev->dev);
-		cache_pos = (offset >> block_order) & fdev->cache_mask;
-		assert(length == (1LL << block_order));
+		cache_pos = block_pos & fdev->cache_mask;
 
 		if (fdev->cache_entries &&
-			fdev->cache_entries[cache_pos] != offset)
+			fdev->cache_entries[cache_pos] != block_pos)
 			goto no_block;
 
 		memmove(buf, &fdev->cache_blocks[cache_pos << block_order],
-			length);
+			block_size);
 		return 0;
 	}
 
 	off_ret = lseek(fdev->fd, offset, SEEK_SET);
 	if (off_ret < 0)
 		return - errno;
-	assert((uint64_t)off_ret == offset);
+	assert(off_ret == offset);
 
 	done = 0;
 	do {
-		ssize_t rc = read(fdev->fd, buf + done, length - done);
+		ssize_t rc = read(fdev->fd, buf + done, block_size - done);
 		assert(rc >= 0);
 		if (!rc) {
 			/* Tried to read beyond the end of the file. */
 			assert(!done);
-			memset(buf, 0, length);
-			done += length;
+			memset(buf, 0, block_size);
+			done += block_size;
 		}
 		done += rc;
-	} while (done < length);
+	} while (done < block_size);
 
 	return 0;
 
 no_block:
-	memset(buf, 0, length);
+	memset(buf, 0, block_size);
 	return 0;
 }
 
-static int write_all(int fd, const char *buf, int count)
+static int fdev_read_blocks(struct device *dev, char *buf,
+		uint64_t first_pos, uint64_t last_pos)
 {
-	int done = 0;
+	const int block_size = dev_get_block_size(dev);
+	uint64_t pos;
+
+	for (pos = first_pos; pos <= last_pos; pos++) {
+		int rc = fdev_read_block(dev, buf, pos);
+		if (rc)
+			return rc;
+		buf += block_size;
+	}
+	return 0;
+}
+
+static int write_all(int fd, const char *buf, size_t count)
+{
+	size_t done = 0;
 	do {
 		ssize_t rc = write(fd, buf + done, count - done);
 		if (rc < 0) {
@@ -231,28 +246,27 @@ static int write_all(int fd, const char *buf, int count)
 	return 0;
 }
 
-static int fdev_write_block(struct device *dev, const char *buf, int length,
-	uint64_t offset)
+static int fdev_write_block(struct device *dev, const char *buf,
+	uint64_t block_pos)
 {
 	struct file_device *fdev = dev_fdev(dev);
-	off_t off_ret;
+	const int block_size = dev_get_block_size(dev);
+	const int block_order = dev_get_block_order(dev);
+	off_t off_ret, offset = block_pos << block_order;
 
 	offset &= fdev->address_mask;
-	if (offset >= fdev->real_size_byte) {
+	if ((uint64_t)offset >= fdev->real_size_byte) {
 		/* Block beyond real memory. */
-		int block_order;
 		uint64_t cache_pos;
 
 		if (!fdev->cache_blocks)
 			return 0; /* No cache available. */
-		block_order = dev_get_block_order(&fdev->dev);
-		cache_pos = (offset >> block_order) & fdev->cache_mask;
-		assert(length == (1LL << block_order));
+		cache_pos = block_pos & fdev->cache_mask;
 		memmove(&fdev->cache_blocks[cache_pos << block_order],
-			buf, length);
+			buf, block_size);
 
 		if (fdev->cache_entries)
-			fdev->cache_entries[cache_pos] = offset;
+			fdev->cache_entries[cache_pos] = block_pos;
 
 		return 0;
 	}
@@ -260,9 +274,24 @@ static int fdev_write_block(struct device *dev, const char *buf, int length,
 	off_ret = lseek(fdev->fd, offset, SEEK_SET);
 	if (off_ret < 0)
 		return - errno;
-	assert((uint64_t)off_ret == offset);
+	assert(off_ret == offset);
 
-	return write_all(fdev->fd, buf, length);
+	return write_all(fdev->fd, buf, block_size);
+}
+
+static int fdev_write_blocks(struct device *dev, const char *buf,
+		uint64_t first_pos, uint64_t last_pos)
+{
+	const int block_size = dev_get_block_size(dev);
+	uint64_t pos;
+
+	for (pos = first_pos; pos <= last_pos; pos++) {
+		int rc = fdev_write_block(dev, buf, pos);
+		if (rc)
+			return rc;
+		buf += block_size;
+	}
+	return 0;
 }
 
 static void fdev_free(struct device *dev)
@@ -342,8 +371,8 @@ struct device *create_file_device(const char *filename,
 
 	fdev->dev.size_byte = fake_size_byte;
 	fdev->dev.block_order = block_order;
-	fdev->dev.read_block = fdev_read_block;
-	fdev->dev.write_block = fdev_write_block;
+	fdev->dev.read_blocks = fdev_read_blocks;
+	fdev->dev.write_blocks = fdev_write_blocks;
 	fdev->dev.reset = NULL;
 	fdev->dev.free = fdev_free;
 	fdev->dev.get_filename = fdev_get_filename;
@@ -378,9 +407,9 @@ static inline struct block_device *dev_bdev(struct device *dev)
 	return (struct block_device *)dev;
 }
 
-static int read_all(int fd, char *buf, int count)
+static int read_all(int fd, char *buf, size_t count)
 {
-	int done = 0;
+	size_t done = 0;
 	do {
 		ssize_t rc = read(fd, buf + done, count - done);
 		if (rc < 0) {
@@ -393,25 +422,31 @@ static int read_all(int fd, char *buf, int count)
 	return 0;
 }
 
-static int bdev_read_block(struct device *dev, char *buf, int length,
-	uint64_t offset)
+static int bdev_read_blocks(struct device *dev, char *buf,
+		uint64_t first_pos, uint64_t last_pos)
 {
 	struct block_device *bdev = dev_bdev(dev);
+	const int block_order = dev_get_block_order(dev);
+	size_t length = (last_pos - first_pos + 1) << block_order;
+	off_t offset = first_pos << block_order;
 	off_t off_ret = lseek(bdev->fd, offset, SEEK_SET);
 	if (off_ret < 0)
 		return - errno;
-	assert((uint64_t)off_ret == offset);
+	assert(off_ret == offset);
 	return read_all(bdev->fd, buf, length);
 }
 
-static int bdev_write_block(struct device *dev, const char *buf, int length,
-	uint64_t offset)
+static int bdev_write_blocks(struct device *dev, const char *buf,
+		uint64_t first_pos, uint64_t last_pos)
 {
 	struct block_device *bdev = dev_bdev(dev);
+	const int block_order = dev_get_block_order(dev);
+	size_t length = (last_pos - first_pos + 1) << block_order;
+	off_t offset = first_pos << block_order;
 	off_t off_ret = lseek(bdev->fd, offset, SEEK_SET);
 	if (off_ret < 0)
 		return - errno;
-	assert((uint64_t)off_ret == offset);
+	assert(off_ret == offset);
 	return write_all(bdev->fd, buf, length);
 }
 
@@ -878,8 +913,8 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 	assert(block_size == (1 << block_order));
 	bdev->dev.block_order = block_order;
 
-	bdev->dev.read_block = bdev_read_block;
-	bdev->dev.write_block = bdev_write_block;
+	bdev->dev.read_blocks = bdev_read_blocks;
+	bdev->dev.write_blocks = bdev_write_blocks;
 	bdev->dev.free = bdev_free;
 	bdev->dev.get_filename = bdev_get_filename;
 
@@ -918,34 +953,34 @@ static inline struct perf_device *dev_pdev(struct device *dev)
 	return (struct perf_device *)dev;
 }
 
-static int pdev_read_block(struct device *dev, char *buf, int length,
-	uint64_t offset)
+static int pdev_read_blocks(struct device *dev, char *buf,
+		uint64_t first_pos, uint64_t last_pos)
 {
 	struct perf_device *pdev = dev_pdev(dev);
 	struct timeval t1, t2;
 	int rc;
 
 	assert(!gettimeofday(&t1, NULL));
-	rc = pdev->shadow_dev->read_block(pdev->shadow_dev, buf,
-		length, offset);
+	rc = pdev->shadow_dev->read_blocks(pdev->shadow_dev, buf,
+		first_pos, last_pos);
 	assert(!gettimeofday(&t2, NULL));
-	pdev->read_count++;
+	pdev->read_count += last_pos - first_pos + 1;
 	pdev->read_time_us += diff_timeval_us(&t1, &t2);
 	return rc;
 }
 
-static int pdev_write_block(struct device *dev, const char *buf, int length,
-	uint64_t offset)
+static int pdev_write_blocks(struct device *dev, const char *buf,
+		uint64_t first_pos, uint64_t last_pos)
 {
 	struct perf_device *pdev = dev_pdev(dev);
 	struct timeval t1, t2;
 	int rc;
 
 	assert(!gettimeofday(&t1, NULL));
-	rc = pdev->shadow_dev->write_block(pdev->shadow_dev, buf,
-		length, offset);
+	rc = pdev->shadow_dev->write_blocks(pdev->shadow_dev, buf,
+		first_pos, last_pos);
 	assert(!gettimeofday(&t2, NULL));
-	pdev->write_count++;
+	pdev->write_count += last_pos - first_pos + 1;
 	pdev->write_time_us += diff_timeval_us(&t1, &t2);
 	return rc;
 }
@@ -1003,8 +1038,8 @@ struct device *create_perf_device(struct device *dev)
 
 	pdev->dev.size_byte = dev->size_byte;
 	pdev->dev.block_order = dev->block_order;
-	pdev->dev.read_block = pdev_read_block;
-	pdev->dev.write_block = pdev_write_block;
+	pdev->dev.read_blocks = pdev_read_blocks;
+	pdev->dev.write_blocks = pdev_write_blocks;
 	pdev->dev.reset	= pdev_reset;
 	pdev->dev.free = pdev_free;
 	pdev->dev.get_filename = pdev_get_filename;
@@ -1044,7 +1079,7 @@ struct safe_device {
 	struct device		*shadow_dev;
 
 	char			*saved_blocks;
-	uint64_t		*sb_offsets;
+	uint64_t		*sb_positions;
 	SDEV_BITMAP_WORD	*sb_bitmap;
 	int			sb_n;
 	int			sb_max;
@@ -1055,69 +1090,70 @@ static inline struct safe_device *dev_sdev(struct device *dev)
 	return (struct safe_device *)dev;
 }
 
-static int sdev_read_block(struct device *dev, char *buf, int length,
-	uint64_t offset)
+static int sdev_read_blocks(struct device *dev, char *buf,
+		uint64_t first_pos, uint64_t last_pos)
 {
 	struct safe_device *sdev = dev_sdev(dev);
-	return sdev->shadow_dev->read_block(sdev->shadow_dev, buf,
-		length, offset);
+	return sdev->shadow_dev->read_blocks(sdev->shadow_dev, buf,
+		first_pos, last_pos);
 }
 
-static int sdev_save_block(struct safe_device *sdev,
-	int length, uint64_t offset)
+static int sdev_save_block(struct safe_device *sdev, uint64_t block_pos)
 {
 	const int block_order = dev_get_block_order(sdev->shadow_dev);
-	lldiv_t idx = lldiv(offset >> block_order, SDEV_BITMAP_BITS_PER_WORD);
+	lldiv_t idx = lldiv(block_pos, SDEV_BITMAP_BITS_PER_WORD);
 	SDEV_BITMAP_WORD set_bit = (SDEV_BITMAP_WORD)1 << idx.rem;
-	char *block;
+	char *block_buf;
 	int rc;
-
-	/* The current implementation doesn't support variable lengths. */
-	assert(length == dev_get_block_size(sdev->shadow_dev));
 
 	/* Is this block already saved? */
 	if (!sdev->sb_bitmap) {
 		int i;
 		/* Running without bitmap. */
 		for (i = 0; i < sdev->sb_n; i++)
-			if (sdev->sb_offsets[i] == offset) {
-				/* The block at @offset is already saved. */
+			if (sdev->sb_positions[i] == block_pos) {
+				/* The block is already saved. */
 				return 0;
 			}
 	} else if (sdev->sb_bitmap[idx.quot] & set_bit) {
-		/* The block at @offset is already saved. */
+		/* The block is already saved. */
 		return 0;
 	}
 
-	/* The block at @offset hasn't been saved before. Save this block. */
+	/* The block hasn't been saved before. Save it. */
 	assert(sdev->sb_n < sdev->sb_max);
-	block = (char *)align_mem(sdev->saved_blocks, block_order) +
+	block_buf = (char *)align_mem(sdev->saved_blocks, block_order) +
 		(sdev->sb_n << block_order);
-	rc = sdev->shadow_dev->read_block(sdev->shadow_dev, block,
-		length, offset);
+	rc = sdev->shadow_dev->read_blocks(sdev->shadow_dev, block_buf,
+		block_pos, block_pos);
 	if (rc)
 		return rc;
 
 	/* Bookkeeping. */
 	if (sdev->sb_bitmap)
 		sdev->sb_bitmap[idx.quot] |= set_bit;
-	sdev->sb_offsets[sdev->sb_n] = offset;
+	sdev->sb_positions[sdev->sb_n] = block_pos;
 	sdev->sb_n++;
 	return 0;
 }
 
-static int sdev_write_block(struct device *dev, const char *buf, int length,
-	uint64_t offset)
+static int sdev_write_blocks(struct device *dev, const char *buf,
+		uint64_t first_pos, uint64_t last_pos)
 {
 	struct safe_device *sdev = dev_sdev(dev);
-	int rc;
+	uint64_t pos;
 
-	rc = sdev_save_block(sdev, length, offset);
-	if (rc)
-		return rc;
+	/* XXX The code should take advantage of the fact that
+	 * the blocks are sequential and execute a single read.
+	 */
+	for (pos = first_pos; pos <= last_pos; pos++) {
+		int rc = sdev_save_block(sdev, pos);
+		if (rc)
+			return rc;
+	}
 
-	return sdev->shadow_dev->write_block(sdev->shadow_dev, buf,
-		length, offset);
+	return sdev->shadow_dev->write_blocks(sdev->shadow_dev, buf,
+		first_pos, last_pos);
 }
 
 static int sdev_reset(struct device *dev)
@@ -1129,32 +1165,35 @@ static void sdev_free(struct device *dev)
 {
 	struct safe_device *sdev = dev_sdev(dev);
 
+	/* XXX The code should take advantage of fact that
+	 * some blocks are sequential and execute less write calls.
+	 */
 	if (sdev->sb_n > 0) {
 		const int block_order = dev_get_block_order(sdev->shadow_dev);
 		char *first_block = align_mem(sdev->saved_blocks, block_order);
-		char *block = first_block + ((sdev->sb_n - 1) << block_order);
-		uint64_t *poffset = &sdev->sb_offsets[sdev->sb_n - 1];
+		char *block_buf = first_block +
+			((sdev->sb_n - 1) << block_order);
+		uint64_t *ppos = &sdev->sb_positions[sdev->sb_n - 1];
 		int block_size = dev_get_block_size(sdev->shadow_dev);
 
 		/* Restore blocks in reverse order to cope with
 		 * wraparound and chain drives.
 		 */
 		do {
-			int rc = sdev->shadow_dev->write_block(
-				sdev->shadow_dev, block, block_size, *poffset);
+			int rc = sdev->shadow_dev->write_blocks(
+				sdev->shadow_dev, block_buf, *ppos, *ppos);
 			if (rc) {
 				/* Do not abort, try to recover all bocks. */
-				warn("Failed to recover block at offset 0x%"
-					PRIx64 " due to a write error",
-					*poffset);
+				warn("Failed to recover block 0x%" PRIx64
+					" due to a write error", *ppos);
 			}
-			block -= block_size;
-			poffset--;
-		} while (block >= first_block);
+			block_buf -= block_size;
+			ppos--;
+		} while (block_buf >= first_block);
 	}
 
 	free(sdev->sb_bitmap);
-	free(sdev->sb_offsets);
+	free(sdev->sb_positions);
 	free(sdev->saved_blocks);
 	free_device(sdev->shadow_dev);
 }
@@ -1180,8 +1219,8 @@ struct device *create_safe_device(struct device *dev, int max_blocks,
 	if (!sdev->saved_blocks)
 		goto sdev;
 
-	sdev->sb_offsets = malloc(max_blocks * sizeof(*sdev->sb_offsets));
-	if (!sdev->sb_offsets)
+	sdev->sb_positions = malloc(max_blocks * sizeof(*sdev->sb_positions));
+	if (!sdev->sb_positions)
 		goto saved_blocks;
 
 	if (!min_memory) {
@@ -1203,8 +1242,8 @@ struct device *create_safe_device(struct device *dev, int max_blocks,
 
 	sdev->dev.size_byte = dev->size_byte;
 	sdev->dev.block_order = block_order;
-	sdev->dev.read_block = sdev_read_block;
-	sdev->dev.write_block = sdev_write_block;
+	sdev->dev.read_blocks = sdev_read_blocks;
+	sdev->dev.write_blocks = sdev_write_blocks;
 	sdev->dev.reset	= sdev_reset;
 	sdev->dev.free = sdev_free;
 	sdev->dev.get_filename = sdev_get_filename;
@@ -1212,7 +1251,7 @@ struct device *create_safe_device(struct device *dev, int max_blocks,
 	return &sdev->dev;
 
 offsets:
-	free(sdev->sb_offsets);
+	free(sdev->sb_positions);
 saved_blocks:
 	free(sdev->saved_blocks);
 sdev:
