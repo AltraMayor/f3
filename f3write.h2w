@@ -1,6 +1,6 @@
 #!/bin/bash
 
-f3write "$@" || exit 1
+$(dirname $0)/f3write "$@" || exit 1
 
 FILES=("${@: -1}/*.h2w")
 truncate --size=/1M $FILES

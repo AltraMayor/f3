@@ -63,12 +63,4 @@ So you can personalize F3 to your specific needs.
         Use example: `log-f3wr log-filename /media/michel/5EBD-5C80/`
 
 Please notice that all scripts and use examples above assume that
-f3write, f3read, and the scripts are reachable from
-your environment PATH variable.
-If that is not the case, but all of them are in your current path,
-prefix the use examples above with `PATH=$PATH:./` as shown below
-for the script log-f3wr:
-
-`PATH=$PATH:./ log-f3wr log-filename /media/michel/5EBD-5C80/`
-
-The current path is represented by `./` in the previous example.
+f3write, f3read, and the scripts are in the same folder.
