@@ -1,3 +1,9 @@
+Version 6.0 - Dec 24, 2015
+
+    * f3probe: new algorithm.
+    * f3fix: deal with sectors whose sizes are not 512B.
+    * add f3brew (experimental).
+
 Version 5.0 - Dec 24, 2014
 
     * add f3probe (experimental).
