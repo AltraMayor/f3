@@ -431,10 +431,12 @@ static int test_device(struct args *args)
 	assert(final_dev_filename);
 
 	if (args->save)
-		printf(" Done\n\n");
+		printf(" Done\n");
+	if (args->save || (!args->debug && args->reset_type == RT_MANUAL_USB))
+		printf("\n");
 
 	if (strcmp(args->filename, final_dev_filename))
-		printf("\nWARNING: device `%s' moved to `%s' due to the resets\n\n",
+		printf("WARNING: device `%s' moved to `%s' due to the resets\n\n",
 			args->filename, final_dev_filename);
 
 	fake_type = dev_param_to_type(real_size_byte, announced_size_byte,
