@@ -79,9 +79,9 @@ static uint64_t estimate_n_bisect_blocks(struct bisect_stats *pstats)
 	double t_w_us, t_2w_us, t_r_us;
 	uint64_t n_block_order;
 
-	if (pstats->write_count < 3 || pstats->reset_count < 1) {
+	if (pstats->write_count < 10 || pstats->reset_count < 1) {
 		/* There is not enough measurements. */
-		return (1 << 2) - 1;
+		return (1 << 4) - 1;
 	}
 
 	/* Let 2^n be the total number of blocks on the drive.
