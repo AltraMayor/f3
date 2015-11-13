@@ -824,6 +824,12 @@ static struct udev_device *map_partition_to_disk(struct udev_device *dev)
 	return udev_device_ref(disk_dev);
 }
 
+/* XXX This is borrowing from glibc.
+ * A better solution would be to return proper errors,
+ * so callers write their own messages.
+ */
+extern const char *__progname;
+
 struct device *create_block_device(const char *filename, enum reset_type rt)
 {
 	struct block_device *bdev;
@@ -843,11 +849,11 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 	bdev->fd = bdev_open(filename);
 	if (bdev->fd < 0) {
 		if (errno == EACCES && getuid()) {
-			fprintf(stderr, "Your username doesn't have access to device `%s'.\n"
+			fprintf(stderr, "Your user doesn't have access to device `%s'.\n"
 				"Try to run this program as root:\n"
-				"sudo f3probe %s\n"
+				"sudo %s %s\n"
 				"In case you don't have access to root, use f3write/f3read.\n",
-				filename, filename);
+				filename, __progname, filename);
 		} else {
 			err(errno, "Can't open device `%s'", filename);
 		}
@@ -875,9 +881,9 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 		assert(disk_dev);
 		s = udev_device_get_devnode(disk_dev);
 		fprintf(stderr, "Device `%s' is a partition of disk device `%s'.\n"
-			"You must run f3probe on the disk device as follows:\n"
-			"f3probe %s\n",
-			filename, s, s);
+			"You must run %s on the disk device as follows:\n"
+			"%s %s\n",
+			filename, s, __progname, __progname, s);
 		udev_device_unref(disk_dev);
 		goto fd_dev;
 	} else if (strcmp(s, "disk")) {
