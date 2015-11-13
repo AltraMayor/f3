@@ -666,7 +666,7 @@ static int find_wrap(struct device *dev,
 	return false;
 }
 
-int probe_device_max_blocks(struct device *dev)
+uint64_t probe_device_max_blocks(struct device *dev)
 {
 	const int block_order = dev_get_block_order(dev);
 	uint64_t num_blocks = dev_get_size_byte(dev) >> block_order;

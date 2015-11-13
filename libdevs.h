@@ -100,7 +100,7 @@ void perf_device_sample(struct device *dev,
  */
 struct device *pdev_detach_and_free(struct device *dev);
 
-struct device *create_safe_device(struct device *dev, int max_blocks,
+struct device *create_safe_device(struct device *dev, uint64_t max_blocks,
 	int min_memory);
 
 #endif	/* HEADER_LIBDEVS_H */

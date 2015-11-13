@@ -1209,7 +1209,7 @@ static const char *sdev_get_filename(struct device *dev)
 	return dev_get_filename(dev_sdev(dev)->shadow_dev);
 }
 
-struct device *create_safe_device(struct device *dev, int max_blocks,
+struct device *create_safe_device(struct device *dev, uint64_t max_blocks,
 	int min_memory)
 {
 	struct safe_device *sdev;
