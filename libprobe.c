@@ -15,21 +15,29 @@ static int write_blocks(struct device *dev,
 {
 	const int block_order = dev_get_block_order(dev);
 	const int block_size = dev_get_block_size(dev);
-	uint64_t offset = first_pos << block_order;
 	/* Aligning these pointers is necessary to directly read and write
 	 * the block device.
 	 * For the file device, this is superfluous.
 	 */
-	char stack[align_head(block_order) + (1 << block_order)];
-	char *stamp_blk = align_mem(stack, block_order);
-	uint64_t pos;
+	char stack[align_head(block_order) + BIG_BLOCK_SIZE_BYTE];
+	char *buffer = align_mem(stack, block_order);
+	char *stamp_blk = buffer;
+	char *flush_blk = buffer + BIG_BLOCK_SIZE_BYTE;
+	uint64_t offset = first_pos << block_order;
+	uint64_t pos, write_pos = first_pos;
 
 	for (pos = first_pos; pos <= last_pos; pos++) {
 		fill_buffer_with_block(stamp_blk, block_order, offset, salt);
-		if (dev_write_block(dev, stamp_blk, pos) &&
-			dev_write_block(dev, stamp_blk, pos))
-			return true;
+		stamp_blk += block_size;
 		offset += block_size;
+
+		if (stamp_blk == flush_blk || pos == last_pos) {
+			if (dev_write_blocks(dev, buffer, write_pos, pos) &&
+				dev_write_blocks(dev, buffer, write_pos, pos))
+				return true;
+			stamp_blk = buffer;
+			write_pos = pos + 1;
+		}
 	}
 
 	return false;
@@ -180,13 +188,14 @@ static int write_bisect_blocks(struct device *dev,
 static int is_block_good(struct device *dev, uint64_t pos, int *pis_good,
 	uint64_t salt)
 {
+	const int block_size = dev_get_block_size(dev);
 	const int block_order = dev_get_block_order(dev);
-	char stack[align_head(block_order) + (1 << block_order)];
+	char stack[align_head(block_order) + block_size];
 	char *probe_blk = align_mem(stack, block_order);
 	uint64_t found_offset;
 
-	if (dev_read_block(dev, probe_blk, pos) &&
-		dev_read_block(dev, probe_blk, pos))
+	if (dev_read_blocks(dev, probe_blk, pos, pos) &&
+		dev_read_blocks(dev, probe_blk, pos, pos))
 		return true;
 
 	*pis_good = !validate_buffer_with_block(probe_blk, block_order,
@@ -264,14 +273,38 @@ static int bisect(struct device *dev, struct bisect_stats *pstats,
 static int count_good_blocks(struct device *dev, uint64_t *pcount,
 	uint64_t first_pos, uint64_t last_pos, uint64_t salt)
 {
-	uint64_t pos, count = 0;
+	const int block_size = dev_get_block_size(dev);
+	const int block_order = dev_get_block_order(dev);
+	char stack[align_head(block_order) + BIG_BLOCK_SIZE_BYTE];
+	char *buffer = align_mem(stack, block_order);
+	uint64_t expected_sector_offset = first_pos << block_order;
+	uint64_t start_pos = first_pos;
+	uint64_t step = (BIG_BLOCK_SIZE_BYTE >> block_order) - 1;
+	uint64_t count = 0;
 
-	for (pos = first_pos; pos <= last_pos; pos++) {
-		int is_good;
-		if (is_block_good(dev, pos, &is_good, salt))
+	assert(BIG_BLOCK_SIZE_BYTE >= block_size);
+
+	while (start_pos <= last_pos) {
+		char *probe_blk = buffer;
+		uint64_t pos, next_pos = start_pos + step;
+
+		if (next_pos > last_pos)
+			next_pos = last_pos;
+		if (dev_read_blocks(dev, buffer, start_pos, next_pos) &&
+			dev_read_blocks(dev, buffer, start_pos, next_pos))
 			return true;
-		if (is_good)
-			count++;
+
+		for (pos = start_pos; pos <= next_pos; pos++) {
+			uint64_t found_sector_offset;
+			if (!validate_buffer_with_block(probe_blk, block_order,
+					&found_sector_offset, salt) &&
+				expected_sector_offset == found_sector_offset)
+				count++;
+			expected_sector_offset += block_size;
+			probe_blk += block_size;
+		}
+
+		start_pos = next_pos + 1;
 	}
 
 	*pcount = count;
@@ -408,28 +441,32 @@ static int find_a_bad_block(struct device *dev,
 		n = gap;
 		for (i = 0; i < n; i++)
 			samples[i] = left_pos + 1 + i;
+
+		/* Write @samples. */
+		if (write_blocks(dev, left_pos + 1, *pright_pos - 1, salt))
+			return true;
 	} else {
 		n = N_BLOCK_SAMPLES;
 		for (i = 0; i < n; i++)
 			samples[i] = uint64_rand_range(left_pos + 1,
 				*pright_pos - 1);
-	}
 
-	/* Sort entries of @samples to minimize reads.
-	 * As soon as one finds a bad block, one can stop and ignore
-	 * the remaining blocks because the found bad block is
-	 * the leftmost bad block.
-	 */
-	qsort(samples, n, sizeof(uint64_t), uint64_cmp);
+		/* Sort entries of @samples to minimize reads.
+		 * As soon as one finds a bad block, one can stop and ignore
+		 * the remaining blocks because the found bad block is
+		 * the leftmost bad block.
+		 */
+		qsort(samples, n, sizeof(uint64_t), uint64_cmp);
 
-	/* Write @samples. */
-	prv_sample = left_pos;
-	for (i = 0; i < n; i++) {
-		if (samples[i] == prv_sample)
-			continue;
-		prv_sample = samples[i];
-		if (write_blocks(dev, prv_sample, prv_sample, salt))
-			return true;
+		/* Write @samples. */
+		prv_sample = left_pos;
+		for (i = 0; i < n; i++) {
+			if (samples[i] == prv_sample)
+				continue;
+			prv_sample = samples[i];
+			if (write_blocks(dev, prv_sample, prv_sample, salt))
+				return true;
+		}
 	}
 
 	/* Reset. */
@@ -611,8 +648,8 @@ static int find_wrap(struct device *dev,
 		char *probe_blk = align_mem(stack, block_order);
 		uint64_t found_offset;
 
-		if (dev_read_block(dev, probe_blk, pos) &&
-			dev_read_block(dev, probe_blk, pos))
+		if (dev_read_blocks(dev, probe_blk, pos, pos) &&
+			dev_read_blocks(dev, probe_blk, pos, pos))
 			return true;
 
 		if (!validate_buffer_with_block(probe_blk, block_order,

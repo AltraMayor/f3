@@ -214,11 +214,6 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
 
-/* It must be a power of 2 greater than, or equal to 2^20.
- * The current vaule is 1MB.
- */
-#define BIG_BLOCK_SIZE_BYTE (1 << 20)
-
 static void write_blocks(struct device *dev,
 	uint64_t first_block, uint64_t last_block)
 {
@@ -381,9 +376,8 @@ static void read_blocks(struct device *dev,
 	assert(BIG_BLOCK_SIZE_BYTE >= block_size);
 
 	while (first_pos <= last_block) {
-		uint64_t next_pos = first_pos + step;
 		char *probe_blk = buffer;
-		uint64_t pos;
+		uint64_t pos, next_pos = first_pos + step;
 
 		if (next_pos > last_block)
 			next_pos = last_block;
