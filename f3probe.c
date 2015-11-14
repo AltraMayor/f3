@@ -289,7 +289,11 @@ static int unit_test(const char *filename)
 		if (real_size_byte == item->real_size_byte &&
 			announced_size_byte == item->fake_size_byte &&
 			wrap == item->wrap &&
-			item_cache_byte == (cache_size_block << block_order) &&
+			/* We don't compare cache size because
+			 * probe_device() only returns an estimate.
+			 * item_cache_byte ==
+			 *	(cache_size_block << block_order) &&
+			 */
 			!need_reset &&
 			block_order == item->block_order) {
 			success++;
@@ -472,14 +476,14 @@ static int test_device(struct args *args)
 
 	time_s = (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec)/1000000.;
 	printf("\nDevice geometry:\n");
-	  report_size("\t       *Usable* size:", real_size_byte,
+	  report_size("\t         *Usable* size:", real_size_byte,
 		block_order);
-	  report_size("\t      Announced size:", announced_size_byte,
+	  report_size("\t        Announced size:", announced_size_byte,
 		block_order);
-	 report_order("\t              Module:", wrap);
-	 report_cache("\tPermanent cache size:", cache_size_block,
+	 report_order("\t                Module:", wrap);
+	 report_cache("\tApproximate cache size:", cache_size_block,
 		need_reset, block_order);
-	 report_order("\t Physical block size:", block_order);
+	 report_order("\t   Physical block size:", block_order);
 	printf("\nProbe time: %.2f seconds\n", time_s);
 
 	if (args->time_ops) {

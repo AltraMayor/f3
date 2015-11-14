@@ -340,8 +340,10 @@ static int assess_reset_effect(struct device *dev,
 
 	if (after_reset_count_block < write_target) {
 		assert(after_reset_count_block <= b4_reset_count_block);
-		*pcache_size_block = after_reset_count_block;
 		*pneed_reset = after_reset_count_block < b4_reset_count_block;
+		*pcache_size_block = *pneed_reset
+			? after_reset_count_block
+			: write_target;
 		*pdone = true;
 		return false;
 	}
