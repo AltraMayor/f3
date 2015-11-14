@@ -87,7 +87,6 @@ enum reset_type {
 	RT_NONE,
 	RT_MAX
 };
-#define RT_DEFAULT	RT_MANUAL_USB
 
 struct device *create_block_device(const char *filename, enum reset_type rt);
 

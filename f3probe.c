@@ -505,7 +505,7 @@ int main(int argc, char **argv)
 		.keep_file	= false,
 		.save		= true,
 		.min_mem	= false,
-		.reset_type	= RT_DEFAULT,
+		.reset_type	= RT_USB,
 		.time_ops	= false,
 		.real_size_byte	= 1ULL << 31,
 		.fake_size_byte	= 1ULL << 34,

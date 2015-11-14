@@ -416,7 +416,7 @@ int main(int argc, char **argv)
 		/* Defaults. */
 		.debug		= false,
 		.keep_file	= false,
-		.reset_type	= RT_DEFAULT,
+		.reset_type	= RT_MANUAL_USB,
 		.test_write	= true,
 		.test_read	= true,
 		.real_size_byte	= 1ULL << 31,
