@@ -444,15 +444,22 @@ static int bdev_write_blocks(struct device *dev, const char *buf,
 	size_t length = (last_pos - first_pos + 1) << block_order;
 	off_t offset = first_pos << block_order;
 	off_t off_ret = lseek(bdev->fd, offset, SEEK_SET);
+	int rc;
 	if (off_ret < 0)
 		return - errno;
 	assert(off_ret == offset);
-	return write_all(bdev->fd, buf, length);
+	rc = write_all(bdev->fd, buf, length);
+	if (rc)
+		return rc;
+	rc = fsync(bdev->fd);
+	if (rc)
+		return rc;
+	return posix_fadvise(bdev->fd, 0, 0, POSIX_FADV_DONTNEED);
 }
 
 static inline int bdev_open(const char *filename)
 {
-	return open(filename, O_RDWR | O_DIRECT | O_SYNC);
+	return open(filename, O_RDWR | O_DIRECT);
 }
 
 static struct udev_device *map_dev_to_usb_dev(struct udev_device *dev)
