@@ -84,6 +84,7 @@ struct device *create_file_device(const char *filename,
 enum reset_type {
 	RT_MANUAL_USB = 0,
 	RT_USB,
+	RT_NONE,
 	RT_MAX
 };
 #define RT_DEFAULT	RT_MANUAL_USB

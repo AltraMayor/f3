@@ -803,6 +803,12 @@ static int bdev_usb_reset(struct device *dev)
 	return 0;
 }
 
+static int bdev_none_reset(struct device *dev)
+{
+	UNUSED(dev);
+	return 0;
+}
+
 static void bdev_free(struct device *dev)
 {
 	struct block_device *bdev = dev_bdev(dev);
@@ -914,6 +920,9 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 		break;
 	case RT_USB:
 		bdev->dev.reset = bdev_usb_reset;
+		break;
+	case RT_NONE:
+		bdev->dev.reset = bdev_none_reset;
 		break;
 	default:
 		assert(0);
