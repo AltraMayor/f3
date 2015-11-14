@@ -301,7 +301,7 @@ static int unit_test(const char *filename)
 			double ret_f_cache = cache_size_block << block_order;
 			const char *ret_unit_real = adjust_unit(&ret_f_real);
 			const char *ret_unit_fake = adjust_unit(&ret_f_fake);
-			const char *ret_unit_cache = adjust_unit(&f_cache);
+			const char *ret_unit_cache = adjust_unit(&ret_f_cache);
 			printf("\tError\t%s/%.2f %s/%.2f %s/2^%i Byte/%.2f %s/%s/2^%i Byte\n\n",
 				fake_type_to_name(fake_type),
 				ret_f_real, ret_unit_real,
