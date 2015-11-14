@@ -322,6 +322,14 @@ static int assess_reset_effect(struct device *dev,
 		first_pos, last_pos, salt))
 		return true;
 
+	if (!b4_reset_count_block) {
+		/* The drive has no cache whatsoever. */
+		*pcache_size_block = 0;
+		*pneed_reset = false;
+		*pdone = true;
+		return false;
+	}
+
 	/* Reset. */
 	if (dev_reset(dev) && dev_reset(dev))
 		return true;
