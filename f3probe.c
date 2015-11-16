@@ -289,11 +289,10 @@ static int unit_test(const char *filename)
 		if (real_size_byte == item->real_size_byte &&
 			announced_size_byte == item->fake_size_byte &&
 			wrap == item->wrap &&
-			/* We don't compare cache size because
-			 * probe_device() only returns an estimate.
-			 * item_cache_byte ==
-			 *	(cache_size_block << block_order) &&
+			/* probe_device() returns an upper bound of
+			 * the cache size.
 			 */
+			item_cache_byte <= (cache_size_block << block_order) &&
 			!need_reset &&
 			block_order == item->block_order) {
 			success++;
