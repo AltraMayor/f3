@@ -1103,8 +1103,8 @@ struct safe_device {
 	char			*saved_blocks;
 	uint64_t		*sb_positions;
 	SDEV_BITMAP_WORD	*sb_bitmap;
-	int			sb_n;
-	int			sb_max;
+	uint64_t		sb_n;
+	uint64_t		sb_max;
 };
 
 static inline struct safe_device *dev_sdev(struct device *dev)
@@ -1120,42 +1120,96 @@ static int sdev_read_blocks(struct device *dev, char *buf,
 		first_pos, last_pos);
 }
 
-static int sdev_save_block(struct safe_device *sdev, uint64_t block_pos)
+static int sdev_is_block_saved(struct safe_device *sdev, uint64_t pos)
 {
-	const int block_order = dev_get_block_order(sdev->shadow_dev);
-	lldiv_t idx = lldiv(block_pos, SDEV_BITMAP_BITS_PER_WORD);
-	SDEV_BITMAP_WORD set_bit = (SDEV_BITMAP_WORD)1 << idx.rem;
-	char *block_buf;
-	int rc;
+	lldiv_t idx;
+	SDEV_BITMAP_WORD set_bit;
 
-	/* Is this block already saved? */
 	if (!sdev->sb_bitmap) {
-		int i;
+		uint64_t i;
 		/* Running without bitmap. */
 		for (i = 0; i < sdev->sb_n; i++)
-			if (sdev->sb_positions[i] == block_pos) {
+			if (sdev->sb_positions[i] == pos) {
 				/* The block is already saved. */
-				return 0;
+				return true;
 			}
-	} else if (sdev->sb_bitmap[idx.quot] & set_bit) {
-		/* The block is already saved. */
-		return 0;
+		return false;
 	}
 
-	/* The block hasn't been saved before. Save it. */
-	assert(sdev->sb_n < sdev->sb_max);
-	block_buf = (char *)align_mem(sdev->saved_blocks, block_order) +
+	idx = lldiv(pos, SDEV_BITMAP_BITS_PER_WORD);
+	set_bit = (SDEV_BITMAP_WORD)1 << idx.rem;
+	return !!(sdev->sb_bitmap[idx.quot] & set_bit);
+}
+
+static void sdev_mark_blocks(struct safe_device *sdev,
+		uint64_t first_pos, uint64_t last_pos)
+{
+	uint64_t pos;
+
+	for (pos = first_pos; pos <= last_pos; pos++) {
+		if (sdev->sb_bitmap) {
+			lldiv_t idx = lldiv(pos, SDEV_BITMAP_BITS_PER_WORD);
+			SDEV_BITMAP_WORD set_bit = (SDEV_BITMAP_WORD)1 <<
+				idx.rem;
+			sdev->sb_bitmap[idx.quot] |= set_bit;
+		}
+		sdev->sb_positions[sdev->sb_n] = pos;
+		sdev->sb_n++;
+	}
+}
+
+/* Load blocks into cache. */
+static int sdev_load_blocks(struct safe_device *sdev,
+		uint64_t first_pos, uint64_t last_pos)
+{
+	const int block_order = dev_get_block_order(sdev->shadow_dev);
+	char *block_buf = (char *)align_mem(sdev->saved_blocks, block_order) +
 		(sdev->sb_n << block_order);
+	int rc;
+
+	assert(sdev->sb_n + (last_pos - first_pos + 1) < sdev->sb_max);
+
 	rc = sdev->shadow_dev->read_blocks(sdev->shadow_dev, block_buf,
-		block_pos, block_pos);
+		first_pos, last_pos);
 	if (rc)
 		return rc;
 
 	/* Bookkeeping. */
-	if (sdev->sb_bitmap)
-		sdev->sb_bitmap[idx.quot] |= set_bit;
-	sdev->sb_positions[sdev->sb_n] = block_pos;
-	sdev->sb_n++;
+	sdev_mark_blocks(sdev, first_pos, last_pos);
+	return 0;
+}
+
+static int sdev_save_block(struct safe_device *sdev,
+		uint64_t first_pos, uint64_t last_pos)
+{
+	uint64_t pos, start_pos;
+	int rc;
+
+	start_pos = first_pos;
+	for (pos = first_pos; pos <= last_pos; pos++) {
+		if (sdev_is_block_saved(sdev, pos)) {
+			if (start_pos < pos) {
+				/* The blocks haven't been saved before.
+				 * Save them now.
+				 */
+				rc = sdev_load_blocks(sdev, start_pos, pos - 1);
+				if (rc)
+					return rc;
+			} else if (start_pos == pos) {
+				/* Do nothing. */
+			} else {
+				assert(0);
+			}
+			start_pos = pos + 1;
+		}
+	}
+
+	if (start_pos <= last_pos) {
+		rc = sdev_load_blocks(sdev, start_pos, last_pos);
+		if (rc)
+			return rc;
+	}
+
 	return 0;
 }
 
@@ -1163,16 +1217,10 @@ static int sdev_write_blocks(struct device *dev, const char *buf,
 		uint64_t first_pos, uint64_t last_pos)
 {
 	struct safe_device *sdev = dev_sdev(dev);
-	uint64_t pos;
+	int rc = sdev_save_block(sdev, first_pos, last_pos);
 
-	/* XXX The code should take advantage of the fact that
-	 * the blocks are sequential and execute a single read.
-	 */
-	for (pos = first_pos; pos <= last_pos; pos++) {
-		int rc = sdev_save_block(sdev, pos);
-		if (rc)
-			return rc;
-	}
+	if (rc)
+		return rc;
 
 	return sdev->shadow_dev->write_blocks(sdev->shadow_dev, buf,
 		first_pos, last_pos);
@@ -1183,36 +1231,99 @@ static int sdev_reset(struct device *dev)
 	return dev_reset(dev_sdev(dev)->shadow_dev);
 }
 
+static void sdev_carefully_recover(struct safe_device *sdev, char *buffer,
+		uint64_t first_pos, uint64_t last_pos)
+{
+	const int block_size = dev_get_block_size(sdev->shadow_dev);
+	uint64_t pos;
+	int rc = sdev->shadow_dev->write_blocks(sdev->shadow_dev,
+		buffer, first_pos, last_pos);
+	if (!rc)
+		return;
+
+	for (pos = first_pos; pos <= last_pos; pos++) {
+		int rc = sdev->shadow_dev->write_blocks(sdev->shadow_dev,
+			buffer, pos, pos);
+		if (rc) {
+			/* Do not abort, try to recover all bocks. */
+			warn("Failed to recover block 0x%" PRIx64
+				" due to a write error", pos);
+		}
+		buffer += block_size;
+	}
+}
+
+static uint64_t sdev_bitmap_length(struct device *dev)
+{
+	const int block_order = dev_get_block_order(dev);
+	lldiv_t idx = lldiv(dev_get_size_byte(dev) >> block_order,
+		SDEV_BITMAP_BITS_PER_WORD);
+	return (idx.quot + (idx.rem ? 1 : 0)) * sizeof(SDEV_BITMAP_WORD);
+}
+
+void sdev_recover(struct device *dev, uint64_t very_last_pos)
+{
+	struct safe_device *sdev = dev_sdev(dev);
+	const int block_order = dev_get_block_order(sdev->shadow_dev);
+	char *first_block = align_mem(sdev->saved_blocks, block_order);
+	uint64_t i, first_pos, last_pos;
+	char *start_buf;
+	int has_seq;
+
+	has_seq = false;
+	for (i = 0; i < sdev->sb_n; i++) {
+		uint64_t pos = sdev->sb_positions[i];
+
+		if (!has_seq) {
+			if (pos > very_last_pos)
+				continue;
+
+			last_pos = first_pos = pos;
+			start_buf = first_block + (i << block_order);
+			has_seq = true;
+			continue;
+		}
+
+		if (pos <= very_last_pos && pos == last_pos + 1) {
+			last_pos++;
+			continue;
+		}
+
+		sdev_carefully_recover(sdev, start_buf, first_pos, last_pos);
+
+		has_seq = pos <= very_last_pos;
+		if (has_seq) {
+			last_pos = first_pos = pos;
+			start_buf = first_block + (i << block_order);
+		}
+	}
+
+	if (has_seq) {
+		sdev_carefully_recover(sdev, start_buf, first_pos, last_pos);
+		has_seq = false;
+	}
+}
+
+void sdev_flush(struct device *dev)
+{
+	struct safe_device *sdev = dev_sdev(dev);
+
+	if (sdev->sb_n <= 0)
+		return;
+
+	sdev->sb_n = 0;
+
+	if (sdev->sb_bitmap)
+		memset(sdev->sb_bitmap, 0,
+			sdev_bitmap_length(sdev->shadow_dev));
+}
+
 static void sdev_free(struct device *dev)
 {
 	struct safe_device *sdev = dev_sdev(dev);
 
-	/* XXX The code should take advantage of fact that
-	 * some blocks are sequential and execute less write calls.
-	 */
-	if (sdev->sb_n > 0) {
-		const int block_order = dev_get_block_order(sdev->shadow_dev);
-		char *first_block = align_mem(sdev->saved_blocks, block_order);
-		char *block_buf = first_block +
-			((sdev->sb_n - 1) << block_order);
-		uint64_t *ppos = &sdev->sb_positions[sdev->sb_n - 1];
-		int block_size = dev_get_block_size(sdev->shadow_dev);
-
-		/* Restore blocks in reverse order to cope with
-		 * wraparound and chain drives.
-		 */
-		do {
-			int rc = sdev->shadow_dev->write_blocks(
-				sdev->shadow_dev, block_buf, *ppos, *ppos);
-			if (rc) {
-				/* Do not abort, try to recover all bocks. */
-				warn("Failed to recover block 0x%" PRIx64
-					" due to a write error", *ppos);
-			}
-			block_buf -= block_size;
-			ppos--;
-		} while (block_buf >= first_block);
-	}
+	sdev_recover(dev, UINT_LEAST64_MAX);
+	sdev_flush(dev);
 
 	free(sdev->sb_bitmap);
 	free(sdev->sb_positions);
@@ -1246,10 +1357,7 @@ struct device *create_safe_device(struct device *dev, uint64_t max_blocks,
 		goto saved_blocks;
 
 	if (!min_memory) {
-		lldiv_t idx = lldiv(dev_get_size_byte(dev) >> block_order,
-			SDEV_BITMAP_BITS_PER_WORD);
-		length = (idx.quot + (idx.rem ? 1 : 0)) *
-			sizeof(SDEV_BITMAP_WORD);
+		length = sdev_bitmap_length(dev);
 		sdev->sb_bitmap = malloc(length);
 		if (!sdev->sb_bitmap)
 			goto offsets;

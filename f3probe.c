@@ -360,7 +360,7 @@ static int test_device(struct args *args)
 {
 	struct timeval t1, t2;
 	double time_s;
-	struct device *dev, *pdev;
+	struct device *dev, *pdev, *sdev;
 	enum fake_type fake_type;
 	uint64_t real_size_byte, announced_size_byte, cache_size_block;
 	int wrap, need_reset, block_order;
@@ -388,7 +388,7 @@ static int test_device(struct args *args)
 	}
 
 	if (args->save) {
-		struct device *sdev = create_safe_device(dev,
+		sdev = create_safe_device(dev,
 			probe_device_max_blocks(dev), args->min_mem);
 		if (!sdev) {
 			if (!args->min_mem)
@@ -426,16 +426,21 @@ static int test_device(struct args *args)
 			&write_count, &write_time_us,
 			&reset_count, &reset_time_us);
 	if (args->save) {
+		uint64_t very_last_pos = real_size_byte >> block_order;
 		printf("Probe finished, recovering blocks...");
 		fflush(stdout);
+		if (very_last_pos > 0) {
+			very_last_pos--;
+			sdev_recover(sdev, very_last_pos);
+		}
+		printf(" Done\n");
+		sdev_flush(sdev);
 	}
 
 	final_dev_filename = strdup(dev_get_filename(dev));
-	free_device(dev);
 	assert(final_dev_filename);
+	free_device(dev);
 
-	if (args->save)
-		printf(" Done\n");
 	if (args->save || (!args->debug && args->reset_type == RT_MANUAL_USB))
 		printf("\n");
 

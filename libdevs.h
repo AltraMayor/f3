@@ -103,4 +103,7 @@ struct device *pdev_detach_and_free(struct device *dev);
 struct device *create_safe_device(struct device *dev, uint64_t max_blocks,
 	int min_memory);
 
+void sdev_recover(struct device *dev, uint64_t very_last_pos);
+void sdev_flush(struct device *dev);
+
 #endif	/* HEADER_LIBDEVS_H */
