@@ -352,7 +352,8 @@ static void report_ops(const char *op, uint64_t count, uint64_t time_us)
 {
 	printf("Probe %s op: count=%" PRIu64
 		", total time=%.2fs, avg op time=%.2fms\n",
-		op, count, time_us / 1e6, (time_us / count) / 1e3);
+		op, count, time_us / 1e6,
+		count > 0 ? (time_us / count) / 1e3 : 0.0);
 }
 
 static int test_device(struct args *args)
