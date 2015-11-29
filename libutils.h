@@ -16,6 +16,10 @@ int ceiling_log2(uint64_t x);
 
 const char *adjust_unit(double *ptr_bytes);
 
+#define TIME_STR_SIZE	128
+
+int usec_to_str(uint64_t usec, char *str);
+
 /*
  * The functions align_head() and align_mem() are used to align pointers.
  *

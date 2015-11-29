@@ -348,18 +348,24 @@ static void report_cache(const char *prefix, uint64_t cache_size_block,
 		need_reset ? "yes" : "no");
 }
 
+static void report_probe_time(const char *prefix, uint64_t usec)
+{
+	char str[TIME_STR_SIZE];
+	usec_to_str(usec, str);
+	printf("%s %s\n", prefix, str);
+}
+
 static void report_ops(const char *op, uint64_t count, uint64_t time_us)
 {
-	printf("Probe %s op: count=%" PRIu64
-		", total time=%.2fs, avg op time=%.2fms\n",
-		op, count, time_us / 1e6,
-		count > 0 ? (time_us / count) / 1e3 : 0.0);
+	char str1[TIME_STR_SIZE], str2[TIME_STR_SIZE];
+	usec_to_str(time_us, str1);
+	usec_to_str(count > 0 ? time_us / count : 0, str2);
+	printf("%10s: %s / %" PRIu64 " = %s\n", op, str1, count, str2);
 }
 
 static int test_device(struct args *args)
 {
 	struct timeval t1, t2;
-	double time_s;
 	struct device *dev, *pdev, *sdev;
 	enum fake_type fake_type;
 	uint64_t real_size_byte, announced_size_byte, cache_size_block;
@@ -479,7 +485,6 @@ static int test_device(struct args *args)
 		break;
 	}
 
-	time_s = (t2.tv_sec - t1.tv_sec) + (t2.tv_usec - t1.tv_usec)/1000000.;
 	printf("\nDevice geometry:\n");
 	  report_size("\t         *Usable* size:", real_size_byte,
 		block_order);
@@ -489,12 +494,13 @@ static int test_device(struct args *args)
 	 report_cache("\tApproximate cache size:", cache_size_block,
 		need_reset, block_order);
 	 report_order("\t   Physical block size:", block_order);
-	printf("\nProbe time: %.2f seconds\n", time_s);
+	report_probe_time("\nProbe time:", diff_timeval_us(&t1, &t2));
 
 	if (args->time_ops) {
-		report_ops("read", read_count, read_time_us);
-		report_ops("write", write_count, write_time_us);
-		report_ops("reset", reset_count, reset_time_us);
+		printf(" Operation: total time / count = avg time\n");
+		report_ops("Read", read_count, read_time_us);
+		report_ops("Write", write_count, write_time_us);
+		report_ops("Reset", reset_count, reset_time_us);
 	}
 
 	free((void *)final_dev_filename);

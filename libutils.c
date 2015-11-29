@@ -59,6 +59,83 @@ const char *adjust_unit(double *ptr_bytes)
 	return units[i];
 }
 
+#define USEC_IN_A_MSEC	1000ULL
+#define USEC_IN_A_SEC	(1000*USEC_IN_A_MSEC)
+#define USEC_IN_A_MIN	(60*USEC_IN_A_SEC)
+#define USEC_IN_AN_HOUR	(60*USEC_IN_A_MIN)
+#define USEC_IN_A_DAY	(24*USEC_IN_AN_HOUR)
+
+int usec_to_str(uint64_t usec, char *str)
+{
+	int has_d, has_h, has_m, has_s;
+	lldiv_t div;
+	int c, tot = 0;
+
+	has_d = usec >= USEC_IN_A_DAY;
+	if (has_d) {
+		div = lldiv(usec, USEC_IN_A_DAY);
+		usec = div.rem;
+		c = sprintf(str + tot, "%i days", (int)div.quot);
+		assert(c > 0);
+		tot += c;
+	}
+
+	has_h = usec >= USEC_IN_AN_HOUR;
+	if (has_h) {
+		div = lldiv(usec, USEC_IN_AN_HOUR);
+		usec = div.rem;
+		c = sprintf(str + tot, "%s%i:",
+			has_d ? " " : "", (int)div.quot);
+		assert(c > 0);
+		tot += c;
+	}
+
+	has_m = has_h || usec >= USEC_IN_A_MIN;
+	if (has_m) {
+		div = lldiv(usec, USEC_IN_A_MIN);
+		usec = div.rem;
+		if (has_h)
+			c = sprintf(str + tot, "%02i", (int)div.quot);
+		else
+			c = sprintf(str + tot, "%i'", (int)div.quot);
+		assert(c > 0);
+		tot += c;
+	}
+
+	has_s = usec >= USEC_IN_A_SEC;
+	if (has_s) {
+		div = lldiv(usec, USEC_IN_A_SEC);
+		usec = div.rem;
+		if (has_h)
+			c = sprintf(str + tot, ":%02i", (int)div.quot);
+		else if (has_m)
+			c = sprintf(str + tot, "%02i\"", (int)div.quot);
+		else if (has_d)
+			c = sprintf(str + tot, "%is", (int)div.quot);
+		else
+			c = sprintf(str + tot, "%i.%02is", (int)div.quot,
+				(int)(usec / (10 * USEC_IN_A_MSEC)));
+		assert(c > 0);
+		tot += c;
+	}
+
+	if (has_d || has_h || has_m || has_s)
+		return tot;
+
+	if (usec >= USEC_IN_A_MSEC) {
+		div = lldiv(usec, USEC_IN_A_MSEC);
+		usec = div.rem;
+		c = sprintf(str + tot, "%i.%ims", (int)div.quot,
+			(int)(usec / 100));
+	} else {
+		c = sprintf(str + tot, "%ius", (int)usec);
+	}
+	assert(c > 0);
+	tot += c;
+
+	return tot;
+}
+
 void *align_mem(void *p, int order)
 {
 	uintptr_t ip = (uintptr_t)p;
