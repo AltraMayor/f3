@@ -744,7 +744,11 @@ int probe_device(struct device *dev, uint64_t *preal_size_byte,
 	/* @left_pos cannot be equal to @right_pos since
 	 * @left_pos points to a good block, and @right_pos to a bad block.
 	 */
-	assert(left_pos < right_pos);
+	if (left_pos >= right_pos) {
+		cache_size_block = 0;
+		need_reset = false;
+		goto bad;
+	}
 
 	/* I, Michel Machado, define that any drive with less than
 	 * this number of blocks is fake.
