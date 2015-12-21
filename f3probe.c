@@ -408,6 +408,9 @@ static int test_device(struct args *args)
 		dev = sdev;
 	}
 
+	printf("WARNING: Probing normally takes from a few seconds to 15 minutes, but\n");
+	printf("         it can take longer. Please be patient.\n\n");
+
 	assert(!gettimeofday(&t1, NULL));
 	/* XXX Have a better error handling to recover
 	 * the state of the drive.
