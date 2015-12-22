@@ -40,11 +40,6 @@ uint64_t clp2(uint64_t x)
 	return x + 1;
 }
 
-int ceiling_log2(uint64_t x)
-{
-	return ilog2(clp2(x));
-}
-
 const char *adjust_unit(double *ptr_bytes)
 {
 	const char *units[] = { "Byte", "KB", "MB", "GB", "TB", "PB", "EB" };

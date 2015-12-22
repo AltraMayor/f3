@@ -12,7 +12,10 @@ int ilog2(uint64_t x);
 /* Least power of 2 greater than or equal to x. */
 uint64_t clp2(uint64_t x);
 
-int ceiling_log2(uint64_t x);
+static inline int ceiling_log2(uint64_t x)
+{
+	return ilog2(clp2(x));
+}
 
 const char *adjust_unit(double *ptr_bytes);
 
