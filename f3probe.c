@@ -393,6 +393,7 @@ static int test_device(struct args *args)
 		pdev = NULL;
 	}
 
+	sdev = NULL;
 	if (args->save) {
 		sdev = create_safe_device(dev,
 			probe_device_max_blocks(dev), args->min_mem);
@@ -434,7 +435,7 @@ static int test_device(struct args *args)
 			&read_count, &read_time_us,
 			&write_count, &write_time_us,
 			&reset_count, &reset_time_us);
-	if (args->save) {
+	if (sdev) {
 		uint64_t very_last_pos = real_size_byte >> block_order;
 		printf("Probe finished, recovering blocks...");
 		fflush(stdout);
