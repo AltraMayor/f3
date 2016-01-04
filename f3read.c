@@ -42,12 +42,12 @@ static void validate_file(const char *path, int number,
 {
 	char *full_fn;
 	const char *filename;
-	uint8_t sector[SECTOR_SIZE], *p, *ptr_end;
+	const int num_int64 = SECTOR_SIZE >> 3;
+	uint64_t sector[num_int64];
 	FILE *f;
 	int fd;
-	int offset_match, error_count;
 	size_t sectors_read;
-	uint64_t offset, expected_offset;
+	uint64_t expected_offset;
 	int final_errno;
 	struct timeval t1, t2;
 	/* Progress time. */
@@ -84,32 +84,24 @@ static void validate_file(const char *path, int number,
 	/* Help the kernel to help us. */
 	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL));
 
-	ptr_end = sector + SECTOR_SIZE;
 	sectors_read = fread(sector, SECTOR_SIZE, 1, f);
 	final_errno = errno;
 	expected_offset = (uint64_t)number * GIGABYTES;
 	while (sectors_read > 0) {
 		uint64_t rn;
+		int error_count, i;
 
 		assert(sectors_read == 1);
-		offset = *((uint64_t *) sector);
-		offset_match = offset == expected_offset;
 
-		rn = offset;
-		p = sector + sizeof(offset);
+		rn = sector[0];
 		error_count = 0;
-		for (; error_count <= TOLERANCE && p < ptr_end;
-			p += sizeof(rn)) {
+		for (i = 1; error_count <= TOLERANCE && i < num_int64; i++) {
 			rn = random_number(rn);
-			if (rn != *((__typeof__(rn) *) p))
+			if (rn != sector[i])
 				error_count++;
 		}
 
-		sectors_read = fread(sector, SECTOR_SIZE, 1, f);
-		final_errno = errno;
-		expected_offset += SECTOR_SIZE;
-
-		if (offset_match) {
+		if (expected_offset == sector[0]) {
 			if (error_count == 0)
 				(*ptr_ok)++;
 			else if (error_count <= TOLERANCE)
@@ -120,6 +112,10 @@ static void validate_file(const char *path, int number,
 			(*ptr_overwritten)++;
 		else
 			(*ptr_corrupted)++;
+
+		sectors_read = fread(sector, SECTOR_SIZE, 1, f);
+		final_errno = errno;
+		expected_offset += SECTOR_SIZE;
 
 		if (progress) {
 			struct timeval pt2;
