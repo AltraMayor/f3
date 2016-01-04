@@ -213,7 +213,7 @@ void fill_buffer_with_block(void *buf, int block_order, uint64_t offset,
 	 */
 	int64_array[0] = offset;
 
-	/* Thanks to @salt, a drive has to guess the seeed. */
+	/* Thanks to @salt, a drive has to guess the seed. */
 	for (i = 1; i < num_int64; i++)
 		int64_array[i] = random_number =
 			next_random_number(random_number);
