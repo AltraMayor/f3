@@ -20,26 +20,21 @@
 
 static uint64_t fill_buffer(void *buf, size_t size, uint64_t offset)
 {
-	uint8_t *p, *ptr_next_sector, *ptr_end;
-	uint64_t rn;
+	const int num_int64 = SECTOR_SIZE >> 3;
+	uint8_t *p, *ptr_end;
 
 	assert(size > 0);
 	assert(size % SECTOR_SIZE == 0);
-	assert(SECTOR_SIZE >= sizeof(offset) + sizeof(rn));
-	assert((SECTOR_SIZE - sizeof(offset)) % sizeof(rn) == 0);
 
 	p = buf;
 	ptr_end = p + size;
 	while (p < ptr_end) {
-		rn = offset;
-		memmove(p, &offset, sizeof(offset));
-		ptr_next_sector = p + SECTOR_SIZE;
-		p += sizeof(offset);
-		for (; p < ptr_next_sector; p += sizeof(rn)) {
-			rn = random_number(rn);
-			memmove(p, &rn, sizeof(rn));
-		}
-		assert(p == ptr_next_sector);
+		uint64_t *sector = (uint64_t *)p;
+		int i;
+		sector[0] = offset;
+		for (i = 1; i < num_int64; i++)
+			sector[i] = random_number(sector[i - 1]);
+		p += SECTOR_SIZE;
 		offset += SECTOR_SIZE;
 	}
 
