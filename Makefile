@@ -23,19 +23,19 @@ install-experimental: experimental
 	$(INSTALL) -oroot -groot -m755 $(EXPERIMENTAL_TARGETS) $(PREFIX)/bin
 
 f3write: utils.o f3write.o
-	$(CC) -o $@ $^ -lm
+	$(CC) -o $@ $^ $(LDFLAGS) -lm
 
 f3read: utils.o f3read.o
-	$(CC) -o $@ $^
+	$(CC) -o $@ $^ $(LDFLAGS)
 
 f3probe: libutils.o libdevs.o libprobe.o f3probe.o
-	$(CC) -o $@ $^ -lm -ludev
+	$(CC) -o $@ $^ $(LDFLAGS) -lm -ludev
 
 f3brew: libutils.o libdevs.o f3brew.o
-	$(CC) -o $@ $^ -lm -ludev
+	$(CC) -o $@ $^ $(LDFLAGS) -lm -ludev
 
 f3fix: libutils.o f3fix.o
-	$(CC) -o $@ $^ -lparted
+	$(CC) -o $@ $^ $(LDFLAGS) -lparted
 
 -include *.d
 
