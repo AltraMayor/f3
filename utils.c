@@ -18,6 +18,7 @@
 #include <errno.h>
 #include <err.h>
 
+#include "version.h"
 #include "utils.h"
 
 const char *adjust_unit(double *ptr_bytes)
@@ -133,6 +134,26 @@ const long *ls_my_files(const char *path, long start_at, long end_at)
 	assert(my_index == -1);
 	qsort(ret, my_count, sizeof(*ret), cmpintp);
 	return ret;
+}
+
+long arg_to_long(const struct argp_state *state, const char *arg)
+{
+	char *end;
+	long l = strtol(arg, &end, 0);
+	if (!arg)
+		argp_error(state, "An integer must be provided");
+	if (!*arg || *end)
+		argp_error(state, "`%s' is not an integer", arg);
+	return l;
+}
+
+void print_header(FILE *f, const char *name)
+{
+	fprintf(f,
+	"F3 %s " F3_STR_VERSION "\n"
+	"Copyright (C) 2010 Digirati Internet LTDA.\n"
+	"This is free software; see the source for copying conditions.\n"
+	"\n", name);
 }
 
 #if __APPLE__ && __MACH__

@@ -26,17 +26,16 @@ const char *argp_program_version = "F3 Write " F3_STR_VERSION;
 /* Arguments. */
 static char adoc[] = "<PATH>";
 
-static char doc[] = "F3 Write -- test real flash memory capacity\n"
-    "Copyright (C) 2010 Digirati Internet LTDA.\n"
-	"This is free software; see the source for copying conditions.\n";
+static char doc[] = "F3 Write -- fill a drive out with .h2w files "
+	"to test its real capacity";
 
 static struct argp_option options[] = {
 	{"start-at",		's',	"NUM",		0,
-		"Disk type of the partition table",			0},
+		"First NUM.h2w file to be written",			1},
 	{"end-at",		'e',	"NUM",		0,
-		"Type of the file system of the partition",		0},
-	{"progress",			'p',	NULL,		0,
-		"Show progress of the operation (default)",				0},
+		"Last NUM.h2w file to be written",			0},
+	{"show-progress",	'p',	"NUM",		0,
+		"Show progress if NUM is not zero",			0},
 	{ 0 }
 };
 
@@ -50,30 +49,31 @@ struct args {
 static error_t parse_opt(int key, char *arg, struct argp_state *state)
 {
 	struct args *args = state->input;
-	char *endptr;
+	long l;
 
 	switch (key) {
 	case 's':
-	    args->start_at = strtol(arg, &endptr, 10);
-	    if (*endptr != '\0')
-            argp_error(state, "Option --start-at must be a number");
+		l = arg_to_long(state, arg);
+		if (l <= 0)
+			argp_error(state,
+				"NUM must be greater than zero");
+		args->start_at = l - 1;
 		break;
 
 	case 'e':
-	    args->end_at = strtol(arg, &endptr, 10);
-	    if (*endptr != '\0')
-            argp_error(state, "Option --end-at must be a number");
+		l = arg_to_long(state, arg);
+		if (l <= 0)
+			argp_error(state,
+				"NUM must be greater than zero");
+		args->end_at = l - 1;
 		break;
 
 	case 'p':
-		args->show_progress = 1;
+		args->show_progress = !!arg_to_long(state, arg);
 		break;
 
 	case ARGP_KEY_INIT:
 		args->dev_path = NULL;
-		args->start_at = 0;
-		args->end_at = LONG_MAX;
-		args->show_progress = 0;
 		break;
 
 	case ARGP_KEY_ARG:
@@ -87,15 +87,6 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		if (!args->dev_path)
 			argp_error(state,
 				"The disk path was not specified");
-
-        if (args->start_at < 0)
-			argp_error(state,
-				"Option --start-at must be greater than 0");
-
-		if (args->end_at < 0)
-			argp_error(state,
-				"Option --end-at must be greater than 0");
-
 		if (args->start_at > args->end_at)
 			argp_error(state,
 				"Option --start-at must be less or equal to option --end-at");
@@ -555,17 +546,20 @@ static void unlink_old_files(const char *path, long start_at, long end_at)
 
 int main(int argc, char **argv)
 {
-	struct args args;
-	int rc;
-	rc = argp_parse(&argp, argc, argv, 0, NULL, &args);
-	if (rc)
-		return rc;
+	struct args args = {
+		/* Defaults. */
+		.start_at	= 0,
+		.end_at		= LONG_MAX - 1,
+		/* If stdout isn't a terminal, supress progress. */
+		.show_progress	= isatty(STDOUT_FILENO),
+	};
+
+	/* Read parameters. */
+	argp_parse(&argp, argc, argv, 0, NULL, &args);
+	print_header(stdout, "write");
 
 	unlink_old_files(args.dev_path, args.start_at, args.end_at);
 
-	/* If stdout isn't a terminal, supress progress. */
-	if (!args.show_progress)
-        args.show_progress = isatty(STDOUT_FILENO);
-
-	return fill_fs(args.dev_path, args.start_at, args.end_at, args.show_progress);
+	return fill_fs(args.dev_path, args.start_at, args.end_at,
+		args.show_progress);
 }

@@ -1,9 +1,10 @@
 #ifndef HEADER_UTILS_H
 #define HEADER_UTILS_H
 
-#include <stdio.h>	/* For type FILE.	*/
-#include <sys/time.h>	/* For struct timeval.	*/
-#include <stdint.h>	/* For type uint64_t.	*/
+#include <stdio.h>	/* For type FILE.		*/
+#include <sys/time.h>	/* For struct timeval.		*/
+#include <stdint.h>	/* For type uint64_t.		*/
+#include <argp.h>	/* For struct argp_state.	*/
 
 #define SECTOR_SIZE (512)
 #define GIGABYTES   (1024 * 1024 * 1024)
@@ -24,12 +25,16 @@ static inline long delay_ms(const struct timeval *t1, const struct timeval *t2)
 
 const long *ls_my_files(const char *path, long start_at, long end_at);
 
+void print_header(FILE *f, const char *name);
+
 static inline uint64_t random_number(uint64_t prv_number)
 {
 	return prv_number * 4294967311ULL + 17;
 }
 
 #define UNUSED(x)	((void)x)
+
+long arg_to_long(const struct argp_state *state, const char *arg);
 
 #if __APPLE__ && __MACH__
 
