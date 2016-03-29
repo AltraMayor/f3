@@ -13,13 +13,11 @@
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
-#include <limits.h>
 #include <sys/types.h>
 #include <dirent.h>
 #include <errno.h>
 #include <err.h>
 
-#include "version.h"
 #include "utils.h"
 
 const char *adjust_unit(double *ptr_bytes)
@@ -58,87 +56,6 @@ char *full_fn_from_number(const char **filename, const char *path, long num)
 	assert(asprintf(&str, "%s/%li.h2w", path, num + 1) > 0);
 	*filename = str + strlen(path) + 1;
 	return str;
-}
-
-/* Parse @param and return the start-at parameter.
- * The string must be of the format "--start-at=NUM"; otherwise it returns -1.
- */
-#define START_AT_TEXT "--start-at="
-#define   END_AT_TEXT   "--end-at="
-
-static inline int is_param(const char *text, const char *param)
-{
-	return !strncmp(param, text, strlen(text));
-}
-
-static long parse_long_param(const char *param)
-{
-	char *endptr;
-	long value;
-
-	/* Skip text. */
-	while (*param != '=') {
-		if (*param == '\0')
-			return -1;
-		param++;
-	}
-	param++; /* Skip '='. */
-
-	value = strtol(param, &endptr, 10);
-	if (*endptr != '\0')
-		return -1;
-
-	return (value <= 0 || value == LONG_MAX) ? -1 : value - 1;
-}
-
-static int parse_param(const char *param, long *pstart_at, long *pend_at)
-{
-	if (is_param(START_AT_TEXT, param))
-		*pstart_at = parse_long_param(param);
-	else if (is_param(END_AT_TEXT, param))
-		*pend_at = parse_long_param(param);
-	else
-		return 1;
-	return 0;
-}
-
-int parse_args(const char *name, int argc, char **argv,
-	long *pstart_at, long *pend_at, const char **ppath)
-{
-	*pstart_at = 0;
-	*pend_at = LONG_MAX - 1;
-
-	switch (argc) {
-	case 2:
-		*ppath = argv[1];
-		break;
-
-	case 3:
-		if (parse_param(argv[1], pstart_at, pend_at))
-			goto error;
-		*ppath = argv[2];
-		break;
-
-	case 4:
-		if (parse_param(argv[1], pstart_at, pend_at))
-			goto error;
-		if (parse_param(argv[2], pstart_at, pend_at))
-			goto error;
-		*ppath = argv[3];
-		break;
-
-	default:
-		goto error;
-	}
-
-	if (*pstart_at >= 0 && *pend_at >= 0 && *pstart_at <= *pend_at)
-		return 0;
-
-error:
-	print_header(stderr, name);
-	fprintf(stderr, "Usage: f3%s [%sNUM] [%sNUM] <PATH>\n",
-		name, START_AT_TEXT, END_AT_TEXT);
-	return 1;
 }
 
 static long number_from_filename(const char *filename)
@@ -216,15 +133,6 @@ const long *ls_my_files(const char *path, long start_at, long end_at)
 	assert(my_index == -1);
 	qsort(ret, my_count, sizeof(*ret), cmpintp);
 	return ret;
-}
-
-void print_header(FILE *f, const char *name)
-{
-	fprintf(f,
-	"F3 %s " F3_STR_VERSION "\n"
-	"Copyright (C) 2010 Digirati Internet LTDA.\n"
-	"This is free software; see the source for copying conditions.\n"
-	"\n", name);
 }
 
 #if __APPLE__ && __MACH__

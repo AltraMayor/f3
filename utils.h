@@ -22,12 +22,7 @@ static inline long delay_ms(const struct timeval *t1, const struct timeval *t2)
 		(t2->tv_usec - t1->tv_usec) / 1000;
 }
 
-int parse_args(const char *name, int argc, char **argv,
-	long *pstart_at, long *pend_at, const char **ppath);
-
 const long *ls_my_files(const char *path, long start_at, long end_at);
-
-void print_header(FILE *f, const char *name);
 
 static inline uint64_t random_number(uint64_t prv_number)
 {

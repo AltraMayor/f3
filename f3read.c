@@ -12,8 +12,100 @@
 #include <unistd.h>
 #include <err.h>
 #include <sys/time.h>
+#include <limits.h>
+#include <argp.h>
 
 #include "utils.h"
+#include "version.h"
+
+/* Argp's global variables. */
+const char *argp_program_version = "F3 Read " F3_STR_VERSION;
+
+/* Arguments. */
+static char adoc[] = "<PATH>";
+
+static char doc[] = "F3 Read -- test real flash memory capacity\n"
+    "Copyright (C) 2010 Digirati Internet LTDA.\n"
+	"This is free software; see the source for copying conditions.\n";
+
+static struct argp_option options[] = {
+	{"start-at",		's',	"NUM",		0,
+		"Disk type of the partition table",			0},
+	{"end-at",		'e',	"NUM",		0,
+		"Type of the file system of the partition",		0},
+	{"progress",			'p',	NULL,		0,
+		"Show progress of the operation (default)",				0},
+	{ 0 }
+};
+
+struct args {
+	long        start_at;
+	long        end_at;
+	int	    show_progress;
+	const char  *dev_path;
+};
+
+static error_t parse_opt(int key, char *arg, struct argp_state *state)
+{
+	struct args *args = state->input;
+	char *endptr;
+
+	switch (key) {
+	case 's':
+	    args->start_at = strtol(arg, &endptr, 10);
+	    if (*endptr != '\0')
+            argp_error(state, "Option --start-at must be a number");
+		break;
+
+	case 'e':
+	    args->end_at = strtol(arg, &endptr, 10);
+	    if (*endptr != '\0')
+            argp_error(state, "Option --end-at must be a number");
+		break;
+
+	case 'p':
+		args->show_progress = 1;
+		break;
+
+	case ARGP_KEY_INIT:
+		args->dev_path = NULL;
+		args->start_at = 0;
+		args->end_at = LONG_MAX;
+		args->show_progress = 0;
+		break;
+
+	case ARGP_KEY_ARG:
+		if (args->dev_path)
+			argp_error(state,
+				"Wrong number of arguments; only one is allowed");
+		args->dev_path = arg;
+		break;
+
+	case ARGP_KEY_END:
+		if (!args->dev_path)
+			argp_error(state,
+				"The disk path was not specified");
+
+        if (args->start_at < 0)
+			argp_error(state,
+				"Option --start-at must be greater than 0");
+
+		if (args->end_at < 0)
+			argp_error(state,
+				"Option --end-at must be greater than 0");
+
+		if (args->start_at > args->end_at)
+			argp_error(state,
+				"Option --start-at must be less or equal to option --end-at");
+		break;
+
+	default:
+		return ARGP_ERR_UNKNOWN;
+	}
+	return 0;
+}
+
+static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
 
 static inline void update_dt(struct timeval *dt, const struct timeval *t1,
 	const struct timeval *t2)
@@ -228,20 +320,21 @@ static void iterate_files(const char *path, const long *files,
 
 int main(int argc, char **argv)
 {
-	long start_at, end_at;
-	const char *path;
 	const long *files;
-	int progress;
+	struct args args;
 	int rc;
-
-	rc = parse_args("read", argc, argv, &start_at, &end_at, &path);
+	rc = argp_parse(&argp, argc, argv, 0, NULL, &args);
 	if (rc)
 		return rc;
 
-	files = ls_my_files(path, start_at, end_at);
 	/* If stdout isn't a terminal, supress progress. */
-	progress = isatty(STDOUT_FILENO);
-	iterate_files(path, files, start_at, end_at, progress);
+	if (!args.show_progress)
+        args.show_progress = isatty(STDOUT_FILENO);
+
+	files = ls_my_files(args.dev_path, args.start_at, args.end_at);
+	/* If stdout isn't a terminal, supress progress. */
+
+	iterate_files(args.dev_path, files, args.start_at, args.end_at, args.show_progress);
 	free((void *)files);
 	return 0;
 }
