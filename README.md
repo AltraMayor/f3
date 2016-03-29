@@ -5,36 +5,31 @@ make
 ```
 
 
-## Compile experimental applications on Linux
+## Compile the extra applications on Linux
 
 ### Install dependencies
 
-   - f3probe and f3brew require version 1 of the library libudev to compile.
-     On Ubuntu, you can install this library with the following command:
+f3probe and f3brew require version 1 of the library libudev, and
+f3fix requires version 0 of the library libparted to compile.
+On Ubuntu, you can install these libraries with the following command:
 ```
-sudo apt-get install libudev1 libudev-dev
-```
-   - f3fix requires version 0 of the library libparted to compile.
-     On Ubuntu, you can install this library with the following command:
-```
-sudo apt-get install libparted0-dev
+sudo apt-get install libudev1 libudev-dev libparted0-dev
 ```
 
-### Compile experimental applications
+### Compile the extra applications
 
 ```
-make experimental
+make extra
 ```
 
 NOTES:
-   - Experimental software might compile on non-Linux platforms, but
-     there is no guarantee given that they are only tested on Linux.
-   - Please do not e-mail me saying that you want an experimental software
+   - The extra applications are only compiled and tested on Linux platform.
+   - Please do not e-mail me saying that you want the extra applications
      to run on your platform; I already know that.
-   - If you want experimental software to run on your platform,
+   - If you want the extra applications to run on your platform,
      help to port them, or find someone that can port them for you.
-     If you do port the software, please send me a patch to help others.
-   - Currently, f3probe, f3brew, and f3fix are experimental.
+     If you do port any of them, please send me a patch to help others.
+   - The extra applications are f3probe, f3brew, and f3fix.
 
 
 ## Use example of f3write/f3read
