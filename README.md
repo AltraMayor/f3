@@ -3,9 +3,14 @@
 ```
 make
 ```
+If you want to install f3write and f3read, run the following command:
+
+```
+make install
+```
 
 
-## Compile the extra applications on Linux
+## The extra applications for Linux
 
 ### Install dependencies
 
@@ -31,6 +36,12 @@ NOTES:
      If you do port any of them, please send me a patch to help others.
    - The extra applications are f3probe, f3brew, and f3fix.
 
+If you want to install the extra applications, run the following command:
+
+```
+make install-extra
+```
+
 
 ## Use example of f3write/f3read
 
@@ -41,6 +52,9 @@ $ ./f3read /media/michel/5EBD-5C80/
 
 Please replace "/media/michel/5EBD-5C80/" with the appropriate path.
 USB devices are mounted in "/Volumes" on Macs.
+
+If you have installed f3read and f3write, you can remove the "./"
+that is shown before their names.
 
 For more information see http://oss.digirati.com.br/f3/
 
