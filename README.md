@@ -9,6 +9,11 @@ If you want to install f3write and f3read, run the following command:
 make install
 ```
 
+### OS X and other non-GNU systems
+
+You may need to first install the
+[argp-standalone](https://www.lysator.liu.se/~nisse/misc/) library. For OS X,
+this is easily done via [Homebrew](http://brew.sh/).
 
 ## The extra applications for Linux
 
