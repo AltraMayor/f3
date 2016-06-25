@@ -1,8 +1,60 @@
-## Compile stable software on Linux, Apple Mac, Windows/Cygwin, and FreeBSD
+## Compile stable software on Linux, Windows/Cygwin, and FreeBSD
 
 ```
 make
 ```
+If you want to install f3write and f3read, run the following command:
+
+```
+make install
+```
+
+
+## Compile stable software on Apple Mac
+
+### Install dependencies
+
+The following steps have been tested on OS X El Capitan 10.11.
+
+1) Install Apple command line tools.
+```
+xcode-select --install
+```
+
+See http://osxdaily.com/2014/02/12/install-command-line-tools-mac-os-x/
+for details.
+
+2) Install Homebrew.
+```
+/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+```
+
+See http://brew.sh/ for details.
+
+3) Install argp library.
+```
+brew install argp-standalone
+```
+
+See http://brewformulas.org/ArgpStandalone and
+https://www.freshports.org/devel/argp-standalone/ for more information.
+
+### Compile F3
+
+1) Set compilation flags.
+```
+export CFLAGS="$CFLAGS -I/usr/local/include/"
+export LDFLAGS="$LDFLAGS -L/usr/local/lib/ -largp"
+```
+
+These flags are used in the Makefile to tell the compiler that
+the argp library is available in /usr/local/.
+
+2) Build F3.
+```
+make
+```
+
 If you want to install f3write and f3read, run the following command:
 
 ```
