@@ -12,6 +12,17 @@ make install
 
 ## Compile stable software on Apple Mac
 
+If you have Homebrew already installed in your computer,
+the command below will install F3:
+```
+brew install f3
+```
+
+If you don't have Homebrew already installed in your computer,
+you can install it following the two first steps of the next section.
+
+If you want to compile F3 from its sources, follow the next two sections.
+
 ### Install dependencies
 
 The following steps have been tested on OS X El Capitan 10.11.
@@ -48,17 +59,11 @@ export LDFLAGS="$LDFLAGS -L/usr/local/lib/ -largp"
 ```
 
 These flags are used in the Makefile to tell the compiler that
-the argp library is available in /usr/local/.
+the argp library is available in ```/usr/local/```.
 
 2) Build F3.
 ```
 make
-```
-
-If you want to install f3write and f3read, run the following command:
-
-```
-make install
 ```
 
 
