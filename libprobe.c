@@ -338,8 +338,13 @@ static int assess_reset_effect(struct device *dev,
 		first_pos, last_pos, salt))
 		return true;
 
-	if (after_reset_count_block < write_target) {
-		assert(after_reset_count_block <= b4_reset_count_block);
+	/* Although unexpected, some fake cards do recover blocks after
+	 * a reset! This behavior is not consistent, though.
+	 * The first reported case is found here:
+	 * https://github.com/AltraMayor/f3/issues/50
+	 */
+	if (b4_reset_count_block < write_target ||
+		after_reset_count_block < write_target) {
 		*pneed_reset = after_reset_count_block < b4_reset_count_block;
 		*pcache_size_block = *pneed_reset
 			? after_reset_count_block
