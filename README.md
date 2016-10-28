@@ -12,18 +12,25 @@ make install
 
 ## Compile stable software on Apple Mac
 
+### Using HomeBrew
 If you have Homebrew already installed in your computer,
 the command below will install F3:
 ```
 brew install f3
 ```
 
-If you don't have Homebrew already installed in your computer,
-you can install it following the two first steps of the next section.
+### Using MacPorts
+If you use MacPorts instead, use the following command:
+```
+port install f3
+```
 
-If you want to compile F3 from its sources, follow the next two sections.
 
-### Install dependencies
+### Compiling the lastest development version from the source code
+
+Most of the f3 source code builds fine using XCode, the only dependency missing
+is the GNU C library "argp". You can build argp from scratch, or use the version
+provided by HomeBrew and MacPorts as "argp-standalone"
 
 The following steps have been tested on OS X El Capitan 10.11.
 
@@ -35,33 +42,46 @@ xcode-select --install
 See http://osxdaily.com/2014/02/12/install-command-line-tools-mac-os-x/
 for details.
 
-2) Install Homebrew.
+2) Install Homebrew or MacPorts
+
+HomeBrew:
 ```
 /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 ```
-
 See http://brew.sh/ for details.
+
+MacPorts: https://www.macports.org/install.php
+
 
 3) Install argp library.
 ```
 brew install argp-standalone
 ```
-
 See http://brewformulas.org/ArgpStandalone and
 https://www.freshports.org/devel/argp-standalone/ for more information.
 
-### Compile F3
+Or, for MacPorts:
+```
+port install argp-standalone
+```
+See https://trac.macports.org/browser/trunk/dports/sysutils/f3/Portfile for more information.
 
-1) Set compilation flags.
+4) Set compilation flags.
+These following environment variables are used in the Makefile to locate
+the argp library:
+
+HomeBrew:
 ```
 export CFLAGS="$CFLAGS -I/usr/local/include/"
 export LDFLAGS="$LDFLAGS -L/usr/local/lib/ -largp"
 ```
+MacPorts:
+```
+export CFLAGS="$CFLAGS -I/opt/local/include/"
+export LDFLAGS="$LDFLAGS -L/opt/local/lib/ -largp"
+```
 
-These flags are used in the Makefile to tell the compiler that
-the argp library is available in ```/usr/local/```.
-
-2) Build F3.
+5) Build F3.
 ```
 make
 ```
