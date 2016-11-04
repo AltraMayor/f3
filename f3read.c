@@ -252,7 +252,9 @@ static void iterate_files(const char *path, const long *files,
 	const char *unit;
 	int and_read_all = 1;
 	int or_missing_file = 0;
-	int number = start_at;
+	long number = start_at;
+
+	UNUSED(end_at);
 
 	tot_ok = tot_corrupted = tot_changed = tot_overwritten = tot_size = 0;
 	printf("                  SECTORS "
@@ -299,7 +301,7 @@ static void iterate_files(const char *path, const long *files,
 	report("\t     Overwritten:", tot_overwritten);
 	if (or_missing_file)
 		printf("WARNING: Not all F3 files in the range %li to %li are available\n",
-			start_at + 1, end_at + 1);
+			start_at + 1, number);
 	if (!and_read_all)
 		printf("WARNING: Not all data was read due to I/O error(s)\n");
 
