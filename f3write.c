@@ -305,12 +305,14 @@ static inline void move_to_dec(struct flow *fw)
 	dec_step(fw);
 }
 
-static void measure(int fd, struct flow *fw)
+static void measure(int fd, struct flow *fw, ssize_t written)
 {
 	long delay;
+	div_t result = div(written, fw->block_size);
 
-	fw->written_blocks++;
-	fw->total_written += fw->block_size;
+	assert(result.rem == 0);
+	fw->written_blocks += result.quot;
+	fw->total_written += written;
 
 	if (fw->written_blocks < fw->blocks_per_delay)
 		return;
@@ -413,16 +415,17 @@ static inline void end_measurement(int fd, struct flow *fw)
 	fflush(stdout);
 }
 
+#define MAX_WRITE_SIZE	(1<<21)	/* 2MB */
+
 static int create_and_fill_file(const char *path, long number, size_t size,
 	struct flow *fw)
 {
 	char *full_fn;
 	const char *filename;
 	int fd, fine;
-	char buf[fw->block_size];
+	char buf[MAX_WRITE_SIZE];
 	size_t remaining;
 	uint64_t offset;
-	ssize_t written;
 
 	assert(size > 0);
 	assert(size % fw->block_size == 0);
@@ -450,8 +453,16 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 	remaining = size;
 	start_measurement(fw);
 	while (remaining > 0) {
-		offset = fill_buffer(buf, fw->block_size, offset);
-		written = write(fd, buf, fw->block_size);
+		ssize_t written;
+		ssize_t write_size = fw->block_size *
+			(fw->blocks_per_delay - fw->written_blocks);
+		assert(write_size > 0);
+		if (write_size > MAX_WRITE_SIZE)
+			write_size = MAX_WRITE_SIZE;
+		if ((size_t)write_size > remaining)
+			write_size = remaining;
+		offset = fill_buffer(buf, write_size, offset);
+		written = write(fd, buf, write_size);
 		if (written < 0) {
 			if (errno == ENOSPC) {
 				fine = 0;
@@ -459,9 +470,17 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 			} else
 				err(errno, "Write to file %s failed", full_fn);
 		}
-		assert(written == fw->block_size);
+		if (written < write_size) {
+			/* It must have filled up the file system. */
+			assert(write(fd, buf + written, write_size - written)
+				< 0);
+			assert(errno == ENOSPC);
+			fine = 0;
+			break;
+		}
+		assert(written == write_size);
 		remaining -= written;
-		measure(fd, fw);
+		measure(fd, fw, written);
 	}
 	assert(!fine || remaining == 0);
 	end_measurement(fd, fw);
