@@ -1,6 +1,19 @@
-## Compile stable software on Linux, Windows/Cygwin, and FreeBSD
+## Compile stable software on Linux or FreeBSD
 
 ```
+make
+```
+If you want to install f3write and f3read, run the following command:
+
+```
+make install
+```
+
+
+## Compile stable software on Windows/Cygwin
+
+```
+export LDFLAGS="$LDFLAGS -Wl,--stack,4000000 -largp"
 make
 ```
 If you want to install f3write and f3read, run the following command:
