@@ -133,7 +133,12 @@ make install-extra
 ```
 
 
-## Use example of f3write/f3read
+## Use examples
+For more information see http://oss.digirati.com.br/f3/
+
+### Example for f3write/f3read
+
+Use these two programs in this order. f3write will write large files to your mounted disk and f3read will check if the flash disk contains exactly the written files.
 
 ```
 $ ./f3write /media/michel/5EBD-5C80/
@@ -146,8 +151,20 @@ USB devices are mounted in "/Volumes" on Macs.
 If you have installed f3read and f3write, you can remove the "./"
 that is shown before their names.
 
-For more information see http://oss.digirati.com.br/f3/
+### Example for f3probe
+f3probe is the fastest drive test and suitable for large disks because it only writes what's necessary to test the drive. It operates directly on the (unmounted) block device and needs to be run as a privileged user.
 
+**Warning**: This will destroy any previously stored data on your disk!
+
+```
+# ./f3probe --destructive --time-ops /dev/sdb
+```
+
+### Example for f3fix
+f3fix creates a partition that fits the actual size of the fake drive. Use f3probe's output to determine the parameters for i3fix.
+```
+# ./f3fix --last-sec=16477878 /dev/sdb
+```
 
 ## Files
 
