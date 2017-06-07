@@ -12,15 +12,15 @@ all: $(TARGETS)
 extra: $(EXTRA_TARGETS)
 
 install: all
-	$(INSTALL) -d $(PREFIX)/bin
-	$(INSTALL) -oroot -groot -m755 $(TARGETS) $(PREFIX)/bin
-	$(INSTALL) -d $(PREFIX)/share/man/man1
-	$(INSTALL) -oroot -groot -m644 f3read.1 $(PREFIX)/share/man/man1
-	$(LN) -sf f3read.1 $(PREFIX)/share/man/man1/f3write.1
+	$(INSTALL) -d $(DESTDIR)$(PREFIX)/bin
+	$(INSTALL) -oroot -groot -m755 $(TARGETS) $(DESTDIR)$(PREFIX)/bin
+	$(INSTALL) -d $(DESTDIR)$(PREFIX)/share/man/man1
+	$(INSTALL) -oroot -groot -m644 f3read.1 $(DESTDIR)$(PREFIX)/share/man/man1
+	$(LN) -sf f3read.1 $(DESTDIR)$(PREFIX)/share/man/man1/f3write.1
 
 install-extra: extra
-	$(INSTALL) -d $(PREFIX)/bin
-	$(INSTALL) -oroot -groot -m755 $(EXTRA_TARGETS) $(PREFIX)/bin
+	$(INSTALL) -d $(DESTDIR)$(PREFIX)/bin
+	$(INSTALL) -oroot -groot -m755 $(EXTRA_TARGETS) $(DESTDIR)$(PREFIX)/bin
 
 f3write: utils.o f3write.o
 	$(CC) -o $@ $^ $(LDFLAGS) -lm
