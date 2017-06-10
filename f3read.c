@@ -134,7 +134,7 @@ static void validate_file(const char *path, int number,
 	int final_errno;
 	struct timeval t1, t2;
 	/* Progress time. */
-	struct timeval pt1 = { .tv_sec = -1000, .tv_usec = 0 };
+	struct timeval pt1;
 
 	*ptr_ok = *ptr_corrupted = *ptr_changed = *ptr_overwritten = 0;
 
@@ -164,6 +164,8 @@ static void validate_file(const char *path, int number,
 
 	/* Obtain initial time. */
 	assert(!gettimeofday(&t1, NULL));
+	pt1 = t1;
+	pt1.tv_sec -= 1000;
 	/* Help the kernel to help us. */
 	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL));
 
