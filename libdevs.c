@@ -847,7 +847,7 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 {
 	struct block_device *bdev;
 	struct udev *udev;
-	struct udev_device *fd_dev, *usb_dev;
+	struct udev_device *fd_dev;
 	const char *s;
 	int block_size, block_order;
 
@@ -873,9 +873,7 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 		goto filename;
 	}
 
-	/* Make sure that @bdev->fd is a disk, not a partition, and that
-	 * it is in fact backed by a USB device.
-	 */
+	/* Make sure that @bdev->fd is a disk, not a partition. */
 	udev = udev_new();
 	if (!udev) {
 		warnx("Can't load library udev");
@@ -904,13 +902,21 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 			filename, s);
 		goto fd_dev;
 	}
-	usb_dev = map_dev_to_usb_dev(fd_dev);
-	if (!usb_dev) {
-		fprintf(stderr, "Device `%s' is not backed by a USB device",
-			filename);
-		goto fd_dev;
+
+	if (rt != RT_NONE) {
+		/* Make sure that @bdev->fd is backed by a USB device. */
+		struct udev_device *usb_dev = map_dev_to_usb_dev(fd_dev);
+		if (!usb_dev) {
+			fprintf(stderr,
+				"Device `%s' is not backed by a USB device.\n"
+				"You must disable reset, run %s as follows:\n"
+				"%s --reset-type=%i %s\n",
+				filename, __progname, __progname, RT_NONE,
+				filename);
+			goto fd_dev;
+		}
+		udev_device_unref(usb_dev);
 	}
-	udev_device_unref(usb_dev);
 	udev_device_unref(fd_dev);
 	assert(!udev_unref(udev));
 
