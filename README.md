@@ -4,9 +4,9 @@ f3 is a simple tool that tests flash cards capacity and performance to see if th
 
 For more information see http://oss.digirati.com.br/f3/
 
-## Examples
+# Examples
 
-### Testing performance with f3read/f3write
+## Testing performance with f3read/f3write
 
 Use these two programs in this order. f3write will write large files to your mounted disk and f3read will check if the flash disk contains exactly the written files.
 
@@ -21,7 +21,7 @@ USB devices are mounted in "/Volumes" on Macs.
 If you have installed f3read and f3write, you can remove the "./"
 that is shown before their names.
 
-### Quick capacity tests with f3probe
+## Quick capacity tests with f3probe
 
 f3probe is the fastest drive test and suitable for large disks because it only writes what's necessary to test the drive. It operates directly on the (unmounted) block device and needs to be run as a privileged user.
 
@@ -31,11 +31,13 @@ f3probe is the fastest drive test and suitable for large disks because it only w
 # ./f3probe --destructive --time-ops /dev/sdb
 ```
 
-### Correcting capacity to actual size with f3fix
+## Correcting capacity to actual size with f3fix
 f3fix creates a partition that fits the actual size of the fake drive. Use f3probe's output to determine the parameters for i3fix.
 ```
 # ./f3fix --last-sec=16477878 /dev/sdb
 ```
+
+# Installation instructions
 
 ## Compile stable software on Linux or FreeBSD
 
@@ -171,6 +173,8 @@ If you want to install the extra applications, run the following command:
 make install-extra
 ```
 
+# Other resources
+
 ## Files
 
     changelog   - Change log for package maintainers
@@ -183,7 +187,7 @@ make install-extra
     README      - This file
     *.h and *.c - C code of F3
 
-### Bash scripts
+## Bash scripts
 
 Although the simple scripts listed in this section are ready for use,
 they are really meant to help you to write your own scripts.
