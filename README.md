@@ -4,6 +4,12 @@ f3 is a simple tool that tests flash cards capacity and performance to see if th
 
 For more information see http://oss.digirati.com.br/f3/
 
+**Table of Contents**
+
+- [Examples](#examples)
+- [Installation](#installation)
+- [Other resources](#other-resources)
+
 # Examples
 
 ## Testing performance with f3read/f3write
@@ -37,7 +43,7 @@ f3fix creates a partition that fits the actual size of the fake drive. Use f3pro
 # ./f3fix --last-sec=16477878 /dev/sdb
 ```
 
-# Installation instructions
+# Installation
 
 ## Compile stable software on Linux or FreeBSD
 
