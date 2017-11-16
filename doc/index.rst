@@ -3,17 +3,18 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to f3's documentation!
-==============================
+f3 - Fight Flash Fraud
+======================
 
 Contents:
 
 .. toctree::
    :maxdepth: 2
 
-   introduction.rst
-   webpage.rst
-
+   introduction
+   usage
+   history
+   contribute
 
 Indices and tables
 ==================

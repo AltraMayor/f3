@@ -4,13 +4,15 @@ f3 - Fight Flash Fraud
 f3 is a simple tool that tests flash cards capacity and performance to
 see if they live up to claimed specifications.
 
-For more information see http://oss.digirati.com.br/f3/
+F3 stands for Fight Flash Fraud, or Fight Fake Flash.
 
 **Table of Contents**
 
 -  `Examples <#examples>`__
 -  `Installation <#installation>`__
 -  `Other resources <#other-resources>`__
+
+.. _examples:
 
 Examples
 ========
@@ -53,6 +55,16 @@ Use f3probe's output to determine the parameters for i3fix::
 
 Installation
 ============
+
+Download and Compile
+--------------------
+
+The files of the stable version of F3 are
+`here <https://github.com/AltraMayor/f3/releases>`__. The
+following command uncompresses the files::
+
+    $ unzip f3-6.0.zip
+
 
 Compile stable software on Linux or FreeBSD
 -------------------------------------------
@@ -189,6 +201,23 @@ command::
 
 Other resources
 ===============
+
+Graphical User Interfaces
+-------------------------
+
+Thanks to our growing community of fraud fighters, we have a couple of
+graphical user interfaces (GUIs) available for F3:
+
+`F3 QT <https://github.com/zwpwjwtz/f3-qt>`__ is a Linux GUI that uses
+QT. F3 QT supports ``f3write``, ``f3read``, and ``f3probe``. Author:
+Tianze.
+
+`F3 X <https://github.com/insidegui/F3X>`__ is a OS X GUI that uses
+Cocoa. F3 X supports ``f3write`` and ``f3read``. Author: Guilherme
+Rambo.
+
+Please support these projects testing and giving feedback to their
+authors. This will make their code improve as it has improved mine.
 
 Files
 -----
