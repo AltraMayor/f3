@@ -128,6 +128,8 @@ html_theme = 'alabaster'
 #
 # html_theme_options = {}
 
+html_theme_options = { 'show_related': True }
+
 # Add any paths that contain custom themes here, relative to this directory.
 # html_theme_path = []
 
