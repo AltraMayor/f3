@@ -1,6 +1,8 @@
 Usage
 =====
 
+.. contents::
+
 How to use f3write and f3read
 -----------------------------
 
