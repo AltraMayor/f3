@@ -3,6 +3,7 @@
 
 #include <assert.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -305,7 +306,7 @@ static inline void move_to_dec(struct flow *fw)
 	dec_step(fw);
 }
 
-static void measure(int fd, struct flow *fw, ssize_t written)
+static int measure(int fd, struct flow *fw, ssize_t written)
 {
 	long delay;
 	div_t result = div(written, fw->block_size);
@@ -315,9 +316,11 @@ static void measure(int fd, struct flow *fw, ssize_t written)
 	fw->total_written += written;
 
 	if (fw->written_blocks < fw->blocks_per_delay)
-		return;
+		return 0;
 
-	assert(!fdatasync(fd));
+	if (fdatasync(fd) < 0)
+		return -1; /* Caller can read errno(3). */
+
 	assert(!gettimeofday(&fw->t2, NULL));
 	/* Help the kernel to help us. */
 	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
@@ -402,27 +405,32 @@ static void measure(int fd, struct flow *fw, ssize_t written)
 	}
 
 	start_measurement(fw);
+	return 0;
 }
 
-static inline void end_measurement(int fd, struct flow *fw)
+static int end_measurement(int fd, struct flow *fw)
 {
-	assert(!fdatasync(fd));
-	/* Help the kernel to help us. */
-	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
-
+	/* Erase progress information. */
 	erase(fw->erase);
 	fw->erase = 0;
 	fflush(stdout);
+
+	if (fdatasync(fd) < 0)
+		return -1; /* Caller can read errno(3). */
+	/* Help the kernel to help us. */
+	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
+	return 0;
 }
 
 #define MAX_WRITE_SIZE	(1<<21)	/* 2MB */
 
+/* Return true when disk is full. */
 static int create_and_fill_file(const char *path, long number, size_t size,
 	struct flow *fw)
 {
 	char *full_fn;
 	const char *filename;
-	int fd, fine;
+	int fd, saved_errno;
 	char buf[MAX_WRITE_SIZE];
 	size_t remaining;
 	uint64_t offset;
@@ -431,8 +439,6 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 	assert(size % fw->block_size == 0);
 
 	/* Create the file. */
-
-	fine = 0;
 	full_fn = full_fn_from_number(&filename, path, number);
 	assert(full_fn);
 	printf("Creating file %s ... ", filename);
@@ -441,14 +447,15 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 	if (fd < 0) {
 		if (errno == ENOSPC) {
 			printf("No space left.\n");
-			goto out;
+			free(full_fn);
+			return true;
 		}
 		err(errno, "Can't create file %s", full_fn);
 	}
 	assert(fd >= 0);
 
 	/* Write content. */
-	fine = 1;
+	saved_errno = 0;
 	offset = (uint64_t)number * GIGABYTES;
 	remaining = size;
 	start_measurement(fw);
@@ -464,33 +471,42 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 		offset = fill_buffer(buf, write_size, offset);
 		written = write(fd, buf, write_size);
 		if (written < 0) {
-			if (errno == ENOSPC) {
-				fine = 0;
-				break;
-			} else
-				err(errno, "Write to file %s failed", full_fn);
+			saved_errno = errno;
+			break;
 		}
 		if (written < write_size) {
-			/* It must have filled up the file system. */
+			/* It must have filled up the file system.
+			 * errno should be equal to ENOSPC.
+			 */
 			assert(write(fd, buf + written, write_size - written)
 				< 0);
-			assert(errno == ENOSPC);
-			fine = 0;
+			saved_errno = errno;
 			break;
 		}
 		assert(written == write_size);
 		remaining -= written;
-		measure(fd, fw, written);
+		if (measure(fd, fw, written) < 0) {
+			saved_errno = errno;
+			break;
+		}
 	}
-	assert(!fine || remaining == 0);
-	end_measurement(fd, fw);
+	if (end_measurement(fd, fw) < 0) {
+		/* If a write failure has happened before, preserve it. */
+		if (!saved_errno)
+			saved_errno = errno;
+	}
 	close(fd);
-
-	printf("OK!\n");
-
-out:
 	free(full_fn);
-	return fine;
+
+	if (saved_errno == ENOSPC || remaining == 0) {
+		printf("OK!\n");
+		return saved_errno == ENOSPC;
+	}
+
+	/* Something went wrong. */
+	assert(saved_errno);
+	printf("Write failure: %s\n", strerror(saved_errno));
+	return false;
 }
 
 static inline uint64_t get_freespace(const char *path)
@@ -520,16 +536,27 @@ static int fill_fs(const char *path, long start_at, long end_at, int progress)
 		return 1;
 	}
 
-	/* If the amount of data to write is less than the space available,
-	 * update @free_space to improve estimate of time to finish.
-	 */
 	i = end_at - start_at + 1;
-	if (i > 0 && (uint64_t)i <= (free_space >> 30))
+	if (i > 0 && (uint64_t)i <= (free_space >> 30)) {
+		/* The amount of data to write is less than the space available,
+		 * update @free_space to improve estimate of time to finish.
+		 */
 		free_space = (uint64_t)i << 30;
+	} else {
+		/* There are more data to write than space available.
+		 * Reduce @end_at to reduce the number of error messages
+		 * when multiple write failures happens.
+		 *
+		 * One should not subtract the value below of one because
+		 * the expression (free_space >> 30) is an integer division,
+		 * that is, it ignores the remainder.
+		 */
+		end_at = start_at + (free_space >> 30);
+	}
 
 	init_flow(&fw, free_space, progress);
 	for (i = start_at; i <= end_at; i++)
-		if (!create_and_fill_file(path, i, GIGABYTES, &fw))
+		if (create_and_fill_file(path, i, GIGABYTES, &fw))
 			break;
 
 	/* Final report. */
