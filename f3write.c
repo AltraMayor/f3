@@ -35,16 +35,19 @@ static struct argp_option options[] = {
 		"First NUM.h2w file to be written",			1},
 	{"end-at",		'e',	"NUM",		0,
 		"Last NUM.h2w file to be written",			0},
+	{"max-write-rate",	'w',	"KB/s",		0,
+		"Maximum write rate",					0},
 	{"show-progress",	'p',	"NUM",		0,
 		"Show progress if NUM is not zero",			0},
 	{ 0 }
 };
 
 struct args {
-	long        start_at;
-	long        end_at;
-	int	    show_progress;
-	const char  *dev_path;
+	long		start_at;
+	long		end_at;
+	long		max_write_rate;
+	int		show_progress;
+	const char	*dev_path;
 };
 
 static error_t parse_opt(int key, char *arg, struct argp_state *state)
@@ -67,6 +70,14 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 			argp_error(state,
 				"NUM must be greater than zero");
 		args->end_at = l - 1;
+		break;
+
+	case 'w':
+		l = arg_to_long(state, arg);
+		if (l <= 0)
+			argp_error(state,
+				"KB/s must be greater than zero");
+		args->max_write_rate = l;
 		break;
 
 	case 'p':
@@ -137,6 +148,10 @@ struct flow {
 	int		step;
 	/* Blocks to write before measurement. */
 	int		blocks_per_delay;
+	/* Maximum number of blocks to write before measurement.
+	 * This parameter is used to bound the write rate.
+	 */
+	int		max_blocks_per_delay;
 	/* Delay in miliseconds. */
 	int		delay_ms;
 	/* Number of measurements after reaching FW_STEADY state. */
@@ -166,7 +181,11 @@ static inline void move_to_inc_at_start(struct flow *fw)
 	fw->state = FW_INC;
 }
 
-static void init_flow(struct flow *fw, uint64_t total_size, int progress)
+/* If @max_write_rate <= 0, the maximum write rate is infinity.
+ * The unit of @max_write_rate is KB per second.
+ */
+static void init_flow(struct flow *fw, uint64_t total_size,
+	long max_write_rate, int progress)
 {
 	fw->total_size		= total_size;
 	fw->total_written	= 0;
@@ -179,6 +198,17 @@ static void init_flow(struct flow *fw, uint64_t total_size, int progress)
 	fw->erase		= 0;
 	assert(fw->block_size > 0);
 	assert(fw->block_size % SECTOR_SIZE == 0);
+
+	/* Derive @fw->max_blocks_per_delay from @max_write_rate. */
+	if (max_write_rate <= 0) {
+		/* This is the most common case. */
+		fw->max_blocks_per_delay = INT_MAX;
+	} else {
+		fw->max_blocks_per_delay =
+			/* Units: KB/s * ms / B/block = block */
+			round((double)max_write_rate * fw->delay_ms
+				/ fw->block_size);
+	}
 
 	move_to_inc_at_start(fw);
 }
@@ -290,6 +320,8 @@ static inline void dec_step(struct flow *fw)
 static inline void inc_step(struct flow *fw)
 {
 	fw->blocks_per_delay += fw->step;
+	if (fw->blocks_per_delay > fw->max_blocks_per_delay)
+		fw->blocks_per_delay = fw->max_blocks_per_delay;
 	fw->step *= 2;
 }
 
@@ -310,6 +342,7 @@ static int measure(int fd, struct flow *fw, ssize_t written)
 {
 	long delay;
 	div_t result = div(written, fw->block_size);
+	bool slow_down = false;
 
 	assert(result.rem == 0);
 	fw->written_blocks += result.quot;
@@ -332,7 +365,8 @@ static int measure(int fd, struct flow *fw, ssize_t written)
 			move_to_search(fw,
 				fw->blocks_per_delay - fw->step / 2,
 				fw->blocks_per_delay);
-		} else if (delay < fw->delay_ms) {
+		} else if (delay < fw->delay_ms
+			&& fw->blocks_per_delay < fw->max_blocks_per_delay) {
 			inc_step(fw);
 		} else
 			move_to_steady(fw);
@@ -368,9 +402,15 @@ static int measure(int fd, struct flow *fw, ssize_t written)
 		update_mean(fw);
 
 		if (delay <= fw->delay_ms) {
-			move_to_inc(fw);
-		}
-		else if (fw->blocks_per_delay > 1) {
+			if (fw->blocks_per_delay < fw->max_blocks_per_delay) {
+				move_to_inc(fw);
+			} else {
+				/* Since we are already writing at
+				 * maximum allowed rate, wait until next cycle.
+				 */
+				slow_down = true;
+			}
+		} else if (fw->blocks_per_delay > 1) {
 			move_to_dec(fw);
 		}
 		break;
@@ -405,6 +445,8 @@ static int measure(int fd, struct flow *fw, ssize_t written)
 	}
 
 	start_measurement(fw);
+	if (slow_down)
+		assert(!usleep((fw->delay_ms - delay) * 1000));
 	return 0;
 }
 
@@ -523,7 +565,8 @@ static inline void pr_freespace(uint64_t fs)
 	printf("Free space: %.2f %s\n", f, unit);
 }
 
-static int fill_fs(const char *path, long start_at, long end_at, int progress)
+static int fill_fs(const char *path, long start_at, long end_at,
+	long max_write_rate, int progress)
 {
 	uint64_t free_space;
 	struct flow fw;
@@ -554,7 +597,7 @@ static int fill_fs(const char *path, long start_at, long end_at, int progress)
 		end_at = start_at + (free_space >> 30);
 	}
 
-	init_flow(&fw, free_space, progress);
+	init_flow(&fw, free_space, max_write_rate, progress);
 	for (i = start_at; i <= end_at; i++)
 		if (create_and_fill_file(path, i, GIGABYTES, &fw))
 			break;
@@ -596,6 +639,7 @@ int main(int argc, char **argv)
 		/* Defaults. */
 		.start_at	= 0,
 		.end_at		= LONG_MAX - 1,
+		.max_write_rate = 0,
 		/* If stdout isn't a terminal, supress progress. */
 		.show_progress	= isatty(STDOUT_FILENO),
 	};
@@ -607,5 +651,5 @@ int main(int argc, char **argv)
 	unlink_old_files(args.dev_path, args.start_at, args.end_at);
 
 	return fill_fs(args.dev_path, args.start_at, args.end_at,
-		args.show_progress);
+		args.max_write_rate, args.show_progress);
 }
