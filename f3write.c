@@ -540,7 +540,9 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 	close(fd);
 	free(full_fn);
 
-	if (saved_errno == ENOSPC || remaining == 0) {
+	if (saved_errno == 0 || saved_errno == ENOSPC) {
+		if (saved_errno == 0)
+			assert(remaining == 0);
 		printf("OK!\n");
 		return saved_errno == ENOSPC;
 	}
