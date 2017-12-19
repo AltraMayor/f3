@@ -468,7 +468,7 @@ static int end_measurement(int fd, struct flow *fw)
 
 /* Return true when disk is full. */
 static int create_and_fill_file(const char *path, long number, size_t size,
-	struct flow *fw)
+	int *phas_suggested_max_write_rate, struct flow *fw)
 {
 	char *full_fn;
 	const char *filename;
@@ -548,6 +548,10 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 	/* Something went wrong. */
 	assert(saved_errno);
 	printf("Write failure: %s\n", strerror(saved_errno));
+	if (saved_errno == EIO && !*phas_suggested_max_write_rate) {
+		*phas_suggested_max_write_rate = true;
+		printf("\nWARNING:\nThe write error above may be due to your memory card overheating\nunder constant, maximum write rate. You can test this hypothesis\ntouching your memory card. If it is hot, you can try f3write\nagain, once your card has cooled down, using parameter --max-write-rate=2048\nto limit the maximum write rate to 2MB/s, or another suitable rate.\n\n");
+	}
 	return false;
 }
 
@@ -571,6 +575,7 @@ static int fill_fs(const char *path, long start_at, long end_at,
 	uint64_t free_space;
 	struct flow fw;
 	long i;
+	int has_suggested_max_write_rate = max_write_rate > 0;
 
 	free_space = get_freespace(path);
 	pr_freespace(free_space);
@@ -599,7 +604,8 @@ static int fill_fs(const char *path, long start_at, long end_at,
 
 	init_flow(&fw, free_space, max_write_rate, progress);
 	for (i = start_at; i <= end_at; i++)
-		if (create_and_fill_file(path, i, GIGABYTES, &fw))
+		if (create_and_fill_file(path, i, GIGABYTES,
+			&has_suggested_max_write_rate, &fw))
 			break;
 
 	/* Final report. */
