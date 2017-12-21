@@ -8,6 +8,11 @@ PREFIX = /usr/local
 INSTALL = install
 LN = ln
 
+ARGP = /usr/local
+
+CFLAGS += -I$(ARGP)/include
+LDFLAGS += -L$(ARGP)/lib -largp
+
 all: $(TARGETS)
 extra: $(EXTRA_TARGETS)
 
