@@ -55,3 +55,6 @@ Linux only. Linux users may want to check out Vasiliy Kaygorodov's
 or Ahmed Essam's
 `page <http://ahmedspace.com/linux-how-to-fix-a-flash-memory-corrupting-files/>`__
 for help.
+
+Starting at version 7.0, ``f3probe``, ``f3fix``, and ``f3brew`` are stable.
+They are for Linux only.

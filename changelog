@@ -1,3 +1,8 @@
+Version 7.0 - Dec 21, 2017
+
+    * stable version of f3probe, f3fix, and f3brew (Linux only)
+    * f3write: improved write speed and dealing with write failures
+
 Version 6.0 - Dec 24, 2015
 
     * f3probe: new algorithm.
