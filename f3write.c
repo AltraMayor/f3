@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <limits.h>
+#include <float.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/statvfs.h>
@@ -148,12 +149,10 @@ struct flow {
 	int		step;
 	/* Blocks to write before measurement. */
 	int		blocks_per_delay;
-	/* Maximum number of blocks to write before measurement.
-	 * This parameter is used to bound the write rate.
-	 */
-	int		max_blocks_per_delay;
 	/* Delay in miliseconds. */
 	int		delay_ms;
+	/* Maximum write rate in bytes per second. */
+	double		max_write_rate;
 	/* Number of measurements after reaching FW_STEADY state. */
 	uint64_t	measurements;
 	/* Number of measured blocks. */
@@ -190,25 +189,16 @@ static void init_flow(struct flow *fw, uint64_t total_size,
 	fw->total_size		= total_size;
 	fw->total_written	= 0;
 	fw->progress		= progress;
-	fw->block_size		= 1024;	/* 1KB		*/
-	fw->blocks_per_delay	= 1;	/* 1KB/s	*/
+	fw->block_size		= 512;	/* Bytes	*/
+	fw->blocks_per_delay	= 1;	/* 512B/s	*/
 	fw->delay_ms		= 1000;	/* 1s		*/
+	fw->max_write_rate	= max_write_rate <= 0
+		? DBL_MAX : max_write_rate * 1024.;
 	fw->measurements	= 0;
 	fw->measured_blocks	= 0;
 	fw->erase		= 0;
 	assert(fw->block_size > 0);
 	assert(fw->block_size % SECTOR_SIZE == 0);
-
-	/* Derive @fw->max_blocks_per_delay from @max_write_rate. */
-	if (max_write_rate <= 0) {
-		/* This is the most common case. */
-		fw->max_blocks_per_delay = INT_MAX;
-	} else {
-		fw->max_blocks_per_delay =
-			/* Units: KB/s * ms / B/block = block */
-			round((double)max_write_rate * fw->delay_ms
-				/ fw->block_size);
-	}
 
 	move_to_inc_at_start(fw);
 }
@@ -320,8 +310,6 @@ static inline void dec_step(struct flow *fw)
 static inline void inc_step(struct flow *fw)
 {
 	fw->blocks_per_delay += fw->step;
-	if (fw->blocks_per_delay > fw->max_blocks_per_delay)
-		fw->blocks_per_delay = fw->max_blocks_per_delay;
 	fw->step *= 2;
 }
 
@@ -338,10 +326,25 @@ static inline void move_to_dec(struct flow *fw)
 	dec_step(fw);
 }
 
+static inline int is_rate_above(const struct flow *fw,
+	long delay, double inst_speed)
+{
+	/* We use logical or here to enforce the lowest limit. */
+	return delay > fw->delay_ms || inst_speed > fw->max_write_rate;
+}
+
+static inline int is_rate_below(const struct flow *fw,
+	long delay, double inst_speed)
+{
+	/* We use logical and here to enforce both limist. */
+	return delay < fw->delay_ms && inst_speed < fw->max_write_rate;
+}
+
 static int measure(int fd, struct flow *fw, ssize_t written)
 {
 	long delay;
 	div_t result = div(written, fw->block_size);
+	double inst_speed;
 	bool slow_down = false;
 
 	assert(result.rem == 0);
@@ -359,23 +362,26 @@ static int measure(int fd, struct flow *fw, ssize_t written)
 	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
 	delay = delay_ms(&fw->t1, &fw->t2);
 
+	/* Instantaneous speed in bytes per second. */
+	inst_speed = (double)fw->blocks_per_delay * fw->block_size * 1000 /
+		fw->delay_ms;
+
 	switch (fw->state) {
 	case FW_INC:
-		if (delay > fw->delay_ms) {
+		if (is_rate_above(fw, delay, inst_speed)) {
 			move_to_search(fw,
 				fw->blocks_per_delay - fw->step / 2,
 				fw->blocks_per_delay);
-		} else if (delay < fw->delay_ms
-			&& fw->blocks_per_delay < fw->max_blocks_per_delay) {
+		} else if (is_rate_below(fw, delay, inst_speed)) {
 			inc_step(fw);
 		} else
 			move_to_steady(fw);
 		break;
 
 	case FW_DEC:
-		if (delay > fw->delay_ms) {
+		if (is_rate_above(fw, delay, inst_speed)) {
 			dec_step(fw);
-		} else if (delay < fw->delay_ms) {
+		} else if (is_rate_below(fw, delay, inst_speed)) {
 			move_to_search(fw, fw->blocks_per_delay,
 				fw->blocks_per_delay + fw->step / 2);
 		} else
@@ -388,10 +394,10 @@ static int measure(int fd, struct flow *fw, ssize_t written)
 			break;
 		}
 
-		if (delay > fw->delay_ms) {
+		if (is_rate_above(fw, delay, inst_speed)) {
 			fw->bpd2 = fw->blocks_per_delay;
 			fw->blocks_per_delay = (fw->bpd1 + fw->bpd2) / 2;
-		} else if (delay < fw->delay_ms) {
+		} else if (is_rate_below(fw, delay, inst_speed)) {
 			fw->bpd1 = fw->blocks_per_delay;
 			fw->blocks_per_delay = (fw->bpd1 + fw->bpd2) / 2;
 		} else
@@ -402,8 +408,10 @@ static int measure(int fd, struct flow *fw, ssize_t written)
 		update_mean(fw);
 
 		if (delay <= fw->delay_ms) {
-			if (fw->blocks_per_delay < fw->max_blocks_per_delay) {
+			if (inst_speed < fw->max_write_rate) {
 				move_to_inc(fw);
+			} if (inst_speed > fw->max_write_rate) {
+				move_to_dec(fw);
 			} else {
 				/* Since we are already writing at
 				 * maximum allowed rate, wait until next cycle.
@@ -420,10 +428,6 @@ static int measure(int fd, struct flow *fw, ssize_t written)
 	}
 
 	if (fw->progress) {
-		/* Instantaneous speed. */
-		double inst_speed =
-			(double)fw->blocks_per_delay * fw->block_size * 1000 /
-			fw->delay_ms;
 		const char *unit = adjust_unit(&inst_speed);
 		double percent;
 		/* The following shouldn't be necessary, but sometimes
