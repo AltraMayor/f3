@@ -107,8 +107,8 @@ If you use MacPorts instead, use the following command::
 
     port install f3
 
-Compiling the lastest development version from the source code
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Compiling the latest development version from the source code
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Most of the f3 source code builds fine using XCode, the only dependency
 missing is the GNU C library "argp". You can build argp from scratch, or
