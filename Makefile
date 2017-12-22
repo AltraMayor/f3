@@ -9,7 +9,6 @@ INSTALL = install
 LN = ln
 
 ARGP = /usr/local
-
 CFLAGS += -I$(ARGP)/include
 LDFLAGS += -L$(ARGP)/lib -largp
 
