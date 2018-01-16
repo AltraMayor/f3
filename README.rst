@@ -80,7 +80,13 @@ If you want to install f3write and f3read, run the following command::
 Compile stable software on Windows/Cygwin
 -----------------------------------------
 
-On Cygwin, you need special flags::
+If you haven't already, install the following Cygwin packages and their dependencies:
+
+- `gcc-core`
+- `make`
+- `libargp-devel`
+
+To build, you need special flags::
 
     export LDFLAGS="$LDFLAGS -Wl,--stack,4000000 -largp"
     make
