@@ -154,7 +154,7 @@ for details.
    See https://trac.macports.org/browser/trunk/dports/sysutils/f3/Portfile
    for more information.
 
-5) Build F3::
+4) Build F3::
 
    When using Homebrew, you can just run::
 
