@@ -154,22 +154,16 @@ for details.
    See https://trac.macports.org/browser/trunk/dports/sysutils/f3/Portfile
    for more information.
 
-4) Set compilation flags. These following environment variables are used
-   in the Makefile to locate the argp library:
-
-   HomeBrew::
-
-     export CFLAGS="$CFLAGS -I/usr/local/include/"
-     export LDFLAGS="$LDFLAGS -L/usr/local/lib/ -largp"
-
-   MacPorts::
-
-     export CFLAGS="$CFLAGS -I/opt/local/include/"
-     export LDFLAGS="$LDFLAGS -L/opt/local/lib/ -largp"
-
 5) Build F3::
 
+   When using Homebrew, you can just run::
+
        make
+
+   When using MacPorts, you will need to pass the location where MacPorts
+   installed argp-standalone::
+
+       make ARGP=/opt/local
 
 The extra applications for Linux
 --------------------------------
