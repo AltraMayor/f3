@@ -8,11 +8,14 @@ PREFIX = /usr/local
 INSTALL = install
 LN = ln
 
-# ATTENTION: You may need to enable the following lines to compile F3
-#            on your platform.
-#ARGP = /usr/local
-#CFLAGS += -I$(ARGP)/include
-#LDFLAGS += -L$(ARGP)/lib -largp
+ifndef OS
+	OS = $(shell uname -s)
+endif
+ifneq ($(OS), Linux)
+	ARGP = /usr/local
+	CFLAGS += -I$(ARGP)/include
+	LDFLAGS += -L$(ARGP)/lib -largp
+endif
 
 all: $(TARGETS)
 extra: $(EXTRA_TARGETS)
