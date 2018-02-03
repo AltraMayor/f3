@@ -22,14 +22,14 @@ extra: $(EXTRA_TARGETS)
 
 install: all
 	$(INSTALL) -d $(DESTDIR)$(PREFIX)/bin
-	$(INSTALL) -oroot -groot -m755 $(TARGETS) $(DESTDIR)$(PREFIX)/bin
+	$(INSTALL) -m755 $(TARGETS) $(DESTDIR)$(PREFIX)/bin
 	$(INSTALL) -d $(DESTDIR)$(PREFIX)/share/man/man1
-	$(INSTALL) -oroot -groot -m644 f3read.1 $(DESTDIR)$(PREFIX)/share/man/man1
+	$(INSTALL) -m644 f3read.1 $(DESTDIR)$(PREFIX)/share/man/man1
 	$(LN) -sf f3read.1 $(DESTDIR)$(PREFIX)/share/man/man1/f3write.1
 
 install-extra: extra
 	$(INSTALL) -d $(DESTDIR)$(PREFIX)/bin
-	$(INSTALL) -oroot -groot -m755 $(EXTRA_TARGETS) $(DESTDIR)$(PREFIX)/bin
+	$(INSTALL) -m755 $(EXTRA_TARGETS) $(DESTDIR)$(PREFIX)/bin
 
 f3write: utils.o f3write.o
 	$(CC) -o $@ $^ $(LDFLAGS) -lm
