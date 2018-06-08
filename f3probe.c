@@ -520,7 +520,24 @@ int main(int argc, char **argv)
 		.keep_file	= false,
 		.save		= true,
 		.min_mem	= false,
-		.reset_type	= RT_USB,
+
+		/* RT_NONE is the only reliable reset type against fake flash.
+		 * See issue #81 for details:
+		 * https://github.com/AltraMayor/f3/issues/81
+		 *
+		 * A side benefit of this reset type is that it works on
+		 * non-USB-backed drives, such as card readers that are
+		 * commonly built in laptops.
+		 * See issue #79 for details:
+		 * https://github.com/AltraMayor/f3/issues/79
+		 *
+		 * A negative side effect is that f3probe runs slower
+		 * for cases in which RT_USB would work. But users can
+		 * still request the reset type RT_USB by
+		 * passing --reset-type=1
+		 */
+		.reset_type	= RT_NONE,
+
 		.time_ops	= false,
 		.real_size_byte	= 1ULL << 31,
 		.fake_size_byte	= 1ULL << 34,
