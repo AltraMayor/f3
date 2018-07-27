@@ -63,7 +63,7 @@ The files of the stable version of F3 are
 `here <https://github.com/AltraMayor/f3/releases>`__. The
 following command uncompresses the files::
 
-    $ unzip f3-7.0.zip
+    $ unzip f3-7.1.zip
 
 
 Compile stable software on Linux or FreeBSD

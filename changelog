@@ -1,3 +1,9 @@
+Version 7.1 - Jul 27, 2018
+
+    * fix compilation issues on non-Linux OSs
+    * f3write: make parameter --max-write-rate work precisely
+    * f3probe: change default reset type to RT_NONE
+
 Version 7.0 - Dec 21, 2017
 
     * stable version of f3probe, f3fix, and f3brew (Linux only)

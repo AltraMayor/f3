@@ -1,6 +1,6 @@
 #ifndef HEADER_VERSION_H
 #define HEADER_VERSION_H
 
-#define F3_STR_VERSION	"7.0"
+#define F3_STR_VERSION	"7.1"
 
 #endif	/* HEADER_VERSION_H */
