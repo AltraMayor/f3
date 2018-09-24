@@ -14,7 +14,7 @@ How can you help?
    F3 on GitHub. The larger the number of stars a project has, the more
    confident new users are to try it out.
 -  If you know a journalist, or are one, suggest to him or her writing
-   an article about fake flash. The media has not been corvering this
+   an article about fake flash. The media has not been covering this
    subject, and having more users aware that fake flash exists will make
    counterfeiters' life harder.
 -  If you own fake flash, consider donating them to me. I've been
@@ -45,9 +45,9 @@ How can you help?
    well, so people can reach out to you directly.
 -  If you know how to code a graphic user interface, please create one
    for the platforms you can. This would increase the number of users
-   that, in turn, would win ground againt the counterfeiters. I'll add a
+   that, in turn, would win ground against the counterfeiters. I'll add a
    link to your application on this page.
--  Tell your frinds about F3, teach them how to use it, publish a video
+-  Tell your friends about F3, teach them how to use it, publish a video
    about F3, find ways to help me to better organize our efforts, spread
    the word, ask for your money back when you buy a fake drive, etc.
 

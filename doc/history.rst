@@ -5,7 +5,7 @@ I started this project when I bought a 32GB microSDHC card for my
 Android phone back in 2010, and found out that this card always fails
 when one fills it up. Googling about this issue, I arrived at the blogs
 `Fight Flash Fraud <https://fightflashfraud.wordpress.com/>`__ and
-`SOSFakeFlash <https://sosfakeflash.wordpress.com/>`__, which recomend
+`SOSFakeFlash <https://sosfakeflash.wordpress.com/>`__, which recommend
 the software H2testw (see
 `here <https://fightflashfraud.wordpress.com/2008/11/24/h2testw-gold-standard-in-detecting-fake-capacity-flash/>`__
 or

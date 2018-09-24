@@ -341,7 +341,7 @@ the drive plus the size of the internal cache, and does not hard reset
 the drive. One can estimate the size of this cache as follows: 523920 \*
 512B ~ 256MB.
 
-Tom Metro once ran ``f3write`` on a 16GB flash drive formated with ext2
+Tom Metro once ran ``f3write`` on a 16GB flash drive formatted with ext2
 file system, and obtained puzzling free space at the end of
 ``f3write``'s output:
 
@@ -371,7 +371,7 @@ This happened because ext2 and some other file systems reserve space for
 special purposes. So they don't allow ``f3write`` to use that reserved
 space. It's mostly safe to ignore that free space. If one wants to use
 all space possible, there're two options: (1) using a file system that
-doesn't reserve space (e.g FAT), or (2) reducing the reserved space. How
+doesn't reserve space (e.g. FAT), or (2) reducing the reserved space. How
 to go for the second option depends on the used file system. The
 `page <http://www.microhowto.info/howto/reduce_the_space_reserved_for_root_on_an_ext2_ext3_or_ext4_filesystem.html>`__
 explains how to reduce the reserved space on ext2, ext3, and ext4 file
@@ -386,14 +386,14 @@ difference: part of the computer industry (including F3) takes 1GB as
 being 2^30 bytes, whereas the rest of the industry assumes that 1GB is
 equal to 10^9 bytes. Some people use GiB for the first definition, but
 its use is not universal, and some users even get confused when they see
-this unit. With this information in mind, the mistery is easily solved:
+this unit. With this information in mind, the mystery is easily solved:
 14.63GiB \* 2^30 / 10^9 = 15.71GB.
 
 When Art Gibbens tested a flash card hosted in a camera connected to his
 Linux box, at some point F3 didn't show progress, and could not be
 killed. After a reboot, the card was read only. Using an adapter to
 connect his card directly to his machine, he recreated the partition of
-the card, and successfully ran F3 with the card in the adpater. Thus,
+the card, and successfully ran F3 with the card in the adapter. Thus,
 Art's experience is a good warning if you're testing your card in a
 device other than an adapter. Please, don't take it as a bug of F3. I'm
 aware of only two things that can make a process "survive" a kill
@@ -415,7 +415,7 @@ dosfsck(8) makes two assumptions that F3 does not: (1) one needs write
 access to the device being tested, not the file system in it; (2)
 hardware may fail, but it won't lie. The first assumption implies that
 one likely needs root's rights to run dosfsck, what is just a small
-incovenience for simple uses. The second assumption is troublesome
+inconvenience for simple uses. The second assumption is troublesome
 because a fake card may be able to persuade dosfsck(8) to report it's
 fine, or not report the whole problem, or give users the illusion the
 memory card was fixed when it wasn't. I singled dosfsck(8) out because
@@ -490,7 +490,7 @@ FAQ <http://www.ebay.com/gds/All-About-Fake-Flash-Drives-2013-/10000000177553258
 for a defense of this approach.
 
 The problem with this approach is that drives are still getting bigger,
-and conterfeiters may, in the future, be able to profit with fake drives
+and counterfeiters may, in the future, be able to profit with fake drives
 whose real capacity are large enough to fool these partial tests. This
 problem is not new. For example, Steve Si implemented
 `FakeFlashTest.exe <http://www.rmprepusb.com/tutorials/-fake-usb-flash-memory-drives>`__,
@@ -558,10 +558,10 @@ drive. Third, you must be careful on the previous requirement to avoid
 messing your machine up. If you don't have root access, you can't use
 ``f3probe``; use ``f3write/f3read`` in this case. The use example below
 helps with the second requirement, but don't forget that you are the one
-responsable for doing it right!
+responsible for doing it right!
 
 The command lsblk(8) is handy to find the block device of the drive. In
-the example below, which I got running lsblk on my laptop, an experient
+the example below, which I got running lsblk on my laptop, an experienced
 user can quickly identify that my flash drive that is mounted at
 "/media/michel/A902-D705" is block device "/dev/sdb". If you don't have
 much experience, you may want to run lsblk before connecting the drive
@@ -588,7 +588,7 @@ choose the drive, not a partition.
 If you get confused between "sdb" and "sdb1", don't worry, ``f3probe``
 will report the mistake and point out the proper one. However, I cannot
 emphasize it enough, you MUST identify the correct drive. If I had
-chosen "sda", ``f3probe`` may have messied my computer. Once the device
+chosen "sda", ``f3probe`` may have messed my computer. Once the device
 is chosen, just prefix it with "/dev/" to obtain its full name.
 
 Once you have carefully identified the device, you run ``f3probe`` like
@@ -640,7 +640,7 @@ is very convenient, you should not rely too much on it. If ``f3probe``
 crashes, the conservative mode won't work. Moreover, depending on the
 fake drive, the conservative mode may not recover the drive to its exact
 original state. In case you are running ``f3probe`` on a
-memory-constrainted computer (e.g. an old Raspberry Pi board), you can
+memory-constrained computer (e.g. an old Raspberry Pi board), you can
 still run it in conservative mode reducing the amount of memory needed
 with option "--min-memory". If you don't have memory to test a large
 drive even using option "--min-memory", you need to use option
@@ -658,7 +658,7 @@ collection.
 The probe time of 1'13" includes the time to run the probe algorithm,
 take measurements, and the time to perform all operations on the drive.
 But it doesn't include the time to recover the saved blocks (if this
-feature is enabled). Therefore, the test would take rougthly another
+feature is enabled). Therefore, the test would take roughly another
 55.48s (i.e. total write time) to write all blocks back to the drive. As
 some will notice, the time to perform all operations on the drive is
 what dominates the probe time: 472.1ms + 55.48s + 17.88s = 1'13". It's
@@ -811,7 +811,7 @@ with real size of 7GB fixed as described in this section:
 
 If you get some sectors corrupted, repeat the ``f3write/f3read`` test.
 Some drives recover from these failures on a second full write cycle.
-However, if the corrupeted sectors persist, the drive is junk because
+However, if the corrupted sectors persist, the drive is junk because
 not only is it a fake drive, but its real memory is already failing.
 
 Good luck!

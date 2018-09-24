@@ -58,7 +58,7 @@ Version 2.0 - Dec 20, 2011
     * f3write now reports proper progress.
     * added progress printout in f3read.
     * improved precision of speed measurements.
-    * formated code following Linux's coding style.
+    * formatted code following Linux's coding style.
 
 Version 1.1.3 - Sep 21, 2010
 
