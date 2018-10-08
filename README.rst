@@ -135,7 +135,7 @@ for details.
 
      /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 
-   See http://brew.sh/ for details.
+   See https://brew.sh/ for details.
 
    MacPorts: https://www.macports.org/install.php
 
