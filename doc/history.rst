@@ -34,7 +34,7 @@ Change log
 
 Starting at version 2.0, F3 supports the platform Mac. Mac users may
 want to check out Thijs Kuipers'
-`page <http://www.broes.nl/2012/08/verify-the-integrity-of-a-flash-sd-card-on-a-mac/>`__
+`page <https://www.broes.nl/2012/08/verify-the-integrity-of-a-flash-sd-card-on-a-mac/>`__
 for help.
 
 Starting at version 3.0, F3 supports the platform Windows/Cygwin, and
@@ -53,7 +53,7 @@ Starting at version 6.0, F3 includes ``f3brew`` as experimental, and for
 Linux only. Linux users may want to check out Vasiliy Kaygorodov's
 `page <https://serverissues.com/blog/2015/12/12/finding-out-chinese-flash-disk-slash-sdhc-card-real-size/>`__
 or Ahmed Essam's
-`page <http://ahmedspace.com/linux-how-to-fix-a-flash-memory-corrupting-files/>`__
+`page <https://ahmedspace.com/how-to-recover-a-corrupted-flash-memory-using-f3-tools-under-linux/>`__
 for help.
 
 Starting at version 7.0, ``f3probe``, ``f3fix``, and ``f3brew`` are stable.

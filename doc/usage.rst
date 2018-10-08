@@ -486,14 +486,14 @@ because it is robust against all counterfeits. However, as drives'
 capacity grows, the time to test these newer drives becomes so painful
 that one rarely runs H2testw's algorithm on a whole drive, but only a
 fraction of it. See question "Why test only 25% or 32GB?" on `this
-FAQ <http://www.ebay.com/gds/All-About-Fake-Flash-Drives-2013-/10000000177553258/g.html>`__
+FAQ <https://web.archive.org/web/20180318154936/https://www.ebay.com/gds/All-About-Fake-Flash-Drives-2013-/10000000177553258/g.html>`__
 for a defense of this approach.
 
 The problem with this approach is that drives are still getting bigger,
 and counterfeiters may, in the future, be able to profit with fake drives
 whose real capacity are large enough to fool these partial tests. This
 problem is not new. For example, Steve Si implemented
-`FakeFlashTest.exe <http://www.rmprepusb.com/tutorials/-fake-usb-flash-memory-drives>`__,
+`FakeFlashTest.exe <https://www.rmprepusb.com/tutorials/-fake-usb-flash-memory-drives>`__,
 which has successfully reduced the amount of time to test drives, and is
 still able to give a good estimate of the real size of fake drives. Yet,
 `FakeFlashTest.exe's
