@@ -17,7 +17,7 @@ const char *argp_program_version = "F3 BREW " F3_STR_VERSION;
 /* Arguments. */
 static char adoc[] = "<DISK_DEV>";
 
-static char doc[] = "F3 Block REad and Write -- assess the media of "
+static char doc[] = "F3 Block Read and Write -- assess the media of "
 	"a block device writing blocks, resetting the drive, and "
 	"reading the blocks back";
 
