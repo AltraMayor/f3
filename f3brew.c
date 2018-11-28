@@ -17,6 +17,9 @@ const char *argp_program_version = "F3 BREW " F3_STR_VERSION;
 /* Arguments. */
 static char adoc[] = "<DISK_DEV>";
 
+/* The capital "E" in "REad" in the string below is not a typo.
+ * It shows from where the name B-RE-W comes.
+ */
 static char doc[] = "F3 Block REad and Write -- assess the media of "
 	"a block device writing blocks, resetting the drive, and "
 	"reading the blocks back";
