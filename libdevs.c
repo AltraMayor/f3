@@ -413,6 +413,8 @@ static int read_all(int fd, char *buf, size_t count)
 	do {
 		ssize_t rc = read(fd, buf + done, count - done);
 		if (rc < 0) {
+			if (errno == EINTR)
+				continue;
 			assert(errno == EIO);
 			return - errno;
 		}
