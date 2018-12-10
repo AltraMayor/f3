@@ -23,7 +23,7 @@
 #include "libutils.h"
 #include "libdevs.h"
 
-static const char const *ftype_to_name[FKTY_MAX] = {
+static const char *ftype_to_name[FKTY_MAX] = {
 	[FKTY_GOOD]		= "good",
 	[FKTY_BAD]		= "bad",
 	[FKTY_LIMBO]		= "limbo",
