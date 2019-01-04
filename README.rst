@@ -209,7 +209,7 @@ Thanks to our growing community of fraud fighters, we have a couple of
 graphical user interfaces (GUIs) available for F3:
 
 `F3 QT <https://github.com/zwpwjwtz/f3-qt>`__ is a Linux GUI that uses
-QT. F3 QT supports ``f3write``, ``f3read``, and ``f3probe``. Author:
+QT. F3 QT supports ``f3write``, ``f3read``, ``f3probe``, and ``f3fix``. Author:
 Tianze.
 
 `F3 X <https://github.com/insidegui/F3X>`__ is a OS X GUI that uses
