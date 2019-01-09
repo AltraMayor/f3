@@ -151,6 +151,10 @@ struct flow {
 	int		blocks_per_delay;
 	/* Delay in miliseconds. */
 	int		delay_ms;
+	/* Tolerance below and above delay_ms that makes a measurement
+	 * valid in steady state.
+	 */
+	int		delay_tolerance_ms;
 	/* Maximum write rate in bytes per second. */
 	double		max_write_rate;
 	/* Number of measurements after reaching FW_STEADY state. */
@@ -192,6 +196,7 @@ static void init_flow(struct flow *fw, uint64_t total_size,
 	fw->block_size		= 512;	/* Bytes	*/
 	fw->blocks_per_delay	= 1;	/* 512B/s	*/
 	fw->delay_ms		= 1000;	/* 1s		*/
+	fw->delay_tolerance_ms	= fw->delay_ms * 0.005; /* 0.5% */
 	fw->max_write_rate	= max_write_rate <= 0
 		? DBL_MAX : max_write_rate * 1024.;
 	fw->measurements	= 0;
@@ -404,8 +409,16 @@ static int measure(int fd, struct flow *fw, ssize_t written)
 			move_to_steady(fw);
 		break;
 
-	case FW_STEADY:
-		update_mean(fw);
+	case FW_STEADY: {
+		bool within_tolerance = labs(delay - fw->delay_ms) <=
+			fw->delay_tolerance_ms;
+		/* According to issue #102, calls to fdatasync()
+		 * might take a long time (.e.g. 3s or 4s),
+		 * so we should only update the mean when delay is
+		 * within the tolerance of fw->delay_ms.
+		 */
+		if (within_tolerance)
+			update_mean(fw);
 
 		if (delay <= fw->delay_ms) {
 			if (inst_speed < fw->max_write_rate) {
@@ -417,11 +430,20 @@ static int measure(int fd, struct flow *fw, ssize_t written)
 				 * maximum allowed rate, wait until next cycle.
 				 */
 				slow_down = true;
+
+				if (!within_tolerance) {
+					/* We have not updated the mean above,
+					 * but, since it's at maximum write
+					 * rate, we must update the mean.
+					 */
+					update_mean(fw);
+				}
 			}
 		} else if (fw->blocks_per_delay > 1) {
 			move_to_dec(fw);
 		}
 		break;
+	}
 
 	default:
 		assert(0);
