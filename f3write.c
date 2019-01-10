@@ -150,17 +150,13 @@ struct flow {
 	/* Blocks to write before measurement. */
 	int		blocks_per_delay;
 	/* Delay in miliseconds. */
-	int		delay_ms;
-	/* Tolerance below and above delay_ms that makes a measurement
-	 * valid in steady state.
-	 */
-	int		delay_tolerance_ms;
+	unsigned int	delay_ms;
 	/* Maximum write rate in bytes per second. */
 	double		max_write_rate;
-	/* Number of measurements after reaching FW_STEADY state. */
-	uint64_t	measurements;
 	/* Number of measured blocks. */
 	uint64_t	measured_blocks;
+	/* Measured time. */
+	uint64_t	measured_time_ms;
 	/* State. */
 	enum {FW_INC, FW_DEC, FW_SEARCH, FW_STEADY} state;
 	/* Number of characters to erase before printing out progress. */
@@ -175,7 +171,7 @@ struct flow {
 	/* Range of blocks_per_delay while in FW_SEARCH state. */
 	int		bpd1, bpd2;
 	/* Time measurements. */
-	struct timeval	t1, t2;
+	struct timeval	t1;
 };
 
 static inline void move_to_inc_at_start(struct flow *fw)
@@ -196,11 +192,10 @@ static void init_flow(struct flow *fw, uint64_t total_size,
 	fw->block_size		= 512;	/* Bytes	*/
 	fw->blocks_per_delay	= 1;	/* 512B/s	*/
 	fw->delay_ms		= 1000;	/* 1s		*/
-	fw->delay_tolerance_ms	= fw->delay_ms * 0.005; /* 0.5% */
 	fw->max_write_rate	= max_write_rate <= 0
 		? DBL_MAX : max_write_rate * 1024.;
-	fw->measurements	= 0;
 	fw->measured_blocks	= 0;
+	fw->measured_time_ms	= 0;
 	fw->erase		= 0;
 	assert(fw->block_size > 0);
 	assert(fw->block_size % SECTOR_SIZE == 0);
@@ -235,7 +230,7 @@ static void erase(int count)
 static inline double get_avg_speed(struct flow *fw)
 {
 	return	(double)(fw->measured_blocks * fw->block_size * 1000) /
-		(double)(fw->measurements * fw->delay_ms);
+		fw->measured_time_ms;
 }
 
 static int pr_time(double sec)
@@ -275,15 +270,8 @@ static int pr_time(double sec)
 	return tot + c;
 }
 
-static inline void update_mean(struct flow *fw)
-{
-	fw->measurements++;
-	fw->measured_blocks += fw->written_blocks;
-}
-
 static inline void move_to_steady(struct flow *fw)
 {
-	update_mean(fw);
 	fw->state = FW_STEADY;
 }
 
@@ -342,15 +330,15 @@ static inline int is_rate_below(const struct flow *fw,
 	long delay, double inst_speed)
 {
 	/* We use logical and here to enforce both limist. */
-	return delay < fw->delay_ms && inst_speed < fw->max_write_rate;
+	return delay <= fw->delay_ms && inst_speed < fw->max_write_rate;
 }
 
 static int measure(int fd, struct flow *fw, ssize_t written)
 {
-	long delay;
 	div_t result = div(written, fw->block_size);
-	double inst_speed;
-	bool slow_down = false;
+	struct timeval t2;
+	long delay;
+	double bytes_k, inst_speed;
 
 	assert(result.rem == 0);
 	fw->written_blocks += result.quot;
@@ -362,14 +350,46 @@ static int measure(int fd, struct flow *fw, ssize_t written)
 	if (fdatasync(fd) < 0)
 		return -1; /* Caller can read errno(3). */
 
-	assert(!gettimeofday(&fw->t2, NULL));
 	/* Help the kernel to help us. */
 	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
-	delay = delay_ms(&fw->t1, &fw->t2);
+
+	assert(!gettimeofday(&t2, NULL));
+	delay = delay_ms(&fw->t1, &t2);
 
 	/* Instantaneous speed in bytes per second. */
-	inst_speed = (double)fw->blocks_per_delay * fw->block_size * 1000 /
-		fw->delay_ms;
+	bytes_k = fw->blocks_per_delay * fw->block_size * 1000.0;
+	inst_speed = bytes_k / delay;
+
+	if (delay < fw->delay_ms && inst_speed > fw->max_write_rate) {
+		/* Wait until inst_speed == fw->max_write_rate (if possible). */
+		double wait_ms = round((bytes_k - delay * fw->max_write_rate)
+			/ fw->max_write_rate);
+
+		 if (wait_ms < 0) {
+			/* Wait what is possible. */
+			wait_ms = fw->delay_ms - delay;
+		} else if (delay + wait_ms < fw->delay_ms) {
+			/* wait_ms is not the largest possible value, so
+			 * force the flow algorithm to keep increasing it.
+			 * Otherwise, the delay to print progress may be
+			 * too small.
+			 */
+			wait_ms++;
+		}
+
+		if (wait_ms > 0) {
+			/* Slow down. */
+			assert(!usleep(wait_ms * 1000));
+
+			/* Adjust measurements. */
+			delay += wait_ms;
+			inst_speed = bytes_k / delay;
+		}
+	}
+
+	/* Update mean. */
+	fw->measured_blocks += fw->written_blocks;
+	fw->measured_time_ms += delay;
 
 	switch (fw->state) {
 	case FW_INC:
@@ -410,34 +430,11 @@ static int measure(int fd, struct flow *fw, ssize_t written)
 		break;
 
 	case FW_STEADY: {
-		bool within_tolerance = labs(delay - fw->delay_ms) <=
-			fw->delay_tolerance_ms;
-		/* According to issue #102, calls to fdatasync()
-		 * might take a long time (.e.g. 3s or 4s),
-		 * so we should only update the mean when delay is
-		 * within the tolerance of fw->delay_ms.
-		 */
-		if (within_tolerance)
-			update_mean(fw);
-
 		if (delay <= fw->delay_ms) {
 			if (inst_speed < fw->max_write_rate) {
 				move_to_inc(fw);
-			} if (inst_speed > fw->max_write_rate) {
+			} else if (inst_speed > fw->max_write_rate) {
 				move_to_dec(fw);
-			} else {
-				/* Since we are already writing at
-				 * maximum allowed rate, wait until next cycle.
-				 */
-				slow_down = true;
-
-				if (!within_tolerance) {
-					/* We have not updated the mean above,
-					 * but, since it's at maximum write
-					 * rate, we must update the mean.
-					 */
-					update_mean(fw);
-				}
 			}
 		} else if (fw->blocks_per_delay > 1) {
 			move_to_dec(fw);
@@ -463,7 +460,7 @@ static int measure(int fd, struct flow *fw, ssize_t written)
 		fw->erase = printf("%.2f%% -- %.2f %s/s",
 			percent, inst_speed, unit);
 		assert(fw->erase > 0);
-		if (fw->measurements > 0)
+		if (fw->measured_time_ms > fw->delay_ms)
 			fw->erase += pr_time(
 				(fw->total_size - fw->total_written) /
 				get_avg_speed(fw));
@@ -471,8 +468,6 @@ static int measure(int fd, struct flow *fw, ssize_t written)
 	}
 
 	start_measurement(fw);
-	if (slow_down)
-		assert(!usleep((fw->delay_ms - delay) * 1000));
 	return 0;
 }
 
@@ -639,7 +634,7 @@ static int fill_fs(const char *path, long start_at, long end_at,
 	/* Final report. */
 	pr_freespace(get_freespace(path));
 	/* Writing speed. */
-	if (fw.measurements > 0) {
+	if (fw.measured_time_ms > fw.delay_ms) {
 		double speed = get_avg_speed(&fw);
 		const char *unit = adjust_unit(&speed);
 		printf("Average writing speed: %.2f %s/s\n", speed, unit);
