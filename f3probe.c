@@ -508,7 +508,7 @@ static int test_device(struct args *args)
 	}
 
 	free((void *)final_dev_filename);
-	return 0;
+	return fake_type == FKTY_GOOD ? 0 : 100 + fake_type;
 }
 
 int main(int argc, char **argv)
