@@ -485,6 +485,21 @@ static int end_measurement(int fd, struct flow *fw)
 	return 0;
 }
 
+/* XXX Avoid duplicate this function, which was copied from libdevs.c. */
+static int write_all(int fd, const char *buf, size_t count)
+{
+	size_t done = 0;
+	do {
+		ssize_t rc = write(fd, buf + done, count - done);
+		if (rc < 0) {
+			/* The write() failed. */
+			return errno;
+		}
+		done += rc;
+	} while (done < count);
+	return 0;
+}
+
 #define MAX_WRITE_SIZE	(1<<21)	/* 2MB */
 
 /* Return true when disk is full. */
@@ -523,7 +538,6 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 	remaining = size;
 	start_measurement(fw);
 	while (remaining > 0) {
-		ssize_t written;
 		ssize_t write_size = fw->block_size *
 			(fw->blocks_per_delay - fw->written_blocks);
 		assert(write_size > 0);
@@ -532,23 +546,11 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 		if ((size_t)write_size > remaining)
 			write_size = remaining;
 		offset = fill_buffer(buf, write_size, offset);
-		written = write(fd, buf, write_size);
-		if (written < 0) {
-			saved_errno = errno;
+		saved_errno = write_all(fd, buf, write_size);
+		if (saved_errno)
 			break;
-		}
-		if (written < write_size) {
-			/* It must have filled up the file system.
-			 * errno should be equal to ENOSPC.
-			 */
-			assert(write(fd, buf + written, write_size - written)
-				< 0);
-			saved_errno = errno;
-			break;
-		}
-		assert(written == write_size);
-		remaining -= written;
-		if (measure(fd, fw, written) < 0) {
+		remaining -= write_size;
+		if (measure(fd, fw, write_size) < 0) {
 			saved_errno = errno;
 			break;
 		}
