@@ -143,14 +143,14 @@ struct flow {
 	uint64_t	total_written;
 	/* If true, show progress. */
 	int		progress;
-	/* Writing rate in bytes. */
+	/* Block size in bytes. */
 	int		block_size;
-	/* Increment to apply to @blocks_per_delay. */
-	int		step;
-	/* Blocks to write before measurement. */
-	int		blocks_per_delay;
-	/* Delay in miliseconds. */
+	/* Delay intended between measurements in miliseconds. */
 	unsigned int	delay_ms;
+	/* Increment to apply to @blocks_per_delay. */
+	int64_t		step;
+	/* Blocks to write before measurement. */
+	int64_t		blocks_per_delay;
 	/* Maximum write rate in bytes per second. */
 	double		max_write_rate;
 	/* Number of measured blocks. */
@@ -167,9 +167,9 @@ struct flow {
 	 */
 
 	/* Number of blocks written since last measurement. */
-	int		written_blocks;
+	int64_t		written_blocks;
 	/* Range of blocks_per_delay while in FW_SEARCH state. */
-	int		bpd1, bpd2;
+	int64_t		bpd1, bpd2;
 	/* Time measurements. */
 	struct timeval	t1;
 };
@@ -275,7 +275,7 @@ static inline void move_to_steady(struct flow *fw)
 	fw->state = FW_STEADY;
 }
 
-static void move_to_search(struct flow *fw, int bpd1, int bpd2)
+static void move_to_search(struct flow *fw, int64_t bpd1, int64_t bpd2)
 {
 	assert(bpd1 > 0);
 	assert(bpd2 >= bpd1);
@@ -335,7 +335,7 @@ static inline int is_rate_below(const struct flow *fw,
 
 static int measure(int fd, struct flow *fw, ssize_t written)
 {
-	div_t result = div(written, fw->block_size);
+	ldiv_t result = ldiv(written, fw->block_size);
 	struct timeval t2;
 	long delay;
 	double bytes_k, inst_speed;
