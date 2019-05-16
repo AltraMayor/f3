@@ -226,11 +226,17 @@ static void erase(int count)
 	repeat_ch('\b',	count);
 }
 
+static inline double get_avg_speed_given_time(struct flow *fw,
+	uint64_t total_time_ms)
+{
+	return (double)(fw->measured_blocks * fw->block_size * 1000) /
+		total_time_ms;
+}
+
 /* Average writing speed in byte/s. */
 static inline double get_avg_speed(struct flow *fw)
 {
-	return	(double)(fw->measured_blocks * fw->block_size * 1000) /
-		fw->measured_time_ms;
+	return get_avg_speed_given_time(fw, fw->measured_time_ms);
 }
 
 static int pr_time(double sec)
@@ -337,7 +343,7 @@ static int measure(int fd, struct flow *fw, ssize_t written)
 {
 	ldiv_t result = ldiv(written, fw->block_size);
 	struct timeval t2;
-	long delay;
+	int64_t delay;
 	double bytes_k, inst_speed;
 
 	assert(result.rem == 0);
@@ -594,6 +600,12 @@ static inline void pr_freespace(uint64_t fs)
 	printf("Free space: %.2f %s\n", f, unit);
 }
 
+static inline void pr_avg_speed(double speed)
+{
+	const char *unit = adjust_unit(&speed);
+	printf("Average writing speed: %.2f %s/s\n", speed, unit);
+}
+
 static int fill_fs(const char *path, long start_at, long end_at,
 	long max_write_rate, int progress)
 {
@@ -601,6 +613,7 @@ static int fill_fs(const char *path, long start_at, long end_at,
 	struct flow fw;
 	long i;
 	int has_suggested_max_write_rate = max_write_rate > 0;
+	struct timeval t1, t2;
 
 	free_space = get_freespace(path);
 	pr_freespace(free_space);
@@ -628,20 +641,30 @@ static int fill_fs(const char *path, long start_at, long end_at,
 	}
 
 	init_flow(&fw, free_space, max_write_rate, progress);
+	assert(!gettimeofday(&t1, NULL));
 	for (i = start_at; i <= end_at; i++)
 		if (create_and_fill_file(path, i, GIGABYTES,
 			&has_suggested_max_write_rate, &fw))
 			break;
+	assert(!gettimeofday(&t2, NULL));
 
 	/* Final report. */
 	pr_freespace(get_freespace(path));
 	/* Writing speed. */
 	if (fw.measured_time_ms > fw.delay_ms) {
-		double speed = get_avg_speed(&fw);
-		const char *unit = adjust_unit(&speed);
-		printf("Average writing speed: %.2f %s/s\n", speed, unit);
-	} else
-		printf("Writing speed not available\n");
+		pr_avg_speed(get_avg_speed(&fw));
+	} else {
+		/* If the drive is too fast for the measuments above,
+		 * try a coarse approximation of the writing speed.
+		 */
+		int64_t total_time_ms = delay_ms(&t1, &t2);
+		if (total_time_ms > 0) {
+			pr_avg_speed(get_avg_speed_given_time(&fw,
+				total_time_ms));
+		} else {
+			printf("Writing speed not available\n");
+		}
+	}
 
 	return 0;
 }

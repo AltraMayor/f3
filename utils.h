@@ -17,10 +17,11 @@ int is_my_file(const char *filename);
 /* Caller must free(3) the returned pointer. */
 char *full_fn_from_number(const char **filename, const char *path, long num);
 
-static inline long delay_ms(const struct timeval *t1, const struct timeval *t2)
+static inline int64_t delay_ms(const struct timeval *t1,
+	const struct timeval *t2)
 {
-	return	(t2->tv_sec  - t1->tv_sec)  * 1000 +
-		(t2->tv_usec - t1->tv_usec) / 1000;
+	return (int64_t)(t2->tv_sec  - t1->tv_sec)  * 1000 +
+			(t2->tv_usec - t1->tv_usec) / 1000;
 }
 
 const long *ls_my_files(const char *path, long start_at, long end_at);
