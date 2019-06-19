@@ -1,3 +1,10 @@
+Version 7.2 - Jun 19, 2019
+
+    * f3write: keep up with extremely fast NVM drives (issue #117)
+    * f3write: improve measurement of write speed (issue #102)
+    * f3write: handle rare assetion failure (issue #111)
+    * f3probe: handle rare assetion failure (issue #82)
+
 Version 7.1 - Jul 27, 2018
 
     * fix compilation issues on non-Linux OSs
