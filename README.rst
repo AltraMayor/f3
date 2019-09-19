@@ -53,6 +53,31 @@ Use f3probe's output to determine the parameters for i3fix::
 
     # ./f3fix --last-sec=16477878 /dev/sdb
 
+Docker
+======
+
+Instead of building and installing the tools, and their depending packages, in your local OS,
+the tools can be run from a Docker container.
+
+The included Dockerfile installs all tools, both the base tools, and the extras.
+
+Build
+-----
+
+To create a Docker image, run::
+
+  $ docker build -t f3:latest .
+
+Running
+-------
+
+Since we're dealing with attached devices, Docker needs to run in privileged mode::
+
+  $ docker run -it --rm --privileged -v <device>:<device> f3:latest <f3-command> [<f3-options>] <device>
+
+The commands, and their parameters, are as otherwise described in this document.
+Since the commands are installed, they should not be prefixed with the dot-slash notation.
+
 Installation
 ============
 
