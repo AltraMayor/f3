@@ -78,6 +78,9 @@ Since we're dealing with attached devices, Docker needs to run in privileged mod
 The commands, and their parameters, are as otherwise described in this document.
 Since the commands are installed, they should not be prefixed with the dot-slash notation.
 
+A pre-built `image <https://cloud.docker.com/repository/docker/peron/f3>`__ is available over at Docker Hub,
+ready to be used.
+
 Installation
 ============
 
