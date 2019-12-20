@@ -206,6 +206,10 @@ can install these libraries with the following command::
 
     sudo apt-get install libudev1 libudev-dev libparted0-dev
 
+On Fedora, you can install these libraries with the following command::
+
+    sudo dnf install systemd-devel parted-devel
+
 Compile the extra applications
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
