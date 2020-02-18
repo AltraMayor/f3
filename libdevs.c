@@ -415,7 +415,16 @@ static int read_all(int fd, char *buf, size_t count)
 		if (rc < 0) {
 			if (errno == EINTR)
 				continue;
-			assert(errno == EIO || errno == ENODATA);
+			if (errno == EIO || errno == ENODATA) {
+				/* These errors are "expected",
+				 * so ignore them.
+				 */
+			} else {
+				/* Execution should not come here. */
+				err(errno,
+					"%s(): unexpected error code from read(2) = %i",
+					__func__, errno);
+			}
 			return - errno;
 		}
 		assert(rc != 0); /* We should never hit the end of the file. */
