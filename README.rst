@@ -50,7 +50,7 @@ Correcting capacity to actual size with f3fix
 ---------------------------------------------
 
 f3fix creates a partition that fits the actual size of the fake drive.
-Use f3probe's output to determine the parameters for i3fix::
+Use f3probe's output to determine the parameters for f3fix::
 
     # ./f3fix --last-sec=16477878 /dev/sdb
 
