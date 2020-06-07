@@ -118,6 +118,8 @@ static inline void update_dt(struct timeval *dt, const struct timeval *t1,
 #define CLEAR	("\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b" \
 		 "\b\b\b\b\b\b\b\b\b\b\b\b\b")
 
+#define MAX_READ_SIZE	(1<<21)	/* 2MB, same as MAX_WRITE_SIZE in f3write.c */
+
 static void validate_file(const char *path, int number,
 	uint64_t *ptr_ok, uint64_t *ptr_corrupted, uint64_t *ptr_changed,
 	uint64_t *ptr_overwritten, uint64_t *ptr_size, int *ptr_read_all,
@@ -126,7 +128,8 @@ static void validate_file(const char *path, int number,
 	char *full_fn;
 	const char *filename;
 	const int num_int64 = SECTOR_SIZE >> 3;
-	uint64_t sector[num_int64];
+	const int chunk_sector_count = MAX_READ_SIZE / SECTOR_SIZE;
+	uint64_t sector[num_int64 * chunk_sector_count];
 	FILE *f;
 	int fd;
 	size_t sectors_read;
@@ -169,38 +172,44 @@ static void validate_file(const char *path, int number,
 	/* Help the kernel to help us. */
 	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL));
 
-	sectors_read = fread(sector, SECTOR_SIZE, 1, f);
+	sectors_read = fread(sector, SECTOR_SIZE, chunk_sector_count, f);
 	final_errno = errno;
 	expected_offset = (uint64_t)number * GIGABYTES;
 	while (sectors_read > 0) {
 		uint64_t rn;
 		int error_count, i;
 
-		assert(sectors_read == 1);
+		assert(sectors_read >= 1);
 
-		rn = sector[0];
-		error_count = 0;
-		for (i = 1; error_count <= TOLERANCE && i < num_int64; i++) {
-			rn = random_number(rn);
-			if (rn != sector[i])
-				error_count++;
-		}
-
-		if (expected_offset == sector[0]) {
-			if (error_count == 0)
-				(*ptr_ok)++;
-			else if (error_count <= TOLERANCE)
-				(*ptr_changed)++;
+		size_t sector_count = 0;
+		while (sector_count < sectors_read) {
+			int sector_start = sector_count * num_int64;
+			int sector_end = (sector_count + 1) * num_int64;
+			rn = sector[sector_start];
+			error_count = 0;
+			for (i = sector_start + 1; error_count <= TOLERANCE && i < sector_end; i++) {
+				rn = random_number(rn);
+				if (rn != sector[i])
+					error_count++;
+			}
+			if (expected_offset == sector[sector_start]) {
+				if (error_count == 0)
+					(*ptr_ok)++;
+				else if (error_count <= TOLERANCE)
+					(*ptr_changed)++;
+				else
+					(*ptr_corrupted)++;
+			} else if (error_count <= TOLERANCE)
+				(*ptr_overwritten)++;
 			else
 				(*ptr_corrupted)++;
-		} else if (error_count <= TOLERANCE)
-			(*ptr_overwritten)++;
-		else
-			(*ptr_corrupted)++;
 
-		sectors_read = fread(sector, SECTOR_SIZE, 1, f);
+			expected_offset += SECTOR_SIZE;
+			sector_count++;
+		}
+
+		sectors_read = fread(sector, SECTOR_SIZE, chunk_sector_count, f);
 		final_errno = errno;
-		expected_offset += SECTOR_SIZE;
 
 		if (progress) {
 			struct timeval pt2;
