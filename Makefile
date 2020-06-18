@@ -31,7 +31,7 @@ install-extra: extra
 	$(INSTALL) -d $(DESTDIR)$(PREFIX)/bin
 	$(INSTALL) -m755 $(EXTRA_TARGETS) $(DESTDIR)$(PREFIX)/bin
 
-f3write: utils.o f3write.o
+f3write: utils.o libflow.o f3write.o
 	$(CC) -o $@ $^ $(LDFLAGS) -lm
 
 f3read: utils.o f3read.o
