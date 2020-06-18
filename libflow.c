@@ -6,6 +6,7 @@
 #include <float.h>
 #include <assert.h>
 #include <math.h>
+#include <sys/time.h>
 
 #include <unistd.h>	/* Needed for fdatasync(2).	*/
 #include <fcntl.h> 	/* Needed for posix_fadvise(2).	*/
@@ -33,6 +34,8 @@ void init_flow(struct flow *fw, uint64_t total_size,
 	fw->measured_blocks	= 0;
 	fw->measured_time_ms	= 0;
 	fw->erase		= 0;
+	fw->written_blocks	= 0;
+	fw->acc_delay_us	= 0;
 	assert(fw->block_size > 0);
 	assert(fw->block_size % SECTOR_SIZE == 0);
 
@@ -91,6 +94,45 @@ static int pr_time(double sec)
 		c = printf("%is", (int)round(sec));
 	assert(c > 0);
 	return tot + c;
+}
+
+static void report_progress(struct flow *fw, double inst_speed)
+{
+	const char *unit = adjust_unit(&inst_speed);
+	double percent;
+	/* The following shouldn't be necessary, but sometimes
+	 * the initial free space isn't exactly reported
+	 * by the kernel; this issue has been seen on Macs.
+	 */
+	if (fw->total_size < fw->total_written)
+		fw->total_size = fw->total_written;
+	percent = (double)fw->total_written * 100 / fw->total_size;
+	erase(fw->erase);
+	fw->erase = printf("%.2f%% -- %.2f %s/s",
+		percent, inst_speed, unit);
+	assert(fw->erase > 0);
+	if (has_enough_measurements(fw))
+		fw->erase += pr_time(
+			(fw->total_size - fw->total_written) /
+			get_avg_speed(fw));
+	fflush(stdout);
+}
+
+static inline void __start_measurement(struct flow *fw)
+{
+	assert(!gettimeofday(&fw->t1, NULL));
+}
+
+void start_measurement(struct flow *fw)
+{
+	/*
+	 * The report below is especially useful when a single measurement spans
+	 * multiple files; this happens when a drive is faster than 1GB/s.
+	 */
+	if (fw->progress)
+		report_progress(fw, fw->blocks_per_delay * fw->block_size *
+			1000.0 / fw->delay_ms);
+	__start_measurement(fw);
 }
 
 static inline void move_to_steady(struct flow *fw)
@@ -156,6 +198,14 @@ static inline int is_rate_below(const struct flow *fw,
 	return delay <= fw->delay_ms && inst_speed < fw->max_write_rate;
 }
 
+/* XXX Avoid duplicate this function, which was copied from libutils.h. */
+static inline uint64_t diff_timeval_us(const struct timeval *t1,
+	const struct timeval *t2)
+{
+	return (t2->tv_sec - t1->tv_sec) * 1000000ULL +
+		t2->tv_usec - t1->tv_usec;
+}
+
 int measure(int fd, struct flow *fw, ssize_t written)
 {
 	ldiv_t result = ldiv(written, fw->block_size);
@@ -169,6 +219,7 @@ int measure(int fd, struct flow *fw, ssize_t written)
 
 	if (fw->written_blocks < fw->blocks_per_delay)
 		return 0;
+	assert(fw->written_blocks == fw->blocks_per_delay);
 
 	if (fdatasync(fd) < 0)
 		return -1; /* Caller can read errno(3). */
@@ -177,7 +228,7 @@ int measure(int fd, struct flow *fw, ssize_t written)
 	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
 
 	assert(!gettimeofday(&t2, NULL));
-	delay = delay_ms(&fw->t1, &t2);
+	delay = (diff_timeval_us(&fw->t1, &t2) + fw->acc_delay_us) / 1000;
 
 	/* Instantaneous speed in bytes per second. */
 	bytes_k = fw->blocks_per_delay * fw->block_size * 1000.0;
@@ -269,41 +320,46 @@ int measure(int fd, struct flow *fw, ssize_t written)
 		assert(0);
 	}
 
-	if (fw->progress) {
-		const char *unit = adjust_unit(&inst_speed);
-		double percent;
-		/* The following shouldn't be necessary, but sometimes
-		 * the initial free space isn't exactly reported
-		 * by the kernel; this issue has been seen on Macs.
-		 */
-		if (fw->total_size < fw->total_written)
-			fw->total_size = fw->total_written;
-		percent = (double)fw->total_written * 100 / fw->total_size;
-		erase(fw->erase);
-		fw->erase = printf("%.2f%% -- %.2f %s/s",
-			percent, inst_speed, unit);
-		assert(fw->erase > 0);
-		if (has_enough_measurements(fw))
-			fw->erase += pr_time(
-				(fw->total_size - fw->total_written) /
-				get_avg_speed(fw));
-		fflush(stdout);
-	}
+	if (fw->progress)
+		report_progress(fw, inst_speed);
 
-	start_measurement(fw);
+	/* Reset accumulators. */
+	fw->written_blocks = 0;
+	fw->acc_delay_us = 0;
+	__start_measurement(fw);
 	return 0;
 }
 
 int end_measurement(int fd, struct flow *fw)
 {
+	struct timeval t2;
+	int saved_errno;
+	int ret = 0;
+
+	if (fw->written_blocks <= 0)
+		goto out;
+
+	if (fdatasync(fd) < 0) {
+		saved_errno = errno;
+		ret = -1;
+		goto out;
+	}
+	/* Help the kernel to help us. */
+	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
+
+	/* Save time in between closing ongoing file and creating a new file. */
+	assert(!gettimeofday(&t2, NULL));
+	fw->acc_delay_us += diff_timeval_us(&fw->t1, &t2);
+
+out:
 	/* Erase progress information. */
 	erase(fw->erase);
 	fw->erase = 0;
 	fflush(stdout);
 
-	if (fdatasync(fd) < 0)
-		return -1; /* Caller can read errno(3). */
-	/* Help the kernel to help us. */
-	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
-	return 0;
+	if (ret < 0) {
+		/* Propagate errno(3) to caller. */
+		errno = saved_errno;
+	}
+	return ret;
 }

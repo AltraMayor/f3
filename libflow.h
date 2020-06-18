@@ -2,7 +2,6 @@
 #define HEADER_LIBFLOW_H
 
 #include <stdint.h>
-#include <sys/time.h>
 
 struct flow {
 	/* Total number of bytes to be written. */
@@ -36,6 +35,11 @@ struct flow {
 
 	/* Number of blocks written since last measurement. */
 	int64_t		written_blocks;
+	/*
+	 * Accumulated delay before @written_blocks reaches @blocks_per_delay
+	 * in microseconds.
+	 */
+	uint64_t	acc_delay_us;
 	/* Range of blocks_per_delay while in FW_SEARCH state. */
 	int64_t		bpd1, bpd2;
 	/* Time measurements. */
@@ -48,14 +52,8 @@ struct flow {
 void init_flow(struct flow *fw, uint64_t total_size,
 	long max_write_rate, int progress);
 
-static inline void start_measurement(struct flow *fw)
-{
-	fw->written_blocks = 0;
-	assert(!gettimeofday(&fw->t1, NULL));
-}
-
+void start_measurement(struct flow *fw);
 int measure(int fd, struct flow *fw, ssize_t written);
-
 int end_measurement(int fd, struct flow *fw);
 
 static inline int has_enough_measurements(const struct flow *fw)
