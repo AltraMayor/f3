@@ -19,22 +19,22 @@ static inline void move_to_inc_at_start(struct flow *fw)
 }
 
 void init_flow(struct flow *fw, uint64_t total_size,
-	long max_write_rate, int progress,
+	long max_process_rate, int progress,
 	flow_func_flush_chunk_t func_flush_chunk)
 {
 	fw->total_size		= total_size;
-	fw->total_written	= 0;
+	fw->total_processed	= 0;
 	fw->progress		= progress;
 	fw->block_size		= 512;	/* Bytes	*/
 	fw->blocks_per_delay	= 1;	/* 512B/s	*/
 	fw->delay_ms		= 1000;	/* 1s		*/
-	fw->max_write_rate	= max_write_rate <= 0
-		? DBL_MAX : max_write_rate * 1024.;
+	fw->max_process_rate	= max_process_rate <= 0
+		? DBL_MAX : max_process_rate * 1024.;
 	fw->measured_blocks	= 0;
 	fw->measured_time_ms	= 0;
 	fw->erase		= 0;
 	fw->func_flush_chunk	= func_flush_chunk;
-	fw->written_blocks	= 0;
+	fw->processed_blocks	= 0;
 	fw->acc_delay_us	= 0;
 	assert(fw->block_size > 0);
 	assert(fw->block_size % SECTOR_SIZE == 0);
@@ -104,16 +104,16 @@ static void report_progress(struct flow *fw, double inst_speed)
 	 * the initial free space isn't exactly reported
 	 * by the kernel; this issue has been seen on Macs.
 	 */
-	if (fw->total_size < fw->total_written)
-		fw->total_size = fw->total_written;
-	percent = (double)fw->total_written * 100 / fw->total_size;
+	if (fw->total_size < fw->total_processed)
+		fw->total_size = fw->total_processed;
+	percent = (double)fw->total_processed * 100 / fw->total_size;
 	erase(fw->erase);
 	fw->erase = printf("%.2f%% -- %.2f %s/s",
 		percent, inst_speed, unit);
 	assert(fw->erase > 0);
 	if (has_enough_measurements(fw))
 		fw->erase += pr_time(
-			(fw->total_size - fw->total_written) /
+			(fw->total_size - fw->total_processed) /
 			get_avg_speed(fw));
 	fflush(stdout);
 }
@@ -188,14 +188,14 @@ static inline int is_rate_above(const struct flow *fw,
 	long delay, double inst_speed)
 {
 	/* We use logical or here to enforce the lowest limit. */
-	return delay > fw->delay_ms || inst_speed > fw->max_write_rate;
+	return delay > fw->delay_ms || inst_speed > fw->max_process_rate;
 }
 
 static inline int is_rate_below(const struct flow *fw,
 	long delay, double inst_speed)
 {
 	/* We use logical and here to enforce both limist. */
-	return delay <= fw->delay_ms && inst_speed < fw->max_write_rate;
+	return delay <= fw->delay_ms && inst_speed < fw->max_process_rate;
 }
 
 static inline int flush_chunk(const struct flow *fw, int fd)
@@ -244,20 +244,20 @@ static inline uint64_t diff_timeval_us(const struct timeval *t1,
 		t2->tv_usec - t1->tv_usec;
 }
 
-int measure(int fd, struct flow *fw, ssize_t written)
+int measure(int fd, struct flow *fw, ssize_t processed)
 {
-	ldiv_t result = ldiv(written, fw->block_size);
+	ldiv_t result = ldiv(processed, fw->block_size);
 	struct timeval t2;
 	int64_t delay;
 	double bytes_k, inst_speed;
 
 	assert(result.rem == 0);
-	fw->written_blocks += result.quot;
-	fw->total_written += written;
+	fw->processed_blocks += result.quot;
+	fw->total_processed += processed;
 
-	if (fw->written_blocks < fw->blocks_per_delay)
+	if (fw->processed_blocks < fw->blocks_per_delay)
 		return 0;
-	assert(fw->written_blocks == fw->blocks_per_delay);
+	assert(fw->processed_blocks == fw->blocks_per_delay);
 
 	if (flush_chunk(fw, fd) < 0)
 		return -1; /* Caller can read errno(3). */
@@ -269,10 +269,12 @@ int measure(int fd, struct flow *fw, ssize_t written)
 	bytes_k = fw->blocks_per_delay * fw->block_size * 1000.0;
 	inst_speed = bytes_k / delay;
 
-	if (delay < fw->delay_ms && inst_speed > fw->max_write_rate) {
-		/* Wait until inst_speed == fw->max_write_rate (if possible). */
-		double wait_ms = round((bytes_k - delay * fw->max_write_rate)
-			/ fw->max_write_rate);
+	if (delay < fw->delay_ms && inst_speed > fw->max_process_rate) {
+		/* Wait until inst_speed == fw->max_process_rate
+		 * (if possible).
+		 */
+		double wait_ms = round((bytes_k - delay * fw->max_process_rate)
+			/ fw->max_process_rate);
 
 		 if (wait_ms < 0) {
 			/* Wait what is possible. */
@@ -297,7 +299,7 @@ int measure(int fd, struct flow *fw, ssize_t written)
 	}
 
 	/* Update mean. */
-	fw->measured_blocks += fw->written_blocks;
+	fw->measured_blocks += fw->processed_blocks;
 	fw->measured_time_ms += delay;
 
 	switch (fw->state) {
@@ -340,9 +342,9 @@ int measure(int fd, struct flow *fw, ssize_t written)
 
 	case FW_STEADY: {
 		if (delay <= fw->delay_ms) {
-			if (inst_speed < fw->max_write_rate) {
+			if (inst_speed < fw->max_process_rate) {
 				move_to_inc(fw);
-			} else if (inst_speed > fw->max_write_rate) {
+			} else if (inst_speed > fw->max_process_rate) {
 				move_to_dec(fw);
 			}
 		} else if (fw->blocks_per_delay > 1) {
@@ -359,7 +361,7 @@ int measure(int fd, struct flow *fw, ssize_t written)
 		report_progress(fw, inst_speed);
 
 	/* Reset accumulators. */
-	fw->written_blocks = 0;
+	fw->processed_blocks = 0;
 	fw->acc_delay_us = 0;
 	__start_measurement(fw);
 	return 0;
@@ -371,7 +373,7 @@ int end_measurement(int fd, struct flow *fw)
 	int saved_errno;
 	int ret = 0;
 
-	if (fw->written_blocks <= 0)
+	if (fw->processed_blocks <= 0)
 		goto out;
 
 	if (flush_chunk(fw, fd) < 0) {

@@ -150,13 +150,13 @@ static int write_all(int fd, const char *buf, size_t count)
 	return 0;
 }
 
-static int write_chunk(int fd, ssize_t chunk_size, uint64_t *poffset)
+static int write_chunk(int fd, size_t chunk_size, uint64_t *poffset)
 {
-	char buf[MAX_WRITE_SIZE];
+	char buf[MAX_BUFFER_SIZE];
 
 	while (chunk_size > 0) {
-		ssize_t turn_size = chunk_size <= MAX_WRITE_SIZE
-			? chunk_size : MAX_WRITE_SIZE;
+		size_t turn_size = chunk_size <= MAX_BUFFER_SIZE
+			? chunk_size : MAX_BUFFER_SIZE;
 		int ret;
 		chunk_size -= turn_size;
 		*poffset = fill_buffer(buf, turn_size, *poffset);
@@ -203,10 +203,8 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 	remaining = size;
 	start_measurement(fw);
 	while (remaining > 0) {
-		ssize_t write_size = fw->block_size *
-			(fw->blocks_per_delay - fw->written_blocks);
-		assert(write_size > 0);
-		if ((size_t)write_size > remaining)
+		size_t write_size = get_rem_chunk_size(fw);
+		if (write_size > remaining)
 			write_size = remaining;
 		saved_errno = write_chunk(fd, write_size, &offset);
 		if (saved_errno)

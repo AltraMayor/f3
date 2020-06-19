@@ -8,10 +8,10 @@ struct flow;
 typedef int (*flow_func_flush_chunk_t)(const struct flow *fw, int fd);
 
 struct flow {
-	/* Total number of bytes to be written. */
+	/* Total number of bytes to be processed. */
 	uint64_t	total_size;
-	/* Total number of bytes already written. */
-	uint64_t	total_written;
+	/* Total number of bytes already processed. */
+	uint64_t	total_processed;
 	/* If true, show progress. */
 	int		progress;
 	/* Block size in bytes. */
@@ -20,10 +20,10 @@ struct flow {
 	unsigned int	delay_ms;
 	/* Increment to apply to @blocks_per_delay. */
 	int64_t		step;
-	/* Blocks to write before measurement. */
+	/* Blocks to process before measurement. */
 	int64_t		blocks_per_delay;
-	/* Maximum write rate in bytes per second. */
-	double		max_write_rate;
+	/* Maximum processing rate in bytes per second. */
+	double		max_process_rate;
 	/* Number of measured blocks. */
 	uint64_t	measured_blocks;
 	/* Measured time. */
@@ -42,10 +42,10 @@ struct flow {
 	 * Initialized while measuring
 	 */
 
-	/* Number of blocks written since last measurement. */
-	int64_t		written_blocks;
+	/* Number of blocks processed since last measurement. */
+	int64_t		processed_blocks;
 	/*
-	 * Accumulated delay before @written_blocks reaches @blocks_per_delay
+	 * Accumulated delay before @processed_blocks reaches @blocks_per_delay
 	 * in microseconds.
 	 */
 	uint64_t	acc_delay_us;
@@ -55,15 +55,15 @@ struct flow {
 	struct timeval	t1;
 };
 
-/* If @max_write_rate <= 0, the maximum write rate is infinity.
- * The unit of @max_write_rate is KB per second.
+/* If @max_process_rate <= 0, the maximum processing rate is infinity.
+ * The unit of @max_process_rate is KB per second.
  */
 void init_flow(struct flow *fw, uint64_t total_size,
-	long max_write_rate, int progress,
+	long max_process_rate, int progress,
 	flow_func_flush_chunk_t func_flush_chunk);
 
 void start_measurement(struct flow *fw);
-int measure(int fd, struct flow *fw, ssize_t written);
+int measure(int fd, struct flow *fw, ssize_t processed);
 int end_measurement(int fd, struct flow *fw);
 
 static inline int has_enough_measurements(const struct flow *fw)
@@ -84,6 +84,14 @@ static inline double get_avg_speed(struct flow *fw)
 	return get_avg_speed_given_time(fw, fw->measured_time_ms);
 }
 
-#define MAX_WRITE_SIZE	(1<<21)	/* 2MB */
+static inline size_t get_rem_chunk_size(struct flow *fw)
+{
+	ssize_t ret = (fw->blocks_per_delay - fw->processed_blocks) *
+		fw->block_size;
+	assert(ret > 0);
+	return ret;
+}
+
+#define MAX_BUFFER_SIZE	(1<<21)	/* 2MB */
 
 #endif	/* HEADER_LIBFLOW_H */
