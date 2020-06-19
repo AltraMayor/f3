@@ -3,6 +3,10 @@
 
 #include <stdint.h>
 
+struct flow;
+
+typedef int (*flow_func_flush_chunk_t)(const struct flow *fw, int fd);
+
 struct flow {
 	/* Total number of bytes to be written. */
 	uint64_t	total_size;
@@ -30,6 +34,11 @@ struct flow {
 	int		erase;
 
 	/*
+	 * Methods
+	 */
+	flow_func_flush_chunk_t func_flush_chunk;
+
+	/*
 	 * Initialized while measuring
 	 */
 
@@ -50,7 +59,8 @@ struct flow {
  * The unit of @max_write_rate is KB per second.
  */
 void init_flow(struct flow *fw, uint64_t total_size,
-	long max_write_rate, int progress);
+	long max_write_rate, int progress,
+	flow_func_flush_chunk_t func_flush_chunk);
 
 void start_measurement(struct flow *fw);
 int measure(int fd, struct flow *fw, ssize_t written);

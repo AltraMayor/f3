@@ -6,10 +6,8 @@
 #include <float.h>
 #include <assert.h>
 #include <math.h>
+#include <unistd.h>
 #include <sys/time.h>
-
-#include <unistd.h>	/* Needed for fdatasync(2).	*/
-#include <fcntl.h> 	/* Needed for posix_fadvise(2).	*/
 
 #include "libflow.h"
 #include "utils.h"
@@ -21,7 +19,8 @@ static inline void move_to_inc_at_start(struct flow *fw)
 }
 
 void init_flow(struct flow *fw, uint64_t total_size,
-	long max_write_rate, int progress)
+	long max_write_rate, int progress,
+	flow_func_flush_chunk_t func_flush_chunk)
 {
 	fw->total_size		= total_size;
 	fw->total_written	= 0;
@@ -34,6 +33,7 @@ void init_flow(struct flow *fw, uint64_t total_size,
 	fw->measured_blocks	= 0;
 	fw->measured_time_ms	= 0;
 	fw->erase		= 0;
+	fw->func_flush_chunk	= func_flush_chunk;
 	fw->written_blocks	= 0;
 	fw->acc_delay_us	= 0;
 	assert(fw->block_size > 0);
@@ -198,6 +198,13 @@ static inline int is_rate_below(const struct flow *fw,
 	return delay <= fw->delay_ms && inst_speed < fw->max_write_rate;
 }
 
+static inline int flush_chunk(const struct flow *fw, int fd)
+{
+	if (fw->func_flush_chunk)
+		return fw->func_flush_chunk(fw, fd);
+	return 0;
+}
+
 /* XXX Avoid duplicate this function, which was copied from libutils.h. */
 static inline uint64_t diff_timeval_us(const struct timeval *t1,
 	const struct timeval *t2)
@@ -221,11 +228,8 @@ int measure(int fd, struct flow *fw, ssize_t written)
 		return 0;
 	assert(fw->written_blocks == fw->blocks_per_delay);
 
-	if (fdatasync(fd) < 0)
+	if (flush_chunk(fw, fd) < 0)
 		return -1; /* Caller can read errno(3). */
-
-	/* Help the kernel to help us. */
-	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
 
 	assert(!gettimeofday(&t2, NULL));
 	delay = (diff_timeval_us(&fw->t1, &t2) + fw->acc_delay_us) / 1000;
@@ -339,13 +343,11 @@ int end_measurement(int fd, struct flow *fw)
 	if (fw->written_blocks <= 0)
 		goto out;
 
-	if (fdatasync(fd) < 0) {
+	if (flush_chunk(fw, fd) < 0) {
 		saved_errno = errno;
 		ret = -1;
 		goto out;
 	}
-	/* Help the kernel to help us. */
-	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
 
 	/* Save time in between closing ongoing file and creating a new file. */
 	assert(!gettimeofday(&t2, NULL));

@@ -262,6 +262,18 @@ static inline void pr_avg_speed(double speed)
 	printf("Average writing speed: %.2f %s/s\n", speed, unit);
 }
 
+static int flush_chunk(const struct flow *fw, int fd)
+{
+	UNUSED(fw);
+
+	if (fdatasync(fd) < 0)
+		return -1; /* Caller can read errno(3). */
+
+	/* Help the kernel to help us. */
+	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
+	return 0;
+}
+
 static int fill_fs(const char *path, long start_at, long end_at,
 	long max_write_rate, int progress)
 {
@@ -296,7 +308,7 @@ static int fill_fs(const char *path, long start_at, long end_at,
 		end_at = start_at + (free_space >> 30);
 	}
 
-	init_flow(&fw, free_space, max_write_rate, progress);
+	init_flow(&fw, free_space, max_write_rate, progress, flush_chunk);
 	assert(!gettimeofday(&t1, NULL));
 	for (i = start_at; i <= end_at; i++)
 		if (create_and_fill_file(path, i, GIGABYTES,
