@@ -150,6 +150,24 @@ static int write_all(int fd, const char *buf, size_t count)
 	return 0;
 }
 
+static int write_chunk(int fd, ssize_t chunk_size, uint64_t *poffset)
+{
+	char buf[MAX_WRITE_SIZE];
+
+	while (chunk_size > 0) {
+		ssize_t turn_size = chunk_size <= MAX_WRITE_SIZE
+			? chunk_size : MAX_WRITE_SIZE;
+		int ret;
+		chunk_size -= turn_size;
+		*poffset = fill_buffer(buf, turn_size, *poffset);
+		ret = write_all(fd, buf, turn_size);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
 /* Return true when disk is full. */
 static int create_and_fill_file(const char *path, long number, size_t size,
 	int *phas_suggested_max_write_rate, struct flow *fw)
@@ -157,7 +175,6 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 	char *full_fn;
 	const char *filename;
 	int fd, saved_errno;
-	char buf[MAX_WRITE_SIZE];
 	size_t remaining;
 	uint64_t offset;
 
@@ -189,12 +206,9 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 		ssize_t write_size = fw->block_size *
 			(fw->blocks_per_delay - fw->written_blocks);
 		assert(write_size > 0);
-		if (write_size > MAX_WRITE_SIZE)
-			write_size = MAX_WRITE_SIZE;
 		if ((size_t)write_size > remaining)
 			write_size = remaining;
-		offset = fill_buffer(buf, write_size, offset);
-		saved_errno = write_all(fd, buf, write_size);
+		saved_errno = write_chunk(fd, write_size, &offset);
 		if (saved_errno)
 			break;
 		remaining -= write_size;
