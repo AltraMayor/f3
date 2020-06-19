@@ -3,6 +3,7 @@
 
 #include <assert.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <inttypes.h>
 #include <stdio.h>
 #include <limits.h>
@@ -18,6 +19,7 @@
 #include <argp.h>
 
 #include "utils.h"
+#include "libflow.h"
 #include "version.h"
 
 /* Argp's global variables. */
@@ -100,29 +102,69 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
 
-static inline void update_dt(struct timeval *dt, const struct timeval *t1,
-	const struct timeval *t2)
+struct file_stats {
+	uint64_t secs_ok;
+	uint64_t secs_corrupted;
+	uint64_t secs_changed;
+	uint64_t secs_overwritten;
+
+	uint64_t bytes_read;
+	int read_all;
+};
+
+static inline void zero_fstats(struct file_stats *stats)
 {
-	dt->tv_sec  += t2->tv_sec  - t1->tv_sec;
-	dt->tv_usec += t2->tv_usec - t1->tv_usec;
-	if (dt->tv_usec >= 1000000) {
-		dt->tv_sec++;
-		dt->tv_usec -= 1000000;
-	}
+	memset(stats, 0, sizeof(*stats));
 }
 
 #define TOLERANCE	2
 
-#define PRINT_STATUS(s)	printf("%s%7" PRIu64 "/%9" PRIu64 "/%7" PRIu64 "/%7" \
-	PRIu64, (s), *ptr_ok, *ptr_corrupted, *ptr_changed, *ptr_overwritten)
-
-#define BLANK	"                                 "
-#define CLEAR	("\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b" \
-		 "\b\b\b\b\b\b\b\b\b\b\b\b\b")
-
-static ssize_t read_all(int fd, void *_buf, size_t count)
+static void check_sector(char *_sector, uint64_t expected_offset,
+	struct file_stats *stats)
 {
-	char *buf = _buf;
+	uint64_t *sector = (uint64_t *)_sector;
+	uint64_t rn;
+	const int num_int64 = SECTOR_SIZE >> 3;
+	int error_count, i;
+
+	rn = sector[0];
+	error_count = 0;
+	for (i = 1; error_count <= TOLERANCE && i < num_int64; i++) {
+		rn = random_number(rn);
+		if (rn != sector[i])
+			error_count++;
+	}
+
+	if (expected_offset == sector[0]) {
+		if (error_count == 0)
+			stats->secs_ok++;
+		else if (error_count <= TOLERANCE)
+			stats->secs_changed++;
+		else
+			stats->secs_corrupted++;
+	} else if (error_count <= TOLERANCE)
+		stats->secs_overwritten++;
+	else
+		stats->secs_corrupted++;
+}
+
+static uint64_t check_buffer(char *buf, size_t size, uint64_t expected_offset,
+	struct file_stats *stats)
+{
+	char *beyond_buf = buf + size;
+
+	assert(size % SECTOR_SIZE == 0);
+
+	while (buf < beyond_buf) {
+		check_sector(buf, expected_offset, stats);
+		buf += SECTOR_SIZE;
+		expected_offset += SECTOR_SIZE;
+	}
+	return expected_offset;
+}
+
+static ssize_t read_all(int fd, char *buf, size_t count)
+{
 	size_t done = 0;
 	do {
 		ssize_t rc = read(fd, buf + done, count - done);
@@ -138,28 +180,56 @@ static ssize_t read_all(int fd, void *_buf, size_t count)
 	return done;
 }
 
-static void validate_file(const char *path, int number,
-	uint64_t *ptr_ok, uint64_t *ptr_corrupted, uint64_t *ptr_changed,
-	uint64_t *ptr_overwritten, uint64_t *ptr_size, int *ptr_read_all,
-	struct timeval *ptr_dt, int progress)
+static ssize_t check_chunk(int fd, uint64_t *p_expected_offset,
+	size_t chunk_size, struct file_stats *stats)
+{
+	char buf[MAX_BUFFER_SIZE];
+	ssize_t tot_bytes_read = 0;
+
+	while (chunk_size > 0) {
+		size_t turn_size = chunk_size <= MAX_BUFFER_SIZE
+			? chunk_size : MAX_BUFFER_SIZE;
+		ssize_t bytes_read = read_all(fd, buf, turn_size);
+
+		if (bytes_read < 0) {
+			stats->bytes_read += tot_bytes_read;
+			return bytes_read;
+		}
+
+		if (bytes_read == 0)
+			break;
+
+		tot_bytes_read += bytes_read;
+		chunk_size -= bytes_read;
+		*p_expected_offset = check_buffer(buf, bytes_read,
+			*p_expected_offset, stats);
+	}
+
+	stats->bytes_read += tot_bytes_read;
+	return tot_bytes_read;
+}
+
+static inline void print_status(const struct file_stats *stats)
+{
+	printf("%7" PRIu64 "/%9" PRIu64 "/%7" PRIu64 "/%7" PRIu64,
+		stats->secs_ok, stats->secs_corrupted, stats->secs_changed,
+		stats->secs_overwritten);
+}
+
+static void validate_file(const char *path, int number, struct flow *fw,
+	struct file_stats *stats)
 {
 	char *full_fn;
 	const char *filename;
-	const int num_int64 = SECTOR_SIZE >> 3;
-	uint64_t sector[num_int64];
-	int fd;
+	int fd, saved_errno;
 	ssize_t bytes_read;
 	uint64_t expected_offset;
-	off_t cur_pos;
-	struct timeval t1, t2;
-	/* Progress time. */
-	struct timeval pt1;
 
-	*ptr_ok = *ptr_corrupted = *ptr_changed = *ptr_overwritten = 0;
+	zero_fstats(stats);
 
 	full_fn = full_fn_from_number(&filename, path, number);
 	assert(full_fn);
-	printf("Validating file %s ... %s", filename, progress ? BLANK : "");
+	printf("Validating file %s ... ", filename);
 	fflush(stdout);
 #ifdef __CYGWIN__
 	/* We don't need write access, but some kernels require that
@@ -179,67 +249,40 @@ static void validate_file(const char *path, int number,
 	assert(!fdatasync(fd));
 	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
 
-	/* Obtain initial time. */
-	assert(!gettimeofday(&t1, NULL));
-	pt1 = t1;
-	pt1.tv_sec -= 1000;
 	/* Help the kernel to help us. */
 	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL));
 
-	bytes_read = read_all(fd, sector, SECTOR_SIZE);
+	saved_errno = 0;
 	expected_offset = (uint64_t)number * GIGABYTES;
-	while (bytes_read > 0) {
-		uint64_t rn;
-		int error_count, i;
-
-		assert(bytes_read == SECTOR_SIZE);
-
-		rn = sector[0];
-		error_count = 0;
-		for (i = 1; error_count <= TOLERANCE && i < num_int64; i++) {
-			rn = random_number(rn);
-			if (rn != sector[i])
-				error_count++;
+	start_measurement(fw);
+	while (true) {
+		bytes_read = check_chunk(fd, &expected_offset,
+			get_rem_chunk_size(fw), stats);
+		if (bytes_read == 0)
+			break;
+		if (bytes_read < 0) {
+			saved_errno = - bytes_read;
+			break;
 		}
-
-		if (expected_offset == sector[0]) {
-			if (error_count == 0)
-				(*ptr_ok)++;
-			else if (error_count <= TOLERANCE)
-				(*ptr_changed)++;
-			else
-				(*ptr_corrupted)++;
-		} else if (error_count <= TOLERANCE)
-			(*ptr_overwritten)++;
-		else
-			(*ptr_corrupted)++;
-
-		bytes_read = read_all(fd, sector, SECTOR_SIZE);
-		expected_offset += SECTOR_SIZE;
-
-		if (progress) {
-			struct timeval pt2;
-			assert(!gettimeofday(&pt2, NULL));
-			/* Avoid often printouts. */
-			if (delay_ms(&pt1, &pt2) >= 200) {
-				PRINT_STATUS(CLEAR);
-				fflush(stdout);
-				pt1 = pt2;
-			}
+		if (measure(fd, fw, bytes_read) < 0) {
+			saved_errno = errno;
+			break;
 		}
 	}
-	assert(!gettimeofday(&t2, NULL));
-	update_dt(ptr_dt, &t1, &t2);
+	if (end_measurement(fd, fw) < 0) {
+		/* If a write failure has happened before, preserve it. */
+		if (!saved_errno)
+			saved_errno = errno;
+	}
 
-	*ptr_read_all = bytes_read == 0; /* Reached end of file? */
-	cur_pos = lseek(fd, 0, SEEK_CUR);
-	assert(cur_pos >= 0);
-	*ptr_size = cur_pos;
-
-	PRINT_STATUS(progress ? CLEAR : "");
-	if (!*ptr_read_all) {
+	print_status(stats);
+	stats->read_all = bytes_read == 0;
+	if (!stats->read_all) {
+		assert(saved_errno);
 		printf(" - NOT fully read due to \"%s\"",
-			strerror(- bytes_read));
+			strerror(saved_errno));
+	} else if (saved_errno) {
+		printf(" - %s", strerror(saved_errno));
 	}
 	printf("\n");
 
@@ -254,57 +297,79 @@ static void report(const char *prefix, uint64_t i)
 	printf("%s %.2f %s (%" PRIu64 " sectors)\n", prefix, f, unit, i);
 }
 
-static inline double dt_to_s(struct timeval *dt)
+static uint64_t get_total_size(const char *path, const long *files)
 {
-	double ret = (double)dt->tv_sec + ((double)dt->tv_usec / 1000000.);
-	assert(ret >= 0);
-	return ret > 0 ? ret : 1;
+	uint64_t total_size = 0;
+
+	while (*files >= 0) {
+		struct stat st;
+		int ret;
+		const char *filename;
+		char *full_fn = full_fn_from_number(&filename, path, *files);
+		assert(full_fn);
+
+		ret = stat(full_fn, &st);
+		if (ret < 0)
+			err(errno, "Can't stat file %s", full_fn);
+		if ((st.st_mode & S_IFMT) != S_IFREG)
+			err(EINVAL, "File %s is not a regular file", full_fn);
+		assert(st.st_size >= 0);
+		total_size += st.st_size;
+
+		free(full_fn);
+		files++;
+	}
+	return total_size;
+}
+
+static inline void pr_avg_speed(double speed)
+{
+	const char *unit = adjust_unit(&speed);
+	printf("Average reading speed: %.2f %s/s\n", speed, unit);
 }
 
 static void iterate_files(const char *path, const long *files,
 	long start_at, long end_at, int progress)
 {
 	uint64_t tot_ok, tot_corrupted, tot_changed, tot_overwritten, tot_size;
-	struct timeval tot_dt = { .tv_sec = 0, .tv_usec = 0 };
-	double read_speed;
-	const char *unit;
 	int and_read_all = 1;
 	int or_missing_file = 0;
 	long number = start_at;
+	struct flow fw;
+	struct timeval t1, t2;
 
 	UNUSED(end_at);
 
+	init_flow(&fw, get_total_size(path, files), 0, progress, NULL);
 	tot_ok = tot_corrupted = tot_changed = tot_overwritten = tot_size = 0;
 	printf("                  SECTORS "
 		"     ok/corrupted/changed/overwritten\n");
 
+	assert(!gettimeofday(&t1, NULL));
 	while (*files >= 0) {
-		uint64_t sec_ok, sec_corrupted, sec_changed,
-			sec_overwritten, file_size;
-		int read_all;
+		struct file_stats stats;
 
 		or_missing_file = or_missing_file || (*files != number);
 		for (; number < *files; number++) {
-			char *full_fn;
 			const char *filename;
-			full_fn = full_fn_from_number(&filename, "", number);
+			char *full_fn = full_fn_from_number(&filename, "",
+				number);
 			assert(full_fn);
 			printf("Missing file %s\n", filename);
 			free(full_fn);
 		}
 		number++;
 
-		validate_file(path, *files, &sec_ok, &sec_corrupted,
-			&sec_changed, &sec_overwritten,
-			&file_size, &read_all, &tot_dt, progress);
-		tot_ok += sec_ok;
-		tot_corrupted += sec_corrupted;
-		tot_changed += sec_changed;
-		tot_overwritten += sec_overwritten;
-		tot_size += file_size;
-		and_read_all = and_read_all && read_all;
+		validate_file(path, *files, &fw, &stats);
+		tot_ok += stats.secs_ok;
+		tot_corrupted += stats.secs_corrupted;
+		tot_changed += stats.secs_changed;
+		tot_overwritten += stats.secs_overwritten;
+		tot_size += stats.bytes_read;
+		and_read_all = and_read_all && stats.read_all;
 		files++;
 	}
+	assert(!gettimeofday(&t2, NULL));
 	assert(tot_size / SECTOR_SIZE ==
 		(tot_ok + tot_corrupted + tot_changed + tot_overwritten));
 
@@ -324,9 +389,20 @@ static void iterate_files(const char *path, const long *files,
 		printf("WARNING: Not all data was read due to I/O error(s)\n");
 
 	/* Reading speed. */
-	read_speed = (double)tot_size / dt_to_s(&tot_dt);
-	unit = adjust_unit(&read_speed);
-	printf("Average reading speed: %.2f %s/s\n", read_speed, unit);
+	if (has_enough_measurements(&fw)) {
+		pr_avg_speed(get_avg_speed(&fw));
+	} else {
+		/* If the drive is too fast for the measuments above,
+		 * try a coarse approximation of the reading speed.
+		 */
+		int64_t total_time_ms = delay_ms(&t1, &t2);
+		if (total_time_ms > 0) {
+			pr_avg_speed(get_avg_speed_given_time(&fw,
+				total_time_ms));
+		} else {
+			printf("Reading speed not available\n");
+		}
+	}
 }
 
 int main(int argc, char **argv)

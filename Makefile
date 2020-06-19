@@ -34,8 +34,8 @@ install-extra: extra
 f3write: utils.o libflow.o f3write.o
 	$(CC) -o $@ $^ $(LDFLAGS) -lm
 
-f3read: utils.o f3read.o
-	$(CC) -o $@ $^ $(LDFLAGS)
+f3read: utils.o libflow.o f3read.o
+	$(CC) -o $@ $^ $(LDFLAGS) -lm
 
 f3probe: libutils.o libdevs.o libprobe.o f3probe.o
 	$(CC) -o $@ $^ $(LDFLAGS) -lm -ludev
