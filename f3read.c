@@ -13,6 +13,8 @@
 #include <unistd.h>
 #include <err.h>
 #include <sys/time.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <argp.h>
 
 #include "utils.h"
@@ -118,6 +120,24 @@ static inline void update_dt(struct timeval *dt, const struct timeval *t1,
 #define CLEAR	("\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b" \
 		 "\b\b\b\b\b\b\b\b\b\b\b\b\b")
 
+static ssize_t read_all(int fd, void *_buf, size_t count)
+{
+	char *buf = _buf;
+	size_t done = 0;
+	do {
+		ssize_t rc = read(fd, buf + done, count - done);
+		if (rc < 0) {
+			if (errno == EINTR)
+				continue;
+			return - errno;
+		}
+		if (rc == 0)
+			break;
+		done += rc;
+	} while (done < count);
+	return done;
+}
+
 static void validate_file(const char *path, int number,
 	uint64_t *ptr_ok, uint64_t *ptr_corrupted, uint64_t *ptr_changed,
 	uint64_t *ptr_overwritten, uint64_t *ptr_size, int *ptr_read_all,
@@ -127,11 +147,10 @@ static void validate_file(const char *path, int number,
 	const char *filename;
 	const int num_int64 = SECTOR_SIZE >> 3;
 	uint64_t sector[num_int64];
-	FILE *f;
 	int fd;
-	size_t sectors_read;
+	ssize_t bytes_read;
 	uint64_t expected_offset;
-	int final_errno;
+	off_t cur_pos;
 	struct timeval t1, t2;
 	/* Progress time. */
 	struct timeval pt1;
@@ -146,14 +165,12 @@ static void validate_file(const char *path, int number,
 	/* We don't need write access, but some kernels require that
 	 * the file descriptor passed to fdatasync(2) to be writable.
 	 */
-	f = fopen(full_fn, "rb+");
+	fd = open(full_fn, O_RDWR);
 #else
-	f = fopen(full_fn, "rb");
+	fd = open(full_fn, O_RDONLY);
 #endif
-	if (!f)
+	if (fd < 0)
 		err(errno, "Can't open file %s", full_fn);
-	fd = fileno(f);
-	assert(fd >= 0);
 
 	/* If the kernel follows our advice, f3read won't ever read from cache
 	 * even when testing small memory cards without a remount, and
@@ -169,14 +186,13 @@ static void validate_file(const char *path, int number,
 	/* Help the kernel to help us. */
 	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL));
 
-	sectors_read = fread(sector, SECTOR_SIZE, 1, f);
-	final_errno = errno;
+	bytes_read = read_all(fd, sector, SECTOR_SIZE);
 	expected_offset = (uint64_t)number * GIGABYTES;
-	while (sectors_read > 0) {
+	while (bytes_read > 0) {
 		uint64_t rn;
 		int error_count, i;
 
-		assert(sectors_read == 1);
+		assert(bytes_read == SECTOR_SIZE);
 
 		rn = sector[0];
 		error_count = 0;
@@ -198,8 +214,7 @@ static void validate_file(const char *path, int number,
 		else
 			(*ptr_corrupted)++;
 
-		sectors_read = fread(sector, SECTOR_SIZE, 1, f);
-		final_errno = errno;
+		bytes_read = read_all(fd, sector, SECTOR_SIZE);
 		expected_offset += SECTOR_SIZE;
 
 		if (progress) {
@@ -216,18 +231,19 @@ static void validate_file(const char *path, int number,
 	assert(!gettimeofday(&t2, NULL));
 	update_dt(ptr_dt, &t1, &t2);
 
-	*ptr_read_all = feof(f);
-	*ptr_size = ftell(f);
+	*ptr_read_all = bytes_read == 0; /* Reached end of file? */
+	cur_pos = lseek(fd, 0, SEEK_CUR);
+	assert(cur_pos >= 0);
+	*ptr_size = cur_pos;
 
 	PRINT_STATUS(progress ? CLEAR : "");
 	if (!*ptr_read_all) {
-		assert(ferror(f));
 		printf(" - NOT fully read due to \"%s\"",
-			strerror(final_errno));
+			strerror(- bytes_read));
 	}
 	printf("\n");
 
-	fclose(f);
+	close(fd);
 	free(full_fn);
 }
 
