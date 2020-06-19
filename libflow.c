@@ -6,7 +6,7 @@
 #include <float.h>
 #include <assert.h>
 #include <math.h>
-#include <unistd.h>
+#include <time.h>
 #include <sys/time.h>
 
 #include "libflow.h"
@@ -205,6 +205,37 @@ static inline int flush_chunk(const struct flow *fw, int fd)
 	return 0;
 }
 
+static void msleep(double wait_ms)
+{
+	struct timespec req;
+	int ret;
+
+	assert(!clock_gettime(CLOCK_MONOTONIC, &req));
+
+	/* Add @wait_ms to @req. */
+	if (wait_ms > 1000) {
+		time_t sec = wait_ms / 1000;
+		wait_ms -= sec * 1000;
+		assert(wait_ms > 0);
+		req.tv_sec += sec;
+	}
+	req.tv_nsec += wait_ms * 1000000;
+
+	/* Round @req up. */
+	if (req.tv_nsec >= 1000000000) {
+		ldiv_t result = ldiv(req.tv_nsec, 1000000000);
+		req.tv_sec += result.quot;
+		req.tv_nsec = result.rem;
+	}
+
+	do {
+		ret = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,
+			&req, NULL);
+	} while (ret == EINTR);
+
+	assert(ret == 0);
+}
+
 /* XXX Avoid duplicate this function, which was copied from libutils.h. */
 static inline uint64_t diff_timeval_us(const struct timeval *t1,
 	const struct timeval *t2)
@@ -257,7 +288,7 @@ int measure(int fd, struct flow *fw, ssize_t written)
 
 		if (wait_ms > 0) {
 			/* Slow down. */
-			assert(!usleep(wait_ms * 1000));
+			msleep(wait_ms);
 
 			/* Adjust measurements. */
 			delay += wait_ms;
