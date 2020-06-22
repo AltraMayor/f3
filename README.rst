@@ -238,18 +238,14 @@ Other resources
 Graphical User Interfaces
 -------------------------
 
-Thanks to our growing community of fraud fighters, we have a couple of
-graphical user interfaces (GUIs) available for F3:
+Thanks to our growing community of flash fraud fighters,
+we have the following graphical user interfaces (GUI) available for F3:
 
 `F3 QT <https://github.com/zwpwjwtz/f3-qt>`__ is a Linux GUI that uses
 QT. F3 QT supports ``f3write``, ``f3read``, ``f3probe``, and ``f3fix``. Author:
 Tianze.
 
-`F3 X <https://github.com/insidegui/F3X>`__ is a OS X GUI that uses
-Cocoa. F3 X supports ``f3write`` and ``f3read``. Author: Guilherme
-Rambo.
-
-Please support these projects testing and giving feedback to their
+Please support the above project by testing it and giving feedback to their
 authors. This will make their code improve as it has improved mine.
 
 Files
