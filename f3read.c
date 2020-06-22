@@ -36,6 +36,8 @@ static struct argp_option options[] = {
 		"First NUM.h2w file to be read",			1},
 	{"end-at",		'e',	"NUM",		0,
 		"Last NUM.h2w file to be read",				0},
+	{"max-read-rate",	'r',	"KB/s",		0,
+		"Maximum read rate",					0},
 	{"show-progress",	'p',	"NUM",		0,
 		"Show progress if NUM is not zero",			0},
 	{ 0 }
@@ -44,6 +46,7 @@ static struct argp_option options[] = {
 struct args {
 	long        start_at;
 	long        end_at;
+	long        max_read_rate;
 	int	    show_progress;
 	const char  *dev_path;
 };
@@ -68,6 +71,14 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 			argp_error(state,
 				"NUM must be greater than zero");
 		args->end_at = l - 1;
+		break;
+
+	case 'r':
+		l = arg_to_long(state, arg);
+		if (l <= 0)
+			argp_error(state,
+				"KB/s must be greater than zero");
+		args->max_read_rate = l;
 		break;
 
 	case 'p':
@@ -329,7 +340,7 @@ static inline void pr_avg_speed(double speed)
 }
 
 static void iterate_files(const char *path, const long *files,
-	long start_at, long end_at, int progress)
+	long start_at, long end_at, long max_read_rate, int progress)
 {
 	uint64_t tot_ok, tot_corrupted, tot_changed, tot_overwritten, tot_size;
 	int and_read_all = 1;
@@ -340,7 +351,8 @@ static void iterate_files(const char *path, const long *files,
 
 	UNUSED(end_at);
 
-	init_flow(&fw, get_total_size(path, files), 0, progress, NULL);
+	init_flow(&fw, get_total_size(path, files), max_read_rate,
+		progress, NULL);
 	tot_ok = tot_corrupted = tot_changed = tot_overwritten = tot_size = 0;
 	printf("                  SECTORS "
 		"     ok/corrupted/changed/overwritten\n");
@@ -413,6 +425,7 @@ int main(int argc, char **argv)
 		/* Defaults. */
 		.start_at	= 0,
 		.end_at		= LONG_MAX - 1,
+		.max_read_rate	= 0,
 		/* If stdout isn't a terminal, supress progress. */
 		.show_progress	= isatty(STDOUT_FILENO),
 	};
@@ -424,7 +437,7 @@ int main(int argc, char **argv)
 	files = ls_my_files(args.dev_path, args.start_at, args.end_at);
 
 	iterate_files(args.dev_path, files, args.start_at, args.end_at,
-		args.show_progress);
+		args.max_read_rate, args.show_progress);
 	free((void *)files);
 	return 0;
 }
