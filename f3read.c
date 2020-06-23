@@ -382,7 +382,7 @@ static void iterate_files(const char *path, const long *files,
 		files++;
 	}
 	assert(!gettimeofday(&t2, NULL));
-	assert(tot_size / SECTOR_SIZE ==
+	assert(tot_size == SECTOR_SIZE *
 		(tot_ok + tot_corrupted + tot_changed + tot_overwritten));
 
 	/* Notice that not reporting `missing' files after the last file
