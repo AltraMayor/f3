@@ -179,4 +179,46 @@ int posix_fadvise(int fd, off_t offset, off_t len, int advice)
 	}
 }
 
-#endif	/* Apple Macintosh */
+#include <unistd.h> /* For usleep(). */
+
+void msleep(double wait_ms)
+{
+	assert(!usleep(wait_ms * 1000));
+}
+
+#else
+
+#include <time.h> /* For clock_gettime() and clock_nanosleep(). */
+
+void msleep(double wait_ms)
+{
+	struct timespec req;
+	int ret;
+
+	assert(!clock_gettime(CLOCK_MONOTONIC, &req));
+
+	/* Add @wait_ms to @req. */
+	if (wait_ms > 1000) {
+		time_t sec = wait_ms / 1000;
+		wait_ms -= sec * 1000;
+		assert(wait_ms > 0);
+		req.tv_sec += sec;
+	}
+	req.tv_nsec += wait_ms * 1000000;
+
+	/* Round @req up. */
+	if (req.tv_nsec >= 1000000000) {
+		ldiv_t result = ldiv(req.tv_nsec, 1000000000);
+		req.tv_sec += result.quot;
+		req.tv_nsec = result.rem;
+	}
+
+	do {
+		ret = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,
+			&req, NULL);
+	} while (ret == EINTR);
+
+	assert(ret == 0);
+}
+
+#endif

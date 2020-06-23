@@ -24,6 +24,8 @@ static inline int64_t delay_ms(const struct timeval *t1,
 			(t2->tv_usec - t1->tv_usec) / 1000;
 }
 
+void msleep(double wait_ms);
+
 const long *ls_my_files(const char *path, long start_at, long end_at);
 
 void print_header(FILE *f, const char *name);
