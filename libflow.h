@@ -63,7 +63,7 @@ void init_flow(struct flow *fw, uint64_t total_size,
 	flow_func_flush_chunk_t func_flush_chunk);
 
 void start_measurement(struct flow *fw);
-int measure(int fd, struct flow *fw, ssize_t processed);
+int measure(int fd, struct flow *fw, long processed);
 int end_measurement(int fd, struct flow *fw);
 
 static inline int has_enough_measurements(const struct flow *fw)
@@ -84,12 +84,10 @@ static inline double get_avg_speed(struct flow *fw)
 	return get_avg_speed_given_time(fw, fw->measured_time_ms);
 }
 
-static inline size_t get_rem_chunk_size(struct flow *fw)
+static inline uint64_t get_rem_chunk_size(struct flow *fw)
 {
-	ssize_t ret = (fw->blocks_per_delay - fw->processed_blocks) *
-		fw->block_size;
-	assert(ret > 0);
-	return ret;
+	assert(fw->blocks_per_delay > fw->processed_blocks);
+	return (fw->blocks_per_delay - fw->processed_blocks) * fw->block_size;
 }
 
 #define MAX_BUFFER_SIZE	(1<<21)	/* 2MB */

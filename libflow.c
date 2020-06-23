@@ -244,7 +244,7 @@ static inline uint64_t diff_timeval_us(const struct timeval *t1,
 		t2->tv_usec - t1->tv_usec;
 }
 
-int measure(int fd, struct flow *fw, ssize_t processed)
+int measure(int fd, struct flow *fw, long processed)
 {
 	ldiv_t result = ldiv(processed, fw->block_size);
 	struct timeval t2;

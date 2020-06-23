@@ -203,7 +203,7 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 	remaining = size;
 	start_measurement(fw);
 	while (remaining > 0) {
-		size_t write_size = get_rem_chunk_size(fw);
+		uint64_t write_size = get_rem_chunk_size(fw);
 		if (write_size > remaining)
 			write_size = remaining;
 		saved_errno = write_chunk(fd, write_size, &offset);

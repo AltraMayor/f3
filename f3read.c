@@ -192,7 +192,7 @@ static ssize_t read_all(int fd, char *buf, size_t count)
 }
 
 static ssize_t check_chunk(int fd, uint64_t *p_expected_offset,
-	size_t chunk_size, struct file_stats *stats)
+	uint64_t chunk_size, struct file_stats *stats)
 {
 	char buf[MAX_BUFFER_SIZE];
 	ssize_t tot_bytes_read = 0;
