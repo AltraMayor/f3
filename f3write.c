@@ -39,6 +39,8 @@ static struct argp_option options[] = {
 		"Maximum write rate",					0},
 	{"show-progress",	'p',	"NUM",		0,
 		"Show progress if NUM is not zero",			0},
+	{"keep",	'k',	0,		0,
+		"Keep existing NUM.h2w file, otherwise all NUM.h2w files will be removed in each run",			0},
 	{ 0 }
 };
 
@@ -47,6 +49,7 @@ struct args {
 	long		end_at;
 	long		max_write_rate;
 	int		show_progress;
+	int		keep;
 	const char	*dev_path;
 };
 
@@ -82,6 +85,10 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 	case 'p':
 		args->show_progress = !!arg_to_long(state, arg);
+		break;
+
+	case 'k':
+		args->keep = 1;
 		break;
 
 	case ARGP_KEY_INIT:
@@ -170,7 +177,7 @@ static int write_chunk(int fd, size_t chunk_size, uint64_t *poffset)
 
 /* Return true when disk is full. */
 static int create_and_fill_file(const char *path, long number, size_t size,
-	int *phas_suggested_max_write_rate, struct flow *fw)
+	int *phas_suggested_max_write_rate, struct flow *fw, int keep)
 {
 	char *full_fn;
 	const char *filename;
@@ -184,6 +191,11 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 	/* Create the file. */
 	full_fn = full_fn_from_number(&filename, path, number);
 	assert(full_fn);
+	if(access(full_fn, F_OK) != -1 && keep)
+	{
+		printf("Skipping file %s\n", filename);
+		return false;
+	}
 	printf("Creating file %s ... ", filename);
 	fflush(stdout);
 	fd = open(full_fn, O_CREAT | O_WRONLY | O_TRUNC, S_IRUSR | S_IWUSR);
@@ -273,7 +285,7 @@ static int flush_chunk(const struct flow *fw, int fd)
 }
 
 static int fill_fs(const char *path, long start_at, long end_at,
-	long max_write_rate, int progress)
+	long max_write_rate, int progress, int keep)
 {
 	uint64_t free_space;
 	struct flow fw;
@@ -310,7 +322,7 @@ static int fill_fs(const char *path, long start_at, long end_at,
 	assert(!gettimeofday(&t1, NULL));
 	for (i = start_at; i <= end_at; i++)
 		if (create_and_fill_file(path, i, GIGABYTES,
-			&has_suggested_max_write_rate, &fw))
+			&has_suggested_max_write_rate, &fw, keep))
 			break;
 	assert(!gettimeofday(&t2, NULL));
 
@@ -360,6 +372,7 @@ int main(int argc, char **argv)
 		.start_at	= 0,
 		.end_at		= LONG_MAX - 1,
 		.max_write_rate = 0,
+		.keep		= 0,
 		/* If stdout isn't a terminal, supress progress. */
 		.show_progress	= isatty(STDOUT_FILENO),
 	};
@@ -368,8 +381,9 @@ int main(int argc, char **argv)
 	argp_parse(&argp, argc, argv, 0, NULL, &args);
 	print_header(stdout, "write");
 
-	unlink_old_files(args.dev_path, args.start_at, args.end_at);
+	if(!args.keep)
+		unlink_old_files(args.dev_path, args.start_at, args.end_at);
 
 	return fill_fs(args.dev_path, args.start_at, args.end_at,
-		args.max_write_rate, args.show_progress);
+		args.max_write_rate, args.show_progress, args.keep);
 }
