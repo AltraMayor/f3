@@ -39,8 +39,8 @@ static struct argp_option options[] = {
 		"Maximum write rate",					0},
 	{"show-progress",	'p',	"NUM",		0,
 		"Show progress if NUM is not zero",			0},
-	{"keep",	'k',	0,		0,
-		"Keep existing NUM.h2w file, otherwise all NUM.h2w files will be removed in each run",			0},
+	{"keep",		'k',	0,		0,
+		"Keep existing NUM.h2w files instead of removing them",			0},
 	{ 0 }
 };
 
@@ -49,7 +49,7 @@ struct args {
 	long		end_at;
 	long		max_write_rate;
 	int		show_progress;
-	int		keep;
+	bool		keep;
 	const char	*dev_path;
 };
 
@@ -88,7 +88,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		break;
 
 	case 'k':
-		args->keep = 1;
+		args->keep = true;
 		break;
 
 	case ARGP_KEY_INIT:
@@ -177,7 +177,7 @@ static int write_chunk(int fd, size_t chunk_size, uint64_t *poffset)
 
 /* Return true when disk is full. */
 static int create_and_fill_file(const char *path, long number, size_t size,
-	int *phas_suggested_max_write_rate, struct flow *fw, int keep)
+	int *phas_suggested_max_write_rate, struct flow *fw, bool keep)
 {
 	char *full_fn;
 	const char *filename;
@@ -191,21 +191,24 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 	/* Create the file. */
 	full_fn = full_fn_from_number(&filename, path, number);
 	assert(full_fn);
-	if(access(full_fn, F_OK) != -1 && keep)
-	{
-		printf("Skipping file %s\n", filename);
-		return false;
-	}
+
 	printf("Creating file %s ... ", filename);
 	fflush(stdout);
-	fd = open(full_fn, O_CREAT | O_WRONLY | O_TRUNC, S_IRUSR | S_IWUSR);
+	fd = open(full_fn, O_CREAT | O_WRONLY | O_EXCL, S_IRUSR | S_IWUSR);
 	if (fd < 0) {
 		if (errno == ENOSPC) {
 			printf("No space left.\n");
 			free(full_fn);
 			return true;
 		}
-		err(errno, "Can't create file %s", full_fn);
+		if (errno == EEXIST) {
+			if (keep) {
+				printf("Skipped.\n");
+				free(full_fn);
+				return false;
+			}
+			err(errno, "Unexpectedly found file %s, but option --keep is not in use", full_fn);
+		}
 	}
 	assert(fd >= 0);
 
@@ -285,7 +288,7 @@ static int flush_chunk(const struct flow *fw, int fd)
 }
 
 static int fill_fs(const char *path, long start_at, long end_at,
-	long max_write_rate, int progress, int keep)
+	long max_write_rate, int progress, bool keep)
 {
 	uint64_t free_space;
 	struct flow fw;
@@ -372,7 +375,7 @@ int main(int argc, char **argv)
 		.start_at	= 0,
 		.end_at		= LONG_MAX - 1,
 		.max_write_rate = 0,
-		.keep		= 0,
+		.keep		= false,
 		/* If stdout isn't a terminal, supress progress. */
 		.show_progress	= isatty(STDOUT_FILENO),
 	};
