@@ -52,7 +52,7 @@ static struct argp_option options[] = {
 		"Reset method to use during the probe",		0},
 	{"time-ops",		't',	NULL,		0,
 		"Time reads, writes, and resets",		0},
-	{"fix",		'i',	NULL,		0,
+	{"fix",			'i',	NULL,		0,
 		"Run f3fix if counterfeit flash memory detected",		0},
 	{ 0 }
 };
@@ -79,7 +79,6 @@ struct args {
 	int		block_order;
 	int		cache_order;
 	int		strict_cache;
-
 	bool		fix;
 };
 
@@ -384,6 +383,8 @@ static int test_device(struct args *args)
 	uint64_t reset_count, reset_time_us;
 	uint64_t last_good_sector;
 	const char *final_dev_filename;
+	char *fix_cmd;
+
 	dev = args->debug
 		? create_file_device(args->filename, args->real_size_byte,
 			args->fake_size_byte, args->wrap, args->block_order,
@@ -485,6 +486,7 @@ static int test_device(struct args *args)
 	case FKTY_CHAIN: {
 		last_good_sector = (real_size_byte >> 9) - 1;
 		assert(block_order >= 9);
+		assert(asprintf(&fix_cmd, "f3fix --last-sec=%" PRIu64 " %s", last_good_sector, final_dev_filename) > 0);
 		printf("Bad news: The device `%s' is a counterfeit of type %s\n\n"
 			"You can \"fix\" this device using the following command:\n"
 			"f3fix --last-sec=%" PRIu64 " %s\n",
@@ -516,13 +518,10 @@ static int test_device(struct args *args)
 		report_ops("Reset", reset_count, reset_time_us);
 	}
 
-	if (fake_type == FKTY_CHAIN || fake_type == FKTY_LIMBO || fake_type == FKTY_CHAIN)
-		if (args->fix) {
-			char *cmd = NULL;
-			asprintf(&cmd, "f3fix --last-sec=%" PRIu64 " %s", last_good_sector, final_dev_filename);
-			system(cmd);
-			free(cmd);
-		}
+	if (args->fix && fix_cmd) {
+		system(fix_cmd);
+	}
+	free(fix_cmd);
 	free((void *)final_dev_filename);
 	return fake_type == FKTY_GOOD ? 0 : 100 + fake_type;
 }
