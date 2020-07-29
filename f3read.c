@@ -389,7 +389,7 @@ static void iterate_files(const char *path, const long *files,
 		if (delete && (stats.secs_corrupted || tot_changed || tot_overwritten)) {
 			const char *filename;
 			char *full_fn = full_fn_from_number(&filename, path, *files);
-			assert(full_fn)
+			assert(full_fn);
 			if (unlink(full_fn))
 				err(errno, "Can't remove file %s\n", full_fn);
 			free(full_fn);
