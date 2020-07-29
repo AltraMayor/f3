@@ -40,8 +40,8 @@ static struct argp_option options[] = {
 		"Maximum read rate",					0},
 	{"show-progress",	'p',	"NUM",		0,
 		"Show progress if NUM is not zero",			0},
-	{"delete",	'd',	NULL,		0,
-		"delete corrupted NUM.h2w file",			0},
+	{"delete",		'd',	NULL,		0,
+		"Delete corrupted NUM.h2w files",			0},
 	{ 0 }
 };
 
@@ -386,11 +386,13 @@ static void iterate_files(const char *path, const long *files,
 		tot_overwritten += stats.secs_overwritten;
 		tot_size += stats.bytes_read;
 		and_read_all = and_read_all && stats.read_all;
-		if (stats.secs_corrupted && delete) {
+		if (delete && (stats.secs_corrupted || tot_changed || tot_overwritten)) {
 			const char *filename;
 			char *full_fn = full_fn_from_number(&filename, path, *files);
+			assert(full_fn)
 			if (unlink(full_fn))
 				err(errno, "Can't remove file %s\n", full_fn);
+			free(full_fn);
 		}
 		files++;
 	}
