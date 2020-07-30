@@ -185,14 +185,20 @@ Quick Start
 ~~~~~~~~~~~
 
 A pre-built `image <https://cloud.docker.com/repository/docker/peron/f3>`__
-is available over at Docker Hub, ready to be used.  With docker started,
+is available over at Docker Hub, ready to be used.  With docker started, just
 run::
 
-    docker run -it --rm --device <device> peron/f3:latest <f3-command> [<f3-options>] <device>
+    docker run -it --rm --device <device> peron/f3 <f3-command> [<f3-options>] <device>
 
 For example, to probe a drive mounted at /dev/sdb::
 
-    docker run -it --rm --device /dev/sdb peron/f3:latest f3probe --destructive --time-ops /dev/sdb
+    docker run -it --rm --device /dev/sdb peron/f3 f3probe --destructive --time-ops /dev/sdb
+
+Optionally, you can also build your own container *if* you don't want to use the
+pre-built image.  From this directory, run::
+
+    docker build -t f3:latest .
+    docker run -it --rm --device <device> f3:latest <f3-command> [<f3-options>] <device>
 
 Drive Permissions / Passthrough
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
