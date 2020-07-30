@@ -15,6 +15,8 @@ F3 stands for Fight Flash Fraud, or Fight Fake Flash.
 
 .. _examples:
 
+.. highlight:: bash
+
 Examples
 ========
 
@@ -54,34 +56,6 @@ Use f3probe's output to determine the parameters for f3fix::
 
     # ./f3fix --last-sec=16477878 /dev/sdb
 
-Docker
-======
-
-Instead of building and installing the tools, and their depending packages, in your local OS,
-the tools can be run from a Docker container.
-
-The included Dockerfile installs all tools, both the base tools, and the extras.
-
-Build
------
-
-To create a Docker image, run::
-
-  $ docker build -t f3:latest .
-
-Running
--------
-
-Since we're dealing with attached devices, Docker needs to run in privileged mode::
-
-  $ docker run -it --rm --privileged -v <device>:<device> f3:latest <f3-command> [<f3-options>] <device>
-
-The commands, and their parameters, are as otherwise described in this document.
-Since the commands are installed, they should not be prefixed with the dot-slash notation.
-
-A pre-built `image <https://cloud.docker.com/repository/docker/peron/f3>`__ is available over at Docker Hub,
-ready to be used.
-
 Installation
 ============
 
@@ -109,6 +83,11 @@ If you want to install f3write and f3read, run the following command::
 Compile stable software on Windows/Cygwin
 -----------------------------------------
 
+f3write and f3read can be installed on Windows, but currently f3probe, f3fix,
+and f3brew `require Linux <#the-extra-applications-for-linux>`__.  To use them
+on a Windows machine, use the `Docker Installation <#docker>`__.  For f3write
+and f3read, read on.
+
 If you haven't already, install the following Cygwin packages and their dependencies:
 
 - `gcc-core`
@@ -126,6 +105,11 @@ If you want to install f3write and f3read, run the following command::
 
 Compile stable software on Apple Mac
 ------------------------------------
+
+f3write and f3read can be installed on Mac, but currently f3probe, f3fix, and
+f3brew `require Linux <#the-extra-applications-for-linux>`__.  To use them on
+Mac, use the `Docker Installation <#docker>`__.  For f3write and f3read, read
+on.
 
 Using HomeBrew
 ~~~~~~~~~~~~~~
@@ -193,6 +177,95 @@ for details.
    installed argp-standalone::
 
        make ARGP=/opt/local
+
+Docker
+------
+
+Quick Start
+~~~~~~~~~~~
+
+A pre-built `image <https://cloud.docker.com/repository/docker/peron/f3>`__
+is available over at Docker Hub, ready to be used.  With docker started, just
+run::
+
+    docker run -it --rm --device <device> peron/f3 <f3-command> [<f3-options>] <device>
+
+For example, to probe a drive mounted at /dev/sdb::
+
+    docker run -it --rm --device /dev/sdb peron/f3 f3probe --destructive --time-ops /dev/sdb
+
+Optionally, you can also build your own container *if* you don't want to use the
+pre-built image.  From this directory, run::
+
+    docker build -t f3:latest .
+    docker run -it --rm --device <device> f3:latest <f3-command> [<f3-options>] <device>
+
+Drive Permissions / Passthrough
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Getting the drive device to map into the Docker container is tricky for Mac and
+Windows.  Passing through devices on Mac and Windows is a well-documented issue
+(`[github]
+<https://github.com/docker/for-mac/issues/3110#issuecomment-456853036>`__
+`[stackexchange]
+<https://devops.stackexchange.com/questions/4572/how-to-pass-a-dev-disk-device-on-macos-into-linux-docker/6076#6076>`__
+`[tty]
+<https://christopherjmcclellan.wordpress.com/2019/04/21/using-usb-with-docker-for-mac/#tldr>`__)
+On Linux it should just work, but on Mac or Windows, Docker tends to map the
+drive as a normal directory rather than a mounted drive and you will get an
+error like :code:`f3probe: Can't open device '/opt/usb': Is a directory`, that
+is if you can map it at all.
+
+To solve this, we can use docker-machine to create a VirtualBox VM
+(boot2docker), in which to run the Docker container.  Since VirtualBox *can*
+handle device pass-through, we can pass the device through to the VirtualBox VM
+which can then pass the device through to the Docker container.  Milad Alizadeh
+wrote up some good instructions `here
+<https://mil.ad/docker/2018/05/06/access-usb-devices-in-container-in-mac.html>`__
+which are geared towards USB devices, but it shouldn't be too hard to adapt to
+other drive types.  Here's what I typed into my Mac terminal (probably
+similar for Windows, but untested)::
+
+    docker-machine create -d virtualbox default
+    docker-machine stop
+    vboxmanage modifyvm default --usb on
+    docker-machine start
+    vboxmanage usbfilter add 0 --target default --name flashdrive --vendorid 0x0123 --productid 0x4567
+    eval $(docker-machine env default)
+
+
+For the usbfilter add command, note that the "name" argument is the new name
+you're giving the filter so you can name it whatever you want.
+:code:`--vendorid` and :code:`--productid` can be found on Mac in "System
+Information" under "USB". You can also try searching for the right device in
+:code:`vboxmanage list usbhost`.
+
+Alternatively, you may opt to add the device through the VirtualBox GUI
+application instead::
+
+    docker-machine create -d virtualbox default
+    docker-machine stop
+    # open VirtualBox and manually add the drive device before proceeding to the next command
+    docker-machine start
+    eval $(docker-machine env default)
+
+Once you've run the above commands, unplug and replug the flash drive and run::
+
+    docker-machine ssh default "lsblk"
+
+to list the devices. Search for the correct drive - the "SIZE" column may be
+helpful in locating the device of interest. For example, :code:`sdb` is a common
+mount point for a USB drive.  Now you should be able to run the command from
+Quick Start::
+
+    docker run --rm -it --device /dev/sdb peron/f3 f3probe --destructive --time-ops /dev/sdb
+
+You may find it useful to enter a bash prompt in the Docker container to poke
+around the filesystem::
+
+    docker run --rm -it --device /dev/sdb peron/f3 bash
+
+so that you can run commands like :code:`ls /dev/*`.
 
 The extra applications for Linux
 --------------------------------
