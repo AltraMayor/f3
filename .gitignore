@@ -4,3 +4,5 @@ cscope.out
 *.d
 *.o
 *~
+
+doc/_build
