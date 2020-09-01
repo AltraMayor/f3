@@ -52,7 +52,6 @@ f3probe assumes that higher bits of the drive block address are simply
 not connected in hardware. If you come across a fake drive that behaves
 differently, please open an issue reporting the details.
 
-
 Correcting capacity to actual size with f3fix
 ---------------------------------------------
 
