@@ -690,7 +690,7 @@ uint64_t probe_device_max_blocks(struct device *dev)
 	/* Make sure that there is no overflow in the formula below.
 	 * The number 10 is arbitrary here, that is, it's not tight.
 	 */
-	assert(MAX_N_BLOCK_ORDER < sizeof(int) - 10);
+	assert(MAX_N_BLOCK_ORDER < 8*sizeof(int) - 10);
 
 	return
 		/* find_cache_size() */
