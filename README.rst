@@ -363,6 +363,12 @@ with a 64-bit linear congruential generator.  The former guarantees that
 no two blocks written are the same.  The latter ties the contents of each
 block to the byte offset in a way that is not easily predictable by the
 flash disk.  f3read checks this content of each block for correctness.
+Blocks with a wrong byte offset are reported as overwritten if the
+pseudo-random data is correct or only contains 1 or 2 errors.  Blocks with
+more than 2 errors in the pseudo-random data are reported as corrupted,
+irrespective of the correctness of the byte offset.  Blocks with the
+correct byte offset but containing 1 or 2 errors in the pseudo-random data
+are reported as changed.
 
 f3probe assumes that the flash disk ignores higher bits of any block
 address used in block operations.  In hardware, this simply means that the
