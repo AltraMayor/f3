@@ -1,3 +1,10 @@
+Version 8.0 - Oct 29, 2020
+
+    * f3read: add parameter --max-read-rate
+    * f3read: report speed, percentage, remaining time like f3write
+    * f3write: improve speed measurement (commit 791acdc32627...)
+    * f3probe: handle rare assetion failure (issue #82 ENODATA)
+
 Version 7.2 - Jun 19, 2019
 
     * f3write: keep up with extremely fast NVM drives (issue #117)
