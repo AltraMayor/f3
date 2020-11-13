@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 $(dirname $0)/f3write "$@" || exit 1
 
