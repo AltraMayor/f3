@@ -277,7 +277,10 @@ f3probe and f3brew require version 1 of the library libudev, and f3fix
 requires version 0 of the library libparted to compile. On Ubuntu, you
 can install these libraries with the following command::
 
-    sudo apt-get install libudev1 libudev-dev libparted0-dev
+    sudo apt-get install libudev1 libudev-dev libparted-dev
+
+If you are running a version of Ubuntu before 20.04.1, replace the package `libparted-dev`
+on the command line above with `libparted0-dev`.
 
 On Fedora, you can install these libraries with the following command::
 
