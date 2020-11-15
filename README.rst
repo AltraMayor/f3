@@ -279,6 +279,9 @@ can install these libraries with the following command::
 
     sudo apt-get install libudev1 libudev-dev libparted-dev
 
+If you running a version of Ubuntu before 20.04.1, replace the package `libparted-dev`
+on the command line above with `libparted0-dev`.
+
 On Fedora, you can install these libraries with the following command::
 
     sudo dnf install systemd-devel parted-devel
