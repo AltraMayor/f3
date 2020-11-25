@@ -184,14 +184,14 @@ static inline void move_to_dec(struct flow *fw)
 }
 
 static inline int is_rate_above(const struct flow *fw,
-	long delay, double inst_speed)
+	uint64_t delay, double inst_speed)
 {
 	/* We use logical or here to enforce the lowest limit. */
 	return delay > fw->delay_ms || inst_speed > fw->max_process_rate;
 }
 
 static inline int is_rate_below(const struct flow *fw,
-	long delay, double inst_speed)
+	uint64_t delay, double inst_speed)
 {
 	/* We use logical and here to enforce both limist. */
 	return delay <= fw->delay_ms && inst_speed < fw->max_process_rate;
@@ -216,7 +216,7 @@ int measure(int fd, struct flow *fw, long processed)
 {
 	ldiv_t result = ldiv(processed, fw->block_size);
 	struct timeval t2;
-	int64_t delay;
+	uint64_t delay;
 	double bytes_k, inst_speed;
 
 	assert(result.rem == 0);
