@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
@@ -76,40 +77,77 @@ static long number_from_filename(const char *filename)
 	return num - 1;
 }
 
-/* Don't call this function directly, use ls_my_files() instead. */
-static long *__ls_my_files(DIR *dir, long start_at, long end_at,
-	int *pcount, int *pindex)
+static inline bool include_this_file(const char *filename,
+	long start_at, long end_at, long *number)
 {
+	if (!is_my_file(filename))
+		return false;
+
+	*number = number_from_filename(filename);
+
+	return start_at <= *number && *number <= end_at;
+}
+
+static long count_files(const char *path, long start_at, long end_at)
+{
+	DIR *dir = opendir(path);
 	struct dirent *entry;
-	const char *filename;
-	long number, *ret;
-	int my_index;
+	long dummy, total = 0;
+
+	if (!dir)
+		err(errno, "Can't open path %s at %s()", path, __func__);
 
 	entry = readdir(dir);
-	if (!entry) {
-		ret = malloc(sizeof(long) * (*pcount + 1));
-		assert(ret);
-		*pindex = *pcount - 1;
-		ret[*pcount] = -1;
-		closedir(dir);
-		return ret;
+	while (entry) {
+		if (include_this_file(entry->d_name, start_at, end_at, &dummy))
+			total++;
+		entry = readdir(dir);
 	}
+	closedir(dir);
 
-	filename = entry->d_name;
-	if (!is_my_file(filename))
-		return __ls_my_files(dir, start_at, end_at, pcount, pindex);
+	return total;
+}
 
-	/* Cache @number because @entry may go away. */
-	number = number_from_filename(filename);
+/* Don't call this function directly, use ls_my_files() instead. */
+static long *__ls_my_files(const char *path, long start_at, long end_at,
+	long *pcount)
+{
+	long total_files = count_files(path, start_at, end_at);
+	DIR *dir;
+	struct dirent *entry;
+	long *ret, index;
 
-	/* Ignore files before @start_at and after @end_at. */
-	if (number < start_at || end_at < number)
-		return __ls_my_files(dir, start_at, end_at, pcount, pindex);
+	assert(total_files >= 0);
+	ret = malloc(sizeof(*ret) * (total_files + 1));
+	assert(ret);
 
-	(*pcount)++;
-	ret = __ls_my_files(dir, start_at, end_at, pcount, &my_index);
-	ret[my_index] = number;
-	*pindex = my_index - 1;
+	dir = opendir(path);
+	if (!dir)
+		err(errno, "Can't open path %s at %s()", path, __func__);
+
+	entry = readdir(dir);
+	index = 0;
+	while (entry) {
+		long number;
+		if (include_this_file(entry->d_name, start_at, end_at,
+				&number)) {
+			if (index >= total_files) {
+				/* The folder @path received more files
+				 * before we finished scanning it.
+				 */
+				closedir(dir);
+				free(ret);
+				return NULL;
+			}
+			ret[index++] = number;
+		}
+
+		entry = readdir(dir);
+	}
+	closedir(dir);
+
+	ret[index] = -1;
+	*pcount = index;
 	return ret;
 }
 
@@ -121,17 +159,12 @@ static int cmpintp(const void *p1, const void *p2)
 
 const long *ls_my_files(const char *path, long start_at, long end_at)
 {
-	DIR *dir = opendir(path);
-	int my_count;
-	int my_index;
-	long *ret;
+	long *ret, my_count;
 
-	if (!dir)
-		err(errno, "Can't open path %s", path);
+	do {
+		ret = __ls_my_files(path, start_at, end_at, &my_count);
+	} while (!ret);
 
-	my_count = 0;
-	ret = __ls_my_files(dir, start_at, end_at, &my_count, &my_index);
-	assert(my_index == -1);
 	qsort(ret, my_count, sizeof(*ret), cmpintp);
 	return ret;
 }
