@@ -355,3 +355,38 @@ personalize F3 to your specific needs::
 
 Please notice that all scripts and use examples above assume that
 f3write, f3read, and the scripts are in the same folder.
+
+Technical Details
+-----------------
+
+f3write writes as many 1 GiB big files as necessary to fill the flash disk.
+Each file is filled with blocks (typically 512 bytes) containing (a) the
+overall byte offset and (b) pseudo-random data derived from the byte offset
+with a 64-bit linear congruential generator.  The former guarantees that
+no two blocks written are the same.  The latter ties the contents of each
+block to the byte offset in a way that is not easily predictable by the
+flash disk.  f3read checks this content of each block for correctness.
+Blocks with a wrong byte offset are reported as overwritten if the
+pseudo-random data is correct or only contains 1 or 2 errors.  Blocks with
+more than 2 errors in the pseudo-random data are reported as corrupted,
+irrespective of the correctness of the byte offset.  Blocks with the
+correct byte offset but containing 1 or 2 errors in the pseudo-random data
+are reported as changed.
+
+f3probe assumes that the flash disk ignores higher bits of any block
+address used in block operations.  In hardware, this simply means that the
+corresponding address lines are not connected.  f3probe determines the
+highested number of address bits that can be reliably used with the flash
+disk.  Starting with a lower bound of bits required to address all blocks
+in the first 1 MiB correctly (fake disks will have at least this much real
+storage to avoid immediate error messages when accessing the flash disk in
+MS Windows) and an upper bound that is sufficient to address all blocks
+reported by the flash disk, f3probe narrows down the the number of address
+bits by repeatedly testing a candidate number of bits and updating lower
+or upper bound depending on the outcome of the candidate test.  Fake flash
+is indicated as soon as the upper bound is lowered.  However, f3probe
+continues narrowing down the number of address bits to report the useable
+size of the flash disk that can, for example, be used with f3fix.
+
+If you come across a fake drive that does not simply discard high bits of
+block addresses please open an issue reporting the details.
