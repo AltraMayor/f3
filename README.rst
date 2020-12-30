@@ -355,3 +355,14 @@ personalize F3 to your specific needs::
 
 Please notice that all scripts and use examples above assume that
 f3write, f3read, and the scripts are in the same folder.
+
+Flakyflash
+----------
+
+If your flash isn't fraudulent (or you've run f3fix to "fix" it) but
+you're still seeing some sporadic data corruption, then you may have
+"flaky flash." If your flash is formatted using the FAT file system,
+then you can use `Flakyflash <https://github.com/whitslack/flakyflash>`__
+to find the flaky data clusters and mark them as bad in the FAT. This
+may allow you to get a little more use out of your flash, but you
+should still consider it as failing and replace it ASAP.
