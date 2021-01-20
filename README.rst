@@ -324,8 +324,8 @@ Tianze.
 `F3XSwift <https://github.com/vrunkel/F3XSwift>`__ is a Mac GUI. F3XSwift supports ``f3write`` and ``f3read``. Author:
 Volker Runkel.
 
-Please support the above project by testing it and giving feedback to their
-authors. This will make their code improve as it has improved mine.
+Please support the above projects by testing them and giving feedback to their
+authors. This will improve their code as it has improved mine.
 
 Files
 -----
