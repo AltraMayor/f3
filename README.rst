@@ -321,8 +321,11 @@ we have the following graphical user interfaces (GUI) available for F3:
 QT. F3 QT supports ``f3write``, ``f3read``, ``f3probe``, and ``f3fix``. Author:
 Tianze.
 
-Please support the above project by testing it and giving feedback to their
-authors. This will make their code improve as it has improved mine.
+`F3XSwift <https://github.com/vrunkel/F3XSwift>`__ is a Mac GUI. F3XSwift supports ``f3write`` and ``f3read``. Author:
+Volker Runkel.
+
+Please support the above projects by testing them and giving feedback to their
+authors. This will improve their code as it has improved mine.
 
 Files
 -----
