@@ -40,6 +40,8 @@ static struct argp_option options[] = {
 		"Maximum read rate",					0},
 	{"show-progress",	'p',	"NUM",		0,
 		"Show progress if NUM is not zero",			0},
+	{"delete",		'd',	NULL,		0,
+		"Delete corrupted NUM.h2w files",			0},
 	{ 0 }
 };
 
@@ -48,6 +50,7 @@ struct args {
 	long        end_at;
 	long        max_read_rate;
 	int	    show_progress;
+	bool		delete;
 	const char  *dev_path;
 };
 
@@ -83,6 +86,10 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 	case 'p':
 		args->show_progress = !!arg_to_long(state, arg);
+		break;
+
+	case 'd':
+		args->delete = true;
 		break;
 
 	case ARGP_KEY_INIT:
@@ -340,7 +347,7 @@ static inline void pr_avg_speed(double speed)
 }
 
 static void iterate_files(const char *path, const long *files,
-	long start_at, long end_at, long max_read_rate, int progress)
+	long start_at, long end_at, long max_read_rate, int progress, bool delete)
 {
 	uint64_t tot_ok, tot_corrupted, tot_changed, tot_overwritten, tot_size;
 	int and_read_all = 1;
@@ -379,6 +386,14 @@ static void iterate_files(const char *path, const long *files,
 		tot_overwritten += stats.secs_overwritten;
 		tot_size += stats.bytes_read;
 		and_read_all = and_read_all && stats.read_all;
+		if (delete && (stats.secs_corrupted || tot_changed || tot_overwritten)) {
+			const char *filename;
+			char *full_fn = full_fn_from_number(&filename, path, *files);
+			assert(full_fn);
+			if (unlink(full_fn))
+				err(errno, "Can't remove file %s\n", full_fn);
+			free(full_fn);
+		}
 		files++;
 	}
 	assert(!gettimeofday(&t2, NULL));
@@ -428,6 +443,7 @@ int main(int argc, char **argv)
 		.max_read_rate	= 0,
 		/* If stdout isn't a terminal, supress progress. */
 		.show_progress	= isatty(STDOUT_FILENO),
+		.delete		= false,
 	};
 
 	/* Read parameters. */
@@ -437,7 +453,7 @@ int main(int argc, char **argv)
 	files = ls_my_files(args.dev_path, args.start_at, args.end_at);
 
 	iterate_files(args.dev_path, files, args.start_at, args.end_at,
-		args.max_read_rate, args.show_progress);
+		args.max_read_rate, args.show_progress, args.delete);
 	free((void *)files);
 	return 0;
 }
