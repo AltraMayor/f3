@@ -159,7 +159,7 @@ static int write_bisect_blocks(struct device *dev,
 
 	assert(n_blocks >= 1);
 
-	/* Find coeficients of function a*idx + b where idx <= max_idx. */
+	/* Find coefficients of function a*idx + b where idx <= max_idx. */
 	assert(left_pos < right_pos);
 	assert(right_pos - left_pos >= 2);
 	*pb = left_pos + 1;

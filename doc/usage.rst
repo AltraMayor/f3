@@ -107,7 +107,7 @@ correctly written by ``f3write``, and figure out in which file the
 sector should be and in which position in that file the sector should
 be. Thus, if a sector is well formed, or with a few bits flipped, but
 read in an unexpected position, ``f3read`` counts it as overwritten.
-Slightly changed sectors, are sectors at right position with a fews bits
+Slightly changed sectors, are sectors at right position with a few bits
 flipped.
 
 Notice that ``f3write`` doesn't overwrite sectors by itself, it's done

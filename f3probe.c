@@ -230,7 +230,7 @@ static const struct unit_test_item ftype_to_params[] = {
 	/* Extreme case for memory usage (limbo drive). */
 	{(1ULL<<20)+512,1ULL << 40,	40,	9,	-1,	false},
 
-	/* Geomerty of a real limbo drive with 256MB of strict cache. */
+	/* Geometry of a real limbo drive with 256MB of strict cache. */
 	{7600799744ULL,	67108864000ULL,	36,	9,	19,	true},
 
 	/* The drive before with a non-strict cache. */

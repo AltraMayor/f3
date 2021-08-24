@@ -193,7 +193,7 @@ static inline int is_rate_above(const struct flow *fw,
 static inline int is_rate_below(const struct flow *fw,
 	uint64_t delay, double inst_speed)
 {
-	/* We use logical and here to enforce both limist. */
+	/* We use logical and here to enforce both limits. */
 	return delay <= fw->delay_ms && inst_speed < fw->max_process_rate;
 }
 

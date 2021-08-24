@@ -16,7 +16,7 @@ struct flow {
 	int		progress;
 	/* Block size in bytes. */
 	int		block_size;
-	/* Delay intended between measurements in miliseconds. */
+	/* Delay intended between measurements in milliseconds. */
 	unsigned int	delay_ms;
 	/* Increment to apply to @blocks_per_delay. */
 	int64_t		step;

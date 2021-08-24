@@ -209,7 +209,7 @@ void fill_buffer_with_block(void *buf, int block_order, uint64_t offset,
 
 	/* The offset is known by drives,
 	 * so one doesn't have to encrypt it.
-	 * Plese don't add @salt here!
+	 * Please don't add @salt here!
 	 */
 	int64_array[0] = offset;
 
