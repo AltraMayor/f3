@@ -91,7 +91,7 @@ available space for data. Below the result on my fake card:
         Slightly changed: 0.00 Byte (0 sectors)
              Overwritten: 0.00 Byte (0 sectors)
     Average Reading speed: 9.54 MB/s
-      
+
 
 This report shows that my flash card is pretty much garbage since it can
 only hold 1.02GB. ``f3write`` only writes to free space, and will not
@@ -206,7 +206,7 @@ output running F3 on it:
         Slightly changed: 0.00 Byte (0 sectors)
              Overwritten: 0.00 Byte (0 sectors)
     Average Reading speed: 9.42 MB/s
-      
+
 
 Since ``f3write`` and ``f3read`` are independent, ``f3read`` can be used
 as many times as one wants, although ``f3write`` is needed only once.
@@ -256,22 +256,22 @@ capacity is less than 8GB:
 
     $ ./f3write --end-at=16 /media/michel/DISK_IMG/ && ./f3read /media/michel/DISK_IMG/
     Free space: 124.97 GB
-    Creating file 1.h2w ... OK!                               
-    Creating file 2.h2w ... OK!                           
-    Creating file 3.h2w ... OK!                           
-    Creating file 4.h2w ... OK!                           
-    Creating file 5.h2w ... OK!                           
-    Creating file 6.h2w ... OK!                           
-    Creating file 7.h2w ... OK!                         
-    Creating file 8.h2w ... OK!                         
-    Creating file 9.h2w ... OK!                         
-    Creating file 10.h2w ... OK!                         
-    Creating file 11.h2w ... OK!                         
-    Creating file 12.h2w ... OK!                         
-    Creating file 13.h2w ... OK!                         
-    Creating file 14.h2w ... OK!                         
-    Creating file 15.h2w ... OK!                         
-    Creating file 16.h2w ... OK!                        
+    Creating file 1.h2w ... OK!
+    Creating file 2.h2w ... OK!
+    Creating file 3.h2w ... OK!
+    Creating file 4.h2w ... OK!
+    Creating file 5.h2w ... OK!
+    Creating file 6.h2w ... OK!
+    Creating file 7.h2w ... OK!
+    Creating file 8.h2w ... OK!
+    Creating file 9.h2w ... OK!
+    Creating file 10.h2w ... OK!
+    Creating file 11.h2w ... OK!
+    Creating file 12.h2w ... OK!
+    Creating file 13.h2w ... OK!
+    Creating file 14.h2w ... OK!
+    Creating file 15.h2w ... OK!
+    Creating file 16.h2w ... OK!
     Free space: 108.97 GB
     Average writing speed: 2.87 MB/s
                       SECTORS      ok/corrupted/changed/overwritten
@@ -298,7 +298,7 @@ capacity is less than 8GB:
         Slightly changed: 0.00 Byte (0 sectors)
              Overwritten: 0.00 Byte (0 sectors)
     Average reading speed: 12.73 MB/s
-      
+
 
 After disconnecting the drive and connecting it back, ``f3read``
 produced the following output:
@@ -330,7 +330,7 @@ produced the following output:
         Slightly changed: 0.00 Byte (0 sectors)
              Overwritten: 0.00 Byte (0 sectors)
     Average reading speed: 12.50 MB/s
-      
+
 
 Notice that file 16.h2w, that last file ``f3write`` wrote, has no longer
 good sectors. What happened is that the last sectors of 16.h2w were in
@@ -365,7 +365,7 @@ file system, and obtained puzzling free space at the end of
     Creating file 14.h2w ... OK!
     Free space: 755.80 MB
     Average writing speed: 13.77 MB/s
-      
+
 
 This happened because ext2 and some other file systems reserve space for
 special purposes. So they don't allow ``f3write`` to use that reserved
@@ -467,7 +467,7 @@ does exactly that:
 ::
 
     $ truncate --size=/1M /media/michel/6135-3363/30.h2w
-      
+
 
 If you want to exchange files with H2testw users often, check out the
 shell script
@@ -575,15 +575,15 @@ choose the drive, not a partition.
 
 ::
 
-    $ lsblk 
+    $ lsblk
     NAME   MAJ:MIN RM   SIZE RO TYPE MOUNTPOINT
-    sda      8:0    0 232.9G  0 disk 
+    sda      8:0    0 232.9G  0 disk
     +-sda1   8:1    0   218G  0 part /
-    +-sda2   8:2    0     1K  0 part 
+    +-sda2   8:2    0     1K  0 part
     +-sda5   8:5    0    15G  0 part [SWAP]
-    sdb      8:16   1  15.3G  0 disk 
+    sdb      8:16   1  15.3G  0 disk
     +-sdb1   8:17   1  15.3G  0 part /media/michel/A902-D705
-    sr0     11:0    1  1024M  0 rom  
+    sr0     11:0    1  1024M  0 rom
 
 If you get confused between "sdb" and "sdb1", don't worry, ``f3probe``
 will report the mistake and point out the proper one. However, I cannot
@@ -597,7 +597,7 @@ in the example below (please use the correct device!):
 ::
 
     $ sudo ./f3probe --destructive --time-ops /dev/sdb
-    [sudo] password for michel: 
+    [sudo] password for michel:
     F3 probe 8.0
     Copyright (C) 2010 Digirati Internet LTDA.
     This is free software; see the source for copying conditions.
@@ -672,7 +672,7 @@ outputs:
 ::
 
     $ sudo ./f3probe --time-ops /dev/sdc
-    [sudo] password for michel: 
+    [sudo] password for michel:
     F3 probe 8.0
     Copyright (C) 2010 Digirati Internet LTDA.
     This is free software; see the source for copying conditions.
@@ -757,14 +757,14 @@ blocks with ``f3write/f3read``. The test of my card went as follows:
 
     $ ./f3write /media/michel/8A34-CED2/
     Free space: 7.84 GB
-    Creating file 1.h2w ... OK!                         
-    Creating file 2.h2w ... OK!                         
-    Creating file 3.h2w ... OK!                         
-    Creating file 4.h2w ... OK!                         
-    Creating file 5.h2w ... OK!                         
-    Creating file 6.h2w ... OK!                         
-    Creating file 7.h2w ... OK!                        
-    Creating file 8.h2w ... OK!                        
+    Creating file 1.h2w ... OK!
+    Creating file 2.h2w ... OK!
+    Creating file 3.h2w ... OK!
+    Creating file 4.h2w ... OK!
+    Creating file 5.h2w ... OK!
+    Creating file 6.h2w ... OK!
+    Creating file 7.h2w ... OK!
+    Creating file 8.h2w ... OK!
     Free space: 0.00 Byte
     Average writing speed: 4.64 MB/s
 
