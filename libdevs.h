@@ -60,7 +60,7 @@ const char *dev_get_filename(struct device *dev);
  * batch writes or reads.
  *
  * It must be a power of 2 greater than, or equal to 2^20.
- * The current vaule is 1MB.
+ * The current value is 1MB.
  */
 #define BIG_BLOCK_SIZE_BYTE (1 << 20)
 

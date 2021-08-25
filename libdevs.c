@@ -580,13 +580,13 @@ static int wait_for_reset(struct udev *udev, const char *id_serial,
 		action = udev_device_get_action(dev);
 		new_size_byte = get_udev_dev_size_byte(dev);
 		if (!strcmp(action, "add")) {
-			/* Deal with the case in wich the user pulls
+			/* Deal with the case in which the user pulls
 			 * the USB device.
 			 *
 			 * DO NOTHING.
 			 */
 		} else if (!strcmp(action, "change")) {
-			/* Deal with the case in wich the user pulls
+			/* Deal with the case in which the user pulls
 			 * the memory card from the card reader.
 			 */
 
@@ -712,7 +712,7 @@ static int bdev_manual_usb_reset(struct device *dev)
 	bdev->fd = bdev_open(bdev->filename);
 	if (bdev->fd < 0) {
 		rc = - errno;
-		warn("Can't REopen device `%s'", bdev->filename);
+		warn("Can't reopen device `%s'", bdev->filename);
 		goto usb_dev;
 	}
 
@@ -808,7 +808,7 @@ static int bdev_usb_reset(struct device *dev)
 	bdev->fd = bdev_open(bdev->filename);
 	if (bdev->fd < 0) {
 		int rc = - errno;
-		warn("Can't REopen device `%s'", bdev->filename);
+		warn("Can't reopen device `%s'", bdev->filename);
 		return rc;
 	}
 	return 0;

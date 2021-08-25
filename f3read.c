@@ -404,7 +404,7 @@ static void iterate_files(const char *path, const long *files,
 	if (has_enough_measurements(&fw)) {
 		pr_avg_speed(get_avg_speed(&fw));
 	} else {
-		/* If the drive is too fast for the measuments above,
+		/* If the drive is too fast for the measurements above,
 		 * try a coarse approximation of the reading speed.
 		 */
 		int64_t total_time_ms = delay_ms(&t1, &t2);
@@ -426,7 +426,7 @@ int main(int argc, char **argv)
 		.start_at	= 0,
 		.end_at		= LONG_MAX - 1,
 		.max_read_rate	= 0,
-		/* If stdout isn't a terminal, supress progress. */
+		/* If stdout isn't a terminal, suppress progress. */
 		.show_progress	= isatty(STDOUT_FILENO),
 	};
 
