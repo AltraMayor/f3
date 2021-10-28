@@ -63,7 +63,7 @@ Download and Compile
 --------------------
 
 The files of the stable version of F3 are
-`here <https://github.com/AltraMayor/f3/releases>`__. The
+`here <https://github.com/AltraMayor/f3/tags>`__. The
 following command uncompresses the files::
 
     $ unzip f3-8.0.zip
