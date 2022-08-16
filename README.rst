@@ -20,6 +20,11 @@ F3 stands for Fight Flash Fraud, or Fight Fake Flash.
 Examples
 ========
 
+We'll use :code:`/dev/sdX` as a placeholder here, you need to replace 
+:code:`X` with a lowercase letter so that it matches the device you
+want to use.
+:code:`lsblk` will show you an overview of your current devices.
+
 Testing performance with f3read/f3write
 ---------------------------------------
 
@@ -44,7 +49,7 @@ it only writes what's necessary to test the drive. It operates directly
 on the (unmounted) block device and needs to be run as a privileged
 user::
 
-    # ./f3probe --destructive --time-ops /dev/sdb
+    # ./f3probe --destructive --time-ops /dev/sdX
 
 .. warning:: This will destroy any previously stored data on your disk!
 
@@ -54,7 +59,7 @@ Correcting capacity to actual size with f3fix
 f3fix creates a partition that fits the actual size of the fake drive.
 Use f3probe's output to determine the parameters for f3fix::
 
-    # ./f3fix --last-sec=16477878 /dev/sdb
+    # ./f3fix --last-sec=16477878 /dev/sdX
 
 Installation
 ============
@@ -190,9 +195,9 @@ run::
 
     docker run -it --rm --device <device> peron/f3 <f3-command> [<f3-options>] <device>
 
-For example, to probe a drive mounted at /dev/sdb::
+For example, to probe a drive mounted at /dev/sdX::
 
-    docker run -it --rm --device /dev/sdb peron/f3 f3probe --destructive --time-ops /dev/sdb
+    docker run -it --rm --device /dev/sdX peron/f3 f3probe --destructive --time-ops /dev/sdX
 
 Optionally, you can also build your own container *if* you don't want to use the
 pre-built image.  From this directory, run::
@@ -258,12 +263,12 @@ helpful in locating the device of interest. For example, :code:`sdb` is a common
 mount point for a USB drive.  Now you should be able to run the command from
 Quick Start::
 
-    docker run --rm -it --device /dev/sdb peron/f3 f3probe --destructive --time-ops /dev/sdb
+    docker run --rm -it --device /dev/sdX peron/f3 f3probe --destructive --time-ops /dev/sdX
 
 You may find it useful to enter a bash prompt in the Docker container to poke
 around the filesystem::
 
-    docker run --rm -it --device /dev/sdb peron/f3 bash
+    docker run --rm -it --device /dev/sdX peron/f3 bash
 
 so that you can run commands like :code:`ls /dev/*`.
 
