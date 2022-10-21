@@ -55,4 +55,20 @@ int posix_fadvise(int fd, off_t offset, off_t len, int advice);
 #define fdatasync(fd) fsync(fd)
 #endif
 
+#ifdef __OpenBSD__
+
+#define POSIX_FADV_SEQUENTIAL	2 /* Expect sequential page references.	*/
+#define POSIX_FADV_DONTNEED	4 /* Don't need these pages.		*/
+
+/*
+ * OpenBSD doesn't have posix_fadvise() (...).
+ * There is some code [in F3] to emulate posix_fadvise for MacOS
+ * but it uses various fcntl(2) commands that we don't have [in OpenBSD].
+ *
+ *  -- Stuart Henderson, OpenBSD developer
+ */
+#define posix_fadvise(fd, offset, len, advice) (0)
+
+#endif	/* OpenBSD */
+
 #endif	/* HEADER_UTILS_H */
