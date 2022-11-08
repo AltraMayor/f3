@@ -434,6 +434,8 @@ int main(int argc, char **argv)
 	argp_parse(&argp, argc, argv, 0, NULL, &args);
 	print_header(stdout, "read");
 
+	adjust_dev_path(&args.dev_path);
+
 	files = ls_my_files(args.dev_path, args.start_at, args.end_at);
 
 	iterate_files(args.dev_path, files, args.start_at, args.end_at,

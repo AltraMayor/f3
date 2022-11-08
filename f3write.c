@@ -368,6 +368,8 @@ int main(int argc, char **argv)
 	argp_parse(&argp, argc, argv, 0, NULL, &args);
 	print_header(stdout, "write");
 
+	adjust_dev_path(&args.dev_path);
+
 	unlink_old_files(args.dev_path, args.start_at, args.end_at);
 
 	return fill_fs(args.dev_path, args.start_at, args.end_at,
