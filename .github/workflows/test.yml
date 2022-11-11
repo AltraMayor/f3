@@ -16,8 +16,13 @@ jobs:
           - /tmp
           - .
           - /
+        asroot:
+          - name: ''
+            sudo: ''
+          - name: ' as root'
+            sudo: 'sudo '
 
-    name: Linux ${{ matrix.volume }}
+    name: Linux ${{ matrix.volume }}${{ matrix.asroot.name }}
     runs-on: ubuntu-22.04
 
     steps:
@@ -30,7 +35,7 @@ jobs:
 
       - run: ./f3write -V
       - run: ./f3write --help
-      - run: ./f3write -s 2 -e 4 -w 50000 ${{ matrix.volume }}
+      - run: ${{ matrix.asroot.sudo }}./f3write -s 2 -e 4 -w 50000 ${{ matrix.volume }}
 
       - run: stat ${{ matrix.volume }}/2.h2w
       - run: stat ${{ matrix.volume }}/3.h2w
@@ -38,7 +43,7 @@ jobs:
 
       - run: ./f3read -V
       - run: ./f3read --help
-      - run: ./f3read -s 2 -e 4 -r 50000 ${{ matrix.volume }}
+      - run: ${{ matrix.asroot.sudo }}./f3read -s 2 -e 4 -r 50000 ${{ matrix.volume }}
 
   MacOS:
     strategy:
@@ -49,8 +54,13 @@ jobs:
           - .
           # MacOS denies `sudo chmod a+w /`
           #- /
+        asroot:
+          - name: ''
+            sudo: ''
+          - name: ' as root'
+            sudo: 'sudo '
 
-    name: MacOS ${{ matrix.volume }}
+    name: MacOS ${{ matrix.volume }}${{ matrix.asroot.name }}
     runs-on: macos-12
 
     steps:
@@ -60,7 +70,7 @@ jobs:
 
       - run: ./f3write -V
       - run: ./f3write --help
-      - run: ./f3write -s 2 -e 4 -w 50000 ${{ matrix.volume }}
+      - run: ${{ matrix.asroot.sudo }}./f3write -s 2 -e 4 -w 50000 ${{ matrix.volume }}
 
       - run: stat ${{ matrix.volume }}/2.h2w
       - run: stat ${{ matrix.volume }}/3.h2w
@@ -68,7 +78,7 @@ jobs:
 
       - run: ./f3read -V
       - run: ./f3read --help
-      - run: ./f3read -s 2 -e 4 -r 50000 ${{ matrix.volume }}
+      - run: ${{ matrix.asroot.sudo }}./f3read -s 2 -e 4 -r 50000 ${{ matrix.volume }}
 
   Cygwin:
     strategy:
