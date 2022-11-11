@@ -15,6 +15,7 @@ jobs:
         volume:
           - /tmp
           - .
+          - /
 
     name: Linux ${{ matrix.volume }}
     runs-on: ubuntu-22.04
@@ -23,6 +24,9 @@ jobs:
       - uses: actions/checkout@v3
       - run: sudo apt-get install -y libparted-dev libudev-dev
       - run: make all extra
+
+      - if: matrix.volume == '/'
+        run: sudo chmod a+w /
 
       - run: ./f3write -V
       - run: ./f3write --help
@@ -43,6 +47,8 @@ jobs:
         volume:
           - /tmp
           - .
+          # MacOS denies `sudo chmod a+w /`
+          #- /
 
     name: MacOS ${{ matrix.volume }}
     runs-on: macos-12
@@ -73,6 +79,8 @@ jobs:
             windows: 'C:'
           - cygwin: .
             windows: .
+          - cygwin: /
+            windows: 'C:\cygwin'
 
     name: Cygwin ${{ matrix.volume.cygwin }}
     runs-on: windows-2022
