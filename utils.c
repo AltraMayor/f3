@@ -18,9 +18,25 @@
 #include <dirent.h>
 #include <errno.h>
 #include <err.h>
+#include <unistd.h>
 
 #include "version.h"
 #include "utils.h"
+
+void adjust_dev_path(const char **dev_path)
+{
+	if (chdir(*dev_path)) {
+		err(errno, "Can't change working directory to %s at %s()", *dev_path, __func__);
+	}
+
+	if (!chroot(*dev_path)) {
+		assert(!chdir("/"));
+	} else if (errno != EPERM) {
+		err(errno, "Can't change root directory to %s at %s()", *dev_path, __func__);
+	}
+
+	*dev_path = ".";
+}
 
 const char *adjust_unit(double *ptr_bytes)
 {
@@ -215,8 +231,6 @@ int posix_fadvise(int fd, off_t offset, off_t len, int advice)
 #endif	/* Apple Macintosh */
 
 #if (__APPLE__ && __MACH__) || defined(__OpenBSD__)
-
-#include <unistd.h> /* For usleep(). */
 
 void msleep(double wait_ms)
 {

@@ -9,6 +9,8 @@
 #define SECTOR_SIZE (512)
 #define GIGABYTES   (1024 * 1024 * 1024)
 
+void adjust_dev_path(const char **dev_path);
+
 const char *adjust_unit(double *ptr_bytes);
 
 /* Return true if @filename matches the regex /^[0-9]+\.h2w$/ */
