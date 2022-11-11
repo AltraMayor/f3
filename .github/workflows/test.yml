@@ -1,0 +1,70 @@
+---
+name: Test
+
+on:
+  push:
+    branches:
+      - master
+  pull_request: {}
+
+jobs:
+  Linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - run: sudo apt-get install -y libparted-dev libudev-dev
+      - run: make all extra
+
+      - run: ./f3write -V
+      - run: ./f3write --help
+      - run: ./f3write -s 2 -e 4 -w 50000 /tmp
+
+      - run: stat /tmp/2.h2w
+      - run: stat /tmp/3.h2w
+      - run: stat /tmp/4.h2w
+
+      - run: ./f3read -V
+      - run: ./f3read --help
+      - run: ./f3read -s 2 -e 4 -r 50000 /tmp
+
+  MacOS:
+    runs-on: macos-12
+    steps:
+      - uses: actions/checkout@v3
+      - run: brew install argp-standalone
+      - run: make
+
+      - run: ./f3write -V
+      - run: ./f3write --help
+      - run: ./f3write -s 2 -e 4 -w 50000 /tmp
+
+      - run: stat /tmp/2.h2w
+      - run: stat /tmp/3.h2w
+      - run: stat /tmp/4.h2w
+
+      - run: ./f3read -V
+      - run: ./f3read --help
+      - run: ./f3read -s 2 -e 4 -r 50000 /tmp
+
+  Cygwin:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: cygwin/cygwin-install-action@v2
+        with:
+          packages: gcc-core libargp-devel make
+
+      - run: "$Env:LDFLAGS = '-Wl,--stack,4000000'; make"
+
+      - run: '& .\f3write.exe -V'
+      - run: '& .\f3write.exe --help'
+      - run: '& .\f3write.exe -s 2 -e 4 -w 50000 /cygdrive/c'
+
+      - run: 'Get-Item C:\2.h2w'
+      - run: 'Get-Item C:\3.h2w'
+      - run: 'Get-Item C:\4.h2w'
+
+      - run: '& .\f3read.exe -V'
+      - run: '& .\f3read.exe --help'
+      - run: '& .\f3read.exe -s 2 -e 4 -r 50000 /cygdrive/c'
