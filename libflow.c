@@ -366,3 +366,45 @@ out:
 	}
 	return ret;
 }
+
+static inline void __dbuf_free(struct dynamic_buffer *dbuf)
+{
+	if (dbuf->buf != dbuf->backup_buf)
+		free(dbuf->buf);
+}
+
+void dbuf_free(struct dynamic_buffer *dbuf)
+{
+	__dbuf_free(dbuf);
+	dbuf->buf = NULL;
+	dbuf->len = 0;
+	dbuf->max_buf = true;
+}
+
+char *dbuf_get_buf(struct dynamic_buffer *dbuf, size_t size)
+{
+	/* If enough buffer, or it's already the largest buffer, return it. */
+	if (size <= dbuf->len || dbuf->max_buf)
+		return dbuf->buf;
+
+	/*
+	 * Allocate a new buffer.
+	 */
+
+	__dbuf_free(dbuf);
+	do {
+		dbuf->buf = malloc(size);
+		if (dbuf->buf != NULL) {
+			dbuf->len = size;
+			return dbuf->buf;
+		} else {
+			dbuf->max_buf = true;
+		}
+		size /= 2;
+	} while (size > sizeof(dbuf->backup_buf));
+
+	/* A larger buffer is not available; failsafe. */
+	dbuf->buf = dbuf->backup_buf;
+	dbuf->len = sizeof(dbuf->backup_buf);
+	return dbuf->buf;
+}

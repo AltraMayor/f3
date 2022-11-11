@@ -191,15 +191,16 @@ static ssize_t read_all(int fd, char *buf, size_t count)
 	return done;
 }
 
-static ssize_t check_chunk(int fd, uint64_t *p_expected_offset,
-	uint64_t chunk_size, struct file_stats *stats)
+static ssize_t check_chunk(struct dynamic_buffer *dbuf, int fd,
+	uint64_t *p_expected_offset, uint64_t chunk_size,
+	struct file_stats *stats)
 {
-	char buf[MAX_BUFFER_SIZE];
+	char *buf = dbuf_get_buf(dbuf, chunk_size);
+	size_t len = dbuf_get_len(dbuf);
 	ssize_t tot_bytes_read = 0;
 
 	while (chunk_size > 0) {
-		size_t turn_size = chunk_size <= MAX_BUFFER_SIZE
-			? chunk_size : MAX_BUFFER_SIZE;
+		size_t turn_size = chunk_size <= len ? chunk_size : len;
 		ssize_t bytes_read = read_all(fd, buf, turn_size);
 
 		if (bytes_read < 0) {
@@ -235,6 +236,7 @@ static void validate_file(const char *path, int number, struct flow *fw,
 	int fd, saved_errno;
 	ssize_t bytes_read;
 	uint64_t expected_offset;
+	struct dynamic_buffer dbuf;
 
 	zero_fstats(stats);
 
@@ -263,11 +265,12 @@ static void validate_file(const char *path, int number, struct flow *fw,
 	/* Help the kernel to help us. */
 	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL));
 
+	dbuf_init(&dbuf);
 	saved_errno = 0;
 	expected_offset = (uint64_t)number * GIGABYTES;
 	start_measurement(fw);
 	while (true) {
-		bytes_read = check_chunk(fd, &expected_offset,
+		bytes_read = check_chunk(&dbuf, fd, &expected_offset,
 			get_rem_chunk_size(fw), stats);
 		if (bytes_read == 0)
 			break;
@@ -297,6 +300,7 @@ static void validate_file(const char *path, int number, struct flow *fw,
 	}
 	printf("\n");
 
+	dbuf_free(&dbuf);
 	close(fd);
 	free(full_fn);
 }

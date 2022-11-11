@@ -2,6 +2,7 @@
 #define HEADER_LIBFLOW_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 struct flow;
 
@@ -90,6 +91,31 @@ static inline uint64_t get_rem_chunk_size(struct flow *fw)
 	return (fw->blocks_per_delay - fw->processed_blocks) * fw->block_size;
 }
 
-#define MAX_BUFFER_SIZE	(1<<21)	/* 2MB */
+struct dynamic_buffer {
+	char   *buf;
+	size_t len;
+	bool   max_buf;
+	char   backup_buf[1 << 21]; /* 2MB */
+};
+
+static inline void dbuf_init(struct dynamic_buffer *dbuf)
+{
+	dbuf->buf = dbuf->backup_buf;
+	dbuf->len = sizeof(dbuf->backup_buf);
+	dbuf->max_buf = false;
+}
+
+void dbuf_free(struct dynamic_buffer *dbuf);
+
+/*
+ * Although the returned buffer may be smaller than @size,
+ * this function never returns NULL.
+ */
+char *dbuf_get_buf(struct dynamic_buffer *dbuf, size_t size);
+
+static inline size_t dbuf_get_len(const struct dynamic_buffer *dbuf)
+{
+	return dbuf->len;
+}
 
 #endif	/* HEADER_LIBFLOW_H */

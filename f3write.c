@@ -150,13 +150,14 @@ static int write_all(int fd, const char *buf, size_t count)
 	return 0;
 }
 
-static int write_chunk(int fd, size_t chunk_size, uint64_t *poffset)
+static int write_chunk(struct dynamic_buffer *dbuf, int fd, size_t chunk_size,
+	uint64_t *poffset)
 {
-	char buf[MAX_BUFFER_SIZE];
+	char *buf = dbuf_get_buf(dbuf, chunk_size);
+	size_t len = dbuf_get_len(dbuf);
 
 	while (chunk_size > 0) {
-		size_t turn_size = chunk_size <= MAX_BUFFER_SIZE
-			? chunk_size : MAX_BUFFER_SIZE;
+		size_t turn_size = chunk_size <= len ? chunk_size : len;
 		int ret;
 		chunk_size -= turn_size;
 		*poffset = fill_buffer(buf, turn_size, *poffset);
@@ -177,6 +178,7 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 	int fd, saved_errno;
 	size_t remaining;
 	uint64_t offset;
+	struct dynamic_buffer dbuf;
 
 	assert(size > 0);
 	assert(size % fw->block_size == 0);
@@ -198,6 +200,7 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 	assert(fd >= 0);
 
 	/* Write content. */
+	dbuf_init(&dbuf);
 	saved_errno = 0;
 	offset = (uint64_t)number * GIGABYTES;
 	remaining = size;
@@ -206,7 +209,7 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 		uint64_t write_size = get_rem_chunk_size(fw);
 		if (write_size > remaining)
 			write_size = remaining;
-		saved_errno = write_chunk(fd, write_size, &offset);
+		saved_errno = write_chunk(&dbuf, fd, write_size, &offset);
 		if (saved_errno)
 			break;
 		remaining -= write_size;
@@ -220,6 +223,7 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 		if (!saved_errno)
 			saved_errno = errno;
 	}
+	dbuf_free(&dbuf);
 	close(fd);
 	free(full_fn);
 
