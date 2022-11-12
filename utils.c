@@ -28,14 +28,13 @@ void adjust_dev_path(const char **dev_path)
 	if (chdir(*dev_path)) {
 		err(errno, "Can't change working directory to %s at %s()", *dev_path, __func__);
 	}
+	*dev_path = ".";
 
 	if (!chroot(*dev_path)) {
 		assert(!chdir("/"));
 	} else if (errno != EPERM) {
 		err(errno, "Can't change root directory to %s at %s()", *dev_path, __func__);
 	}
-
-	*dev_path = ".";
 }
 
 const char *adjust_unit(double *ptr_bytes)
