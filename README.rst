@@ -226,7 +226,7 @@ To solve this, we can use docker-machine to create a VirtualBox VM
 handle device pass-through, we can pass the device through to the VirtualBox VM
 which can then pass the device through to the Docker container.  Milad Alizadeh
 wrote up some good instructions `here
-<https://mil.ad/docker/2018/05/06/access-usb-devices-in-container-in-mac.html>`__
+<https://mil.ad/blog/2018/access-usb-devices-in-container-in-mac.html>`__
 which are geared towards USB devices, but it shouldn't be too hard to adapt to
 other drive types.  Here's what I typed into my Mac terminal (probably
 similar for Windows, but untested)::
