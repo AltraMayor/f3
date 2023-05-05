@@ -202,8 +202,20 @@ For example, to probe a drive mounted at /dev/sdX::
 Optionally, you can also build your own container *if* you don't want to use the
 pre-built image.  From this directory, run::
 
+    make docker
+
+or::
+
     docker build -t f3:latest .
+
+
+To run f3 commands using your newly built Docker image::
+
     docker run -it --rm --device <device> f3:latest <f3-command> [<f3-options>] <device>
+
+    docker run -it --rm --device /dev/sdX f3:latest f3probe --destructive --time-ops /dev/sdX
+    docker run -it --rm -v /path/to/mounted/device:/mnt/ f3:latest f3write /mnt/
+    docker run -it --rm -v /path/to/mounted/device:/mnt/ f3:latest f3read /mnt/
 
 Drive Permissions / Passthrough
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
