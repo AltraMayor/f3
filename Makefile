@@ -20,6 +20,9 @@ endif
 all: $(TARGETS)
 extra: $(EXTRA_TARGETS)
 
+docker:
+	docker build -f Dockerfile -t f3:latest .
+
 install: all
 	$(INSTALL) -d $(DESTDIR)$(PREFIX)/bin
 	$(INSTALL) -m755 $(TARGETS) $(DESTDIR)$(PREFIX)/bin
