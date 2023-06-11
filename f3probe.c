@@ -462,7 +462,7 @@ static int test_device(struct args *args)
 		wrap, block_order);
 	switch (fake_type) {
 	case FKTY_GOOD:
-		printf("Good news: The device `%s' is the real thing\n",
+		printf("Good news: The device '%s' is the real thing\n",
 			final_dev_filename);
 		break;
 
