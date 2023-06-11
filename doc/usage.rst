@@ -682,7 +682,7 @@ outputs:
 
     Probe finished, recovering blocks... Done
 
-    Good news: The device `/dev/sdc' is the real thing
+    Good news: The device '/dev/sdc' is the real thing
 
     Device geometry:
                  *Usable* size: 3.77 GB (7913472 blocks)
