@@ -259,7 +259,15 @@ static void validate_file(const char *path, int number, struct flow *fw,
 	 * even when testing small memory cards without a remount, and
 	 * we should have a better reading-speed measurement.
 	 */
-	assert(!fdatasync(fd));
+	if (fdatasync(fd) < 0) {
+		int saved_errno = errno;
+		/* The issue https://github.com/AltraMayor/f3/issues/211
+		 * motivated the warning below.
+		 */
+		printf("\nWARNING:\nThe operating system returned errno=%i for fdatasync(): %s\nThis error is unexpected and you may find more information on the log of the kernel (e.g. command dmesg(1) on Linux).\n\n",
+			saved_errno, strerror(saved_errno));
+		exit(saved_errno);
+	}
 	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
 
 	/* Help the kernel to help us. */
