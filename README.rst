@@ -325,6 +325,16 @@ command::
 
     make install-extra
 
+Snap support
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The complete f3 bundle is also available as a snap. It can be installed
+from the Snap Store or from a non-Store source (with --dangerous flag):
+
+::
+    snap install f3
+
+
 Other resources
 ===============
 

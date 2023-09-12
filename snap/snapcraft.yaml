@@ -1,0 +1,69 @@
+name: f3
+version: "1.0"
+summary: F3 - Fight Flash Fraud
+description: |
+  F3 is a simple tool that tests flash cards capacity and performance to see if they live up to claimed specifications. It fills the device with pseudorandom data and then checks if it returns the same on reading. F3 stands for Fight Flash Fraud, or Fight Fake Flash.
+
+compression: lzo
+grade: stable
+confinement: strict
+base: core20
+
+apps:
+  f3write:
+    command: usr/local/bin/f3write
+    plugs:
+      - home
+      - removable-media
+      - mount-observe
+      - cifs-mount
+      - udisks2
+      - hardware-observe
+  f3read:
+    command: usr/local/bin/f3read
+    plugs:
+      - home
+      - removable-media
+      - mount-observe
+      - cifs-mount
+      - udisks2
+      - hardware-observe
+  f3probe:
+    command: usr/local/bin/f3probe
+    plugs:
+      - home
+      - removable-media
+      - mount-observe
+      - cifs-mount
+      - udisks2
+      - hardware-observe
+  f3fix:
+    command: usr/local/bin/f3fix
+    plugs:
+      - home
+      - removable-media
+      - mount-observe
+      - cifs-mount
+      - udisks2
+      - hardware-observe
+  f3brew:
+    command: usr/local/bin/f3brew
+    plugs:
+      - home
+      - removable-media
+      - mount-observe
+      - cifs-mount
+      - udisks2
+      - hardware-observe
+parts:
+  f3:
+    plugin: make
+    source: .
+    #override-build: |
+    #  make all
+    #  make install
+    build-packages:
+      - libudev1
+      - libudev-dev
+      - libparted-dev
+
