@@ -134,7 +134,7 @@ If you use MacPorts instead, use the following command::
 Compiling the latest development version from the source code
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Most of the f3 source code builds fine using XCode, the only dependency
+Most of the f3 source code builds fine using Xcode, the only dependency
 missing is the GNU C library "argp". You can build argp from scratch, or
 use the version provided by HomeBrew and MacPorts as "argp-standalone"
 
