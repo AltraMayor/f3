@@ -161,7 +161,7 @@ for details.
 
        brew install argp-standalone
 
-   See http://brewformulas.org/ArgpStandalone and
+   See https://formulae.brew.sh/formula/argp-standalone and
    https://www.freshports.org/devel/argp-standalone/ for more
    information.
 
