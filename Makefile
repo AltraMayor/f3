@@ -13,6 +13,11 @@ ifndef OS
 endif
 ifneq ($(OS), Linux)
 	ARGP = /usr/local
+	ifeq ($(OS), Darwin)
+		ifneq ($(shell command -v brew),)
+			ARGP = $(shell brew --prefix)
+		endif
+	endif
 	CFLAGS += -I$(ARGP)/include
 	LDFLAGS += -L$(ARGP)/lib -largp
 endif
