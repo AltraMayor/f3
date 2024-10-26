@@ -15,8 +15,6 @@ F3 stands for Fight Flash Fraud, or Fight Fake Flash.
 
 .. _examples:
 
-.. highlight:: bash
-
 Examples
 ========
 
