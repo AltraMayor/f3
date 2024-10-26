@@ -105,6 +105,9 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = 'sphinx'
 
+# Disable default code block language being set to Python.
+highlight_language = 'none'
+
 # A list of ignored prefixes for module index sorting.
 # modindex_common_prefix = []
 
