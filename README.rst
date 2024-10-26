@@ -345,31 +345,33 @@ authors. This will improve their code as it has improved mine.
 Files
 -----
 
-::
+- ``changelog`` - Change log for package maintainers
+- ``f3read.1`` - Man page for f3read and f3write
 
-    changelog   - Change log for package maintainers
-    f3read.1    - Man page for f3read and f3write
-                In order to read this manual page, run `man ./f3read.1`
-                To install the page, run
-                `install --owner=root --group=root --mode=644 f3read.1 /usr/share/man/man1`
-    LICENSE     - License (GPLv3)
-    Makefile    - make(1) file
-    README      - This file
-    *.h and *.c - C code of F3
+  In order to read this manual page, run ``man ./f3read.1``.
+  To install the page, run
+  ``install --owner=root --group=root --mode=644 f3read.1 /usr/share/man/man1``.
+
+- ``LICENSE`` - License (GPLv3)
+- ``Makefile`` - make(1) file
+- ``README`` - This file
+- ``*.h`` and ``*.c`` - C code of F3
 
 Bash scripts
 ------------
 
 Although the simple scripts listed in this section are ready for use,
 they are really meant to help you to write your own scripts. So you can
-personalize F3 to your specific needs::
+personalize F3 to your specific needs:
 
-    f3write.h2w - Script to create files exactly like H2testw.
-        Use example: `f3write.h2w /media/michel/5EBD-5C80/`
+- ``f3write.h2w`` - Script to create files exactly like H2testw.
 
-    log-f3wr    - Script that runs f3write and f3read, and records
-                  their output into a log file.
-        Use example: `log-f3wr log-filename /media/michel/5EBD-5C80/`
+  Use example: ``f3write.h2w /media/michel/5EBD-5C80/``.
+
+- ``log-f3wr`` - Script that runs f3write and f3read, and records
+  their output into a log file.
+
+  Use example: ``log-f3wr log-filename /media/michel/5EBD-5C80/``.
 
 Please notice that all scripts and use examples above assume that
 f3write, f3read, and the scripts are in the same folder.
