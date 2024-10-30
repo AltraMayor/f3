@@ -214,8 +214,8 @@ This allows one to easily repeat a test of a card as long as the N.h2w
 files are still available.
 
 As a final remark, if you want to run ``f3write`` and ``f3read`` with a
-single command, check out the shell script
-```log-f3wr`` <https://github.com/AltraMayor/f3/blob/master/log-f3wr>`__.
+single command, check out the ``log-f3wr`` shell script
+`here <https://github.com/AltraMayor/f3/blob/master/log-f3wr>`__.
 This script runs ``f3write`` and ``f3read``, and records their output
 into a log file. Use example:
 ``log-f3wr log-filename /media/michel/5EBD-5C80/``
@@ -470,8 +470,8 @@ does exactly that:
 
 
 If you want to exchange files with H2testw users often, check out the
-shell script
-```f3write.h2w`` <https://github.com/AltraMayor/f3/blob/master/f3write.h2w>`__.
+``f3write.h2w`` shell script
+`here <https://github.com/AltraMayor/f3/blob/master/f3write.h2w>`__.
 This script calls ``truncate`` after ``f3write`` runs successfully.
 
 f3probe - the fastest drive test
