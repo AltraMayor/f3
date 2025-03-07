@@ -11,7 +11,7 @@ counterfeiters, but I need a little bit of help to keep moving forward.
 How can you help?
 
 -  If F3 has helped you, consider signaling this to other users staring
-   F3 on GitHub. The larger the number of stars a project has, the more
+   F3 on `GitHub <https://github.com/AltraMayor/f3>`__. The larger the number of stars a project has, the more
    confident new users are to try it out.
 -  If you know a journalist, or are one, suggest to him or her writing
    an article about fake flash. The media has not been covering this
