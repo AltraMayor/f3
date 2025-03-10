@@ -14,6 +14,7 @@ F3 stands for Fight Flash Fraud, or Fight Fake Flash.
 -  `Other resources <#other-resources>`__
 
 .. _examples:
+.. highlight:: console
 
 Examples
 ========
@@ -71,6 +72,7 @@ following command uncompresses the files::
 
     $ unzip f3-8.0.zip
 
+.. highlight:: bash
 
 Compile stable software on Linux or FreeBSD
 -------------------------------------------
