@@ -2,6 +2,7 @@ Usage
 =====
 
 .. contents::
+.. highlight:: console
 
 How to use f3write and f3read
 -----------------------------
