@@ -6,3 +6,8 @@ cscope.out
 *~
 
 doc/_build
+/f3brew
+/f3fix
+/f3probe
+/f3read
+/f3write
