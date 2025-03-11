@@ -10,6 +10,7 @@
 #include "version.h"
 #include "libutils.h"
 #include "libdevs.h"
+#include "libeta.h"
 
 /* Argp's global variables. */
 const char *argp_program_version = "F3 BREW " F3_STR_VERSION;
@@ -228,8 +229,11 @@ static void write_blocks(struct device *dev,
 	char *flush_blk = buffer + BIG_BLOCK_SIZE_BYTE;
 	uint64_t offset = first_block << block_order;
 	uint64_t pos, first_pos = first_block;
+	struct etabar bar;
 
 	assert(BIG_BLOCK_SIZE_BYTE >= block_size);
+	eta_init(&bar, last_block - first_block + 1);
+	eta_print(&bar);
 
 	for (pos = first_block; pos <= last_block; pos++) {
 		fill_buffer_with_block(stamp_blk, block_order, offset, 0);
@@ -237,13 +241,23 @@ static void write_blocks(struct device *dev,
 		offset += block_size;
 
 		if (stamp_blk == flush_blk || pos == last_block) {
-			if (dev_write_blocks(dev, buffer, first_pos, pos))
+			int rc = dev_write_blocks(dev, buffer, first_pos, pos);
+			int errrc = errno;
+			eta_stamp(&bar, pos - first_block + 1);
+			if (!rc) {
+				eta_redraw(&bar);
+			} else {
+				eta_clear();
+				errno = errrc;
 				warn("Failed to write blocks from 0x%" PRIx64
 					" to 0x%" PRIx64, first_pos, pos);
+				eta_print(&bar);
+			}
 			stamp_blk = buffer;
 			first_pos = pos + 1;
 		}
 	}
+	eta_clear();
 }
 
 /* XXX Properly handle return errors. */
@@ -375,8 +389,10 @@ static void read_blocks(struct device *dev,
 		.end_sector_offset = 0,
 		.found_sector_offset = 0,
 	};
+	struct etabar bar;
 
 	assert(BIG_BLOCK_SIZE_BYTE >= block_size);
+	eta_init(&bar, last_block - first_block + 1);
 
 	while (first_pos <= last_block) {
 		char *probe_blk = buffer;
@@ -384,7 +400,12 @@ static void read_blocks(struct device *dev,
 
 		if (next_pos > last_block)
 			next_pos = last_block;
-		if (dev_read_blocks(dev, buffer, first_pos, next_pos))
+
+		eta_print(&bar);
+		int rc = dev_read_blocks(dev, buffer, first_pos, next_pos);
+		int errrc = errno;
+		eta_clear(); // as validate_block() might decide to print
+		if (errno = errrc, rc)
 			warn("Failed to read blocks from 0x%" PRIx64
 				" to 0x%" PRIx64, first_pos, next_pos);
 
@@ -396,6 +417,7 @@ static void read_blocks(struct device *dev,
 		}
 
 		first_pos = next_pos + 1;
+		eta_stamp(&bar, first_pos - first_block);
 	}
 	if (range.state != bs_unknown)
 		print_block_range(&range);
