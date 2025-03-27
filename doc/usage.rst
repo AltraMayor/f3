@@ -599,7 +599,7 @@ in the example below (please use the correct device!):
 
     $ sudo ./f3probe --destructive --time-ops /dev/sdb
     [sudo] password for michel:
-    F3 probe 8.0
+    F3 probe 9.0
     Copyright (C) 2010 Digirati Internet LTDA.
     This is free software; see the source for copying conditions.
 
@@ -674,7 +674,7 @@ outputs:
 
     $ sudo ./f3probe --time-ops /dev/sdc
     [sudo] password for michel:
-    F3 probe 8.0
+    F3 probe 9.0
     Copyright (C) 2010 Digirati Internet LTDA.
     This is free software; see the source for copying conditions.
 
@@ -734,7 +734,7 @@ The execution of ``f3fix`` on my fake drive went as follows:
 ::
 
     $ sudo ./f3fix --last-sec=16477878 /dev/sdb
-    F3 fix 8.0
+    F3 fix 9.0
     Copyright (C) 2010 Digirati Internet LTDA.
     This is free software; see the source for copying conditions.
 

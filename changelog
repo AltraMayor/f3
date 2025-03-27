@@ -1,3 +1,12 @@
+Version 9.0 - Mar 27, 2025
+
+    * f3read/f3write: Avoid the execution stack to list files
+    * f3read/f3write: Add dynamic buffers
+    * f3read/f3write: chroot(2) to source/target dir if allowed
+    * Portability improvements for Ubuntu, ARM, OpenBSD, and Apple
+    * Automated test of the code with GitHub Actions
+    * Improved documentation
+
 Version 8.0 - Oct 29, 2020
 
     * f3read: add parameter --max-read-rate
