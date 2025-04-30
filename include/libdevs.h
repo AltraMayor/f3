@@ -87,8 +87,6 @@ void free_device(struct device *dev);
  *	Concrete devices
  */
 
-// Device builders moved to devices/ headers
-
 enum reset_type {
 	RT_MANUAL_USB = 0,
 	RT_USB,

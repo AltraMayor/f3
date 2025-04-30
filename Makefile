@@ -37,6 +37,7 @@ ifeq ($(OS), Darwin)
     endif
     PLATFORM_CFLAGS += -I$(ARGP_PREFIX)/include
     PLATFORM_LDFLAGS += -L$(ARGP_PREFIX)/lib -largp
+    PLATFORM_LDFLAGS += -framework DiskArbitration -framework CoreFoundation
 endif
 
 CFLAGS += $(PLATFORM_CFLAGS)
