@@ -1,10 +1,10 @@
+#include <stdlib.h>
 #include <stdbool.h>
-#include <assert.h>
 #include <argp.h>
-#include <parted/parted.h>
 
 #include "version.h"
 #include "libutils.h"
+#include "devices/partition.h"
 
 /* Argp's global variables. */
 const char *argp_program_version = "F3 Fix " F3_STR_VERSION;
@@ -45,10 +45,10 @@ struct args {
 	/* 29 free bytes. */
 
 	const char		*dev_filename;
-	PedDiskType		*disk_type;
-	PedFileSystemType	*fs_type;
-	PedSector		first_sec;
-	PedSector		last_sec;
+	const char		*disk_type;
+	const char		*fs_type;
+	uint64_t		first_sec;
+	uint64_t		last_sec;
 };
 
 static long long arg_to_long_long(const struct argp_state *state,
@@ -70,16 +70,16 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 	switch (key) {
 	case 'd':
-		args->disk_type = ped_disk_type_get(arg);
-		if (!args->disk_type)
+		args->disk_type = arg;
+		if (!is_valid_disk_type(arg))
 			argp_error(state,
 				"Disk type `%s' is not supported; use --list-disk-types to see the supported types",
 				arg);
 		break;
 
 	case 'f':
-		args->fs_type = ped_file_system_type_get(arg);
-		if (!args->fs_type)
+		args->fs_type = arg;
+		if (!is_valid_fs_type(arg))
 			argp_error(state,
 				"File system type `%s' is not supported; use --list-fs-types to see the supported types",
 				arg);
@@ -142,7 +142,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 				"Option --last-sec is required");
 		if (args->first_sec > args->last_sec)
 			argp_error(state,
-				"Option --fist_sec must be less or equal to option --last_sec");
+				"Option --first_sec must be less or equal to option --last_sec");
 		break;
 
 	default:
@@ -153,98 +153,36 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
 
+static void print_array(const char *title, size_t (*getter)(char ***))
+{
+	char **list = NULL;
+	size_t n = getter(&list);
+	if (!list) {
+		fprintf(stderr, "Failed to obtain %s\n", title);
+		return;
+	}
+
+	printf("%s:\n", title);
+	for (size_t i = 0; list[i]; ++i) {
+		printf("%s\t", list[i]);
+		if (i % 5 == 4)
+			putchar('\n');
+	}
+	if (n % 5)
+		putchar('\n');
+	putchar('\n');
+
+	partition_free_types_array(list);
+}
+
 static void list_disk_types(void)
 {
-	PedDiskType *type;
-	int i = 0;
-	printf("Disk types:\n");
-	for (type = ped_disk_type_get_next(NULL); type;
-		type = ped_disk_type_get_next(type)) {
-		printf("%s\t", type->name);
-		i++;
-		if (i == 5) {
-			printf("\n");
-			i = 0;
-		}
-	}
-	if (i > 0)
-		printf("\n");
-	printf("\n");
+	print_array("Disk types", partition_list_disk_types);
 }
 
 static void list_fs_types(void)
 {
-	PedFileSystemType *fs_type;
-	int i = 0;
-	printf("File system types:\n");
-	for (fs_type = ped_file_system_type_get_next(NULL); fs_type;
-		fs_type = ped_file_system_type_get_next(fs_type)) {
-		printf("%s\t", fs_type->name);
-		i++;
-		if (i == 5) {
-			printf("\n");
-			i = 0;
-		}
-	}
-	if (i > 0)
-		printf("\n");
-	printf("\n");
-}
-
-static PedSector map_sector_to_logical_sector(PedSector sector,
-	int logical_sector_size)
-{
-	assert(logical_sector_size >= 512);
-	assert(logical_sector_size % 512 == 0);
-	return sector / (logical_sector_size / 512);
-}
-
-/* 0 on failure, 1 otherwise. */
-static int fix_disk(PedDevice *dev, PedDiskType *type,
-	PedFileSystemType *fs_type, int boot, PedSector start, PedSector end)
-{
-	PedDisk *disk;
-	PedPartition *part;
-	PedGeometry *geom;
-	PedConstraint *constraint;
-	int ret = 0;
-
-	disk = ped_disk_new_fresh(dev, type);
-	if (!disk)
-		goto out;
-
-	start = map_sector_to_logical_sector(start, dev->sector_size);
-	end = map_sector_to_logical_sector(end, dev->sector_size);
-	part = ped_partition_new(disk, PED_PARTITION_NORMAL,
-		fs_type, start, end);
-	if (!part)
-		goto disk;
-	if (boot && !ped_partition_set_flag(part, PED_PARTITION_BOOT, 1))
-		goto part;
-
-	geom = ped_geometry_new(dev, start, end - start + 1);
-	if (!geom)
-		goto part;
-	constraint = ped_constraint_exact(geom);
-	ped_geometry_destroy(geom);
-	if (!constraint)
-		goto part;
-
-	ret = ped_disk_add_partition(disk, part, constraint);
-	ped_constraint_destroy(constraint);
-	if (!ret)
-		goto part;
-	/* ped_disk_print(disk); */
-
-	ret = ped_disk_commit(disk);
-	goto disk;
-
-part:
-	ped_partition_destroy(part);
-disk:
-	ped_disk_destroy(disk);
-out:
-	return ret;
+	print_array("File system types", partition_list_fs_types);
 }
 
 int main (int argc, char *argv[])
@@ -256,13 +194,14 @@ int main (int argc, char *argv[])
 
 		.boot			= true,
 
-		.disk_type		= ped_disk_type_get("msdos"),
-		.fs_type		= ped_file_system_type_get("fat32"),
+		.disk_type		= "msdos",
+		.fs_type		= "fat32",
 		.first_sec		= 2048,	/* Skip first 1MB. */
 	};
 
-	PedDevice *dev;
-	int ret;
+	struct device *bdev;
+	struct partition_options opt;
+	int err;
 
 	/* Read parameters. */
 	argp_parse(&argp, argc, argv, 0, NULL, &args);
@@ -284,13 +223,25 @@ int main (int argc, char *argv[])
 	/* XXX If @dev is a partition, refer the user to
 	 * the disk of this partition.
 	 */
-	dev = ped_device_get(args.dev_filename);
-	if (!dev)
+	bdev = create_block_device(args.dev_filename, RT_NONE);
+	if (!bdev) {
+		fprintf(stderr, "Failed to open device %s\n", args.dev_filename);
 		return 1;
+	}
 
-	ret = !fix_disk(dev, args.disk_type, args.fs_type, args.boot,
-		args.first_sec, args.last_sec);
-	printf("Drive `%s' was successfully fixed\n", args.dev_filename);
-	ped_device_destroy(dev);
-	return ret;
+	opt = (struct partition_options){
+		.disk_type		= args.disk_type,
+		.fs_type		= args.fs_type,
+		.boot			= args.boot,
+		.first_sector	= args.first_sec,
+		.last_sector	= args.last_sec,
+	};
+	err = partition_create(bdev, &opt);
+	if (err == 0) {
+		printf("Drive `%s' was successfully fixed\n", args.dev_filename);
+	} else {
+		fprintf(stderr, "Failed to fix drive `%s'\n", args.dev_filename);
+	}
+	free_device(bdev);
+	return err;
 }
