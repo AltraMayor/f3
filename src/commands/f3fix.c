@@ -1,10 +1,15 @@
 #include <stdlib.h>
+#include <stdint.h>
 #include <stdbool.h>
+#include <errno.h>
 #include <argp.h>
 
 #include "version.h"
 #include "libutils.h"
 #include "devices/partition.h"
+
+/* Sentinel for unset last sector. */
+#define SEC_UNSET ((uint64_t)UINT64_MAX)
 
 /* Argp's global variables. */
 const char *argp_program_version = "F3 Fix " F3_STR_VERSION;
@@ -41,8 +46,9 @@ struct args {
 	bool	list_fs_types;
 
 	bool	boot;
+	bool	boot_flag_seen;
 
-	/* 29 free bytes. */
+	/* 28 free bytes. */
 
 	const char		*dev_filename;
 	const char		*disk_type;
@@ -51,75 +57,81 @@ struct args {
 	uint64_t		last_sec;
 };
 
-static long long arg_to_long_long(const struct argp_state *state,
-	const char *arg)
+static uint64_t arg_to_uint64(const struct argp_state *state, const char *arg)
 {
-	char *end;
-	long long ll = strtoll(arg, &end, 0);
-	if (!arg)
-		argp_error(state, "An integer must be provided");
-	if (!*arg || *end)
-		argp_error(state, "`%s' is not an integer", arg);
-	return ll;
+    char *end;
+    errno = 0;
+
+	if (*arg == '-')
+		argp_error(state, "value must be non-negative");
+
+	unsigned long long v = strtoull(arg, &end, 0);
+
+    /* reject empty string, garbage suffix, or overflow */
+    if (end == arg || *end || errno == ERANGE)
+        argp_error(state, "`%s' is not a valid unsigned integer", arg);
+
+#if ULLONG_MAX > UINT64_MAX
+	/* Reject overflow in exotic systems. */
+    if (v > UINT64_MAX)
+        argp_error(state, "`%s' is too large; maximum is %llu",
+                   arg, (unsigned long long)UINT64_MAX);
+#endif
+    return (uint64_t)v;
 }
 
 static error_t parse_opt(int key, char *arg, struct argp_state *state)
 {
 	struct args *args = state->input;
-	long long ll;
 
 	switch (key) {
-	case 'd':
+	case 'd': /* disk-type */
 		args->disk_type = arg;
 		if (!is_valid_disk_type(arg))
 			argp_error(state,
-				"Disk type `%s' is not supported; use --list-disk-types to see the supported types",
+				"Disk type `%s' is not supported; "
+				"use --list-disk-types to see the supported types",
 				arg);
 		break;
 
-	case 'f':
+	case 'f': /* fs-type */
 		args->fs_type = arg;
 		if (!is_valid_fs_type(arg))
 			argp_error(state,
-				"File system type `%s' is not supported; use --list-fs-types to see the supported types",
+				"File system type `%s' is not supported; "
+				"use --list-fs-types to see the supported types",
 				arg);
 		break;
 
-	case 'b':
-		args->boot = true;
-		break;
-
-	case 'n':
-		args->boot = false;
-		break;
-
-	case 'a':
-		ll = arg_to_long_long(state, arg);
-		if (ll < 0)
+	case 'b': /* boot */
+	case 'n': /* no-boot */
+		if (args->boot_flag_seen)
 			argp_error(state,
-				"First sector must be greater or equal to 0");
-		args->first_sec = ll;
+				"Options --boot and --no-boot are mutually exclusive "
+				"and may be given only once");
+		args->boot_flag_seen = true;
+		args->boot = (key == 'b');
 		break;
 
-	case 'l':
-		ll = arg_to_long_long(state, arg);
-		if (ll < 0)
-			argp_error(state,
-				"Last sector must be greater or equal to 0");
-		args->last_sec = ll;
+	case 'a': /* first-sec */
+		args->first_sec = arg_to_uint64(state, arg);
 		break;
 
-	case 'k':
+	case 'l': /* last-sec */
+		args->last_sec = arg_to_uint64(state, arg);
+		break;
+
+	case 'k': /* list-disk-types */
 		args->list_disk_types = true;
 		break;
 
-	case 's':
+	case 's': /* list-fs-types */
 		args->list_fs_types = true;
 		break;
 
 	case ARGP_KEY_INIT:
 		args->dev_filename = NULL;
-		args->last_sec = -1;
+		args->last_sec = SEC_UNSET;
 		break;
 
 	case ARGP_KEY_ARG:
@@ -137,7 +149,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 			argp_error(state,
 				"The disk device was not specified");
 
-		if (args->last_sec < 0)
+		if (args->last_sec == SEC_UNSET)
 			argp_error(state,
 				"Option --last-sec is required");
 		if (args->first_sec > args->last_sec)
@@ -193,6 +205,7 @@ int main (int argc, char *argv[])
 		.list_fs_types		= false,
 
 		.boot			= true,
+		.boot_flag_seen		= false,
 
 		.disk_type		= "msdos",
 		.fs_type		= "fat32",

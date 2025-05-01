@@ -115,7 +115,7 @@ cscope:
 	cscope -b src/**/*.c include/**/*.h
 
 cppcheck:
-	cppcheck --enable=all --suppress=missingIncludeSystem \
+	cppcheck --enable=all --suppress=missingIncludeSystem --check-level=exhaustive \
 	  -Iinclude -Iinclude/devices src include
 
 clean:
