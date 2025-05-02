@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
 #include <errno.h>
 #include <argp.h>
 
@@ -59,25 +60,25 @@ struct args {
 
 static uint64_t arg_to_uint64(const struct argp_state *state, const char *arg)
 {
-    char *end;
-    errno = 0;
+	char *end;
+	errno = 0;
 
 	if (*arg == '-')
 		argp_error(state, "value must be non-negative");
 
 	unsigned long long v = strtoull(arg, &end, 0);
 
-    /* reject empty string, garbage suffix, or overflow */
-    if (end == arg || *end || errno == ERANGE)
-        argp_error(state, "`%s' is not a valid unsigned integer", arg);
+	/* reject empty string, garbage suffix, or overflow */
+	if (end == arg || *end || errno == ERANGE)
+		argp_error(state, "`%s' is not a valid unsigned integer", arg);
 
 #if ULLONG_MAX > UINT64_MAX
 	/* Reject overflow in exotic systems. */
-    if (v > UINT64_MAX)
-        argp_error(state, "`%s' is too large; maximum is %llu",
-                   arg, (unsigned long long)UINT64_MAX);
+	if (v > UINT64_MAX)
+		argp_error(state, "`%s' is too large; maximum is %llu",
+			   arg, (unsigned long long)UINT64_MAX);
 #endif
-    return (uint64_t)v;
+	return (uint64_t)v;
 }
 
 static error_t parse_opt(int key, char *arg, struct argp_state *state)
@@ -235,12 +236,23 @@ int main (int argc, char *argv[])
 
 	/* XXX If @dev is a partition, refer the user to
 	 * the disk of this partition.
+	 * create_block_device() will fail if @dev is a partition.
 	 */
 	bdev = create_block_device(args.dev_filename, RT_NONE);
 	if (!bdev) {
 		fprintf(stderr, "Failed to open device %s\n", args.dev_filename);
 		return 1;
 	}
+
+	// Get and copy the filename before freeing the device
+	const char *dev_filename = strdup(dev_get_filename(bdev));
+	if (!dev_filename) {
+		fprintf(stderr, "Failed to duplicate device filename\n");
+		free_device(bdev);
+		return 1;
+	}
+
+	free_device(bdev);  // Safe to free now that we have our copy
 
 	opt = (struct partition_options){
 		.disk_type		= args.disk_type,
@@ -249,12 +261,11 @@ int main (int argc, char *argv[])
 		.first_sector	= args.first_sec,
 		.last_sector	= args.last_sec,
 	};
-	err = partition_create(bdev, &opt);
+	err = partition_create(dev_filename, &opt);
 	if (err == 0) {
-		printf("Drive `%s' was successfully fixed\n", args.dev_filename);
+		printf("Drive `%s' was successfully fixed\n", dev_filename);
 	} else {
-		fprintf(stderr, "Failed to fix drive `%s'\n", args.dev_filename);
+		fprintf(stderr, "Failed to fix drive `%s'\n", dev_filename);
 	}
-	free_device(bdev);
 	return err;
 }

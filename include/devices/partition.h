@@ -14,7 +14,7 @@ struct partition_options {
 };
 
 /* Partition management functions */
-int partition_create(struct device *dev, const struct partition_options *options);
+int partition_create(const char *dev_filename, const struct partition_options *options);
 
 /* Type validation functions */
 bool is_valid_disk_type(const char *disk_type);

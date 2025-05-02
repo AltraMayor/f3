@@ -1,6 +1,7 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <parted/parted.h>
+
 #include "devices/partition.h"
 #include "devices/block_device.h"
 #include "libutils.h"
@@ -63,31 +64,28 @@ out:
 }
 
 // Create partition on a device
-int partition_create(struct device *dev, const struct partition_options *options)
+int partition_create(const char *dev_filename, const struct partition_options *options)
 {
     PedDevice *ped_dev;
     PedDiskType *disk_type;
     PedFileSystemType *fs_type;
-    int ret;
+    int ret = 1;  // assume failure
 
     // Get parted device
-    ped_dev = ped_device_get(bdev_get_filename(dev));
+    ped_dev = ped_device_get(dev_filename);
     if (!ped_dev) {
-        ret = 1;
         goto out;
     }
 
     // Get disk type
     disk_type = ped_disk_type_get(options->disk_type);
     if (!disk_type) {
-        ret = 1;
         goto pdev;
     }
 
     // Get file system type
     fs_type = ped_file_system_type_get(options->fs_type);
     if (!fs_type) {
-        ret = 1;
         goto pdev;
     }
 

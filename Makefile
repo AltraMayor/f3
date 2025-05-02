@@ -104,7 +104,7 @@ f3probe: src/commands/f3probe.o src/core/libutils.o src/core/libdevs.o src/core/
 f3brew: src/commands/f3brew.o src/core/libutils.o src/core/libdevs.o $(DEVICE_OBJS) $(PLATFORM_OBJS)
 	$(CC) -o bin/$@ $^ $(LDFLAGS) $(F3BREW_LIBS)
 
-f3fix: src/commands/f3fix.o src/core/libutils.o
+f3fix: src/commands/f3fix.o src/core/libutils.o src/core/libdevs.o $(DEVICE_OBJS) $(PLATFORM_OBJS)
 	$(CC) -o bin/$@ $^ $(LDFLAGS) $(F3FIX_LIBS)
 
 -include *.d
