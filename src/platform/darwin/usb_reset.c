@@ -13,16 +13,16 @@
 #include "libdevs.h"
 #include "devices/usb_reset.h"
 
-// macOS stub for USB reset
+/* macOS stub for USB reset. */
 int bdev_manual_usb_reset(struct device *dev)
 {
-    warnx("USB reset is not supported on macOS");
-    return -ENOSYS;
+	warnx("USB reset is not supported on macOS");
+	return -ENOSYS;
 }
 
-// Reset a USB-backed block device by prompting a detach/reattach
+/* Reset a USB-backed block device by prompting a detach/reattach. */
 int bdev_usb_reset(struct device *dev)
 {
-    warnx("USB reset is not supported on macOS");
-    return -ENOSYS;
+	warnx("USB reset is not supported on macOS");
+	return -ENOSYS;
 }

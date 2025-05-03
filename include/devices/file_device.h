@@ -16,8 +16,8 @@
  * Returns pointer to allocated struct device or NULL on error.
  */
  struct device *create_file_device(const char *filename,
-    uint64_t real_size_byte, uint64_t fake_size_byte,
-    int wrap, int block_order, int cache_order,
-    int strict_cache, int keep_file);
+	uint64_t real_size_byte, uint64_t fake_size_byte,
+	int wrap, int block_order, int cache_order,
+	int strict_cache, int keep_file);
 
-#endif // INCLUDE_DEVICES_FILE_DEVICE_H
+#endif	/* INCLUDE_DEVICES_FILE_DEVICE_H */

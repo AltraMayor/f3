@@ -68,7 +68,7 @@ static uint64_t arg_to_uint64(const struct argp_state *state, const char *arg)
 
 	unsigned long long v = strtoull(arg, &end, 0);
 
-	/* reject empty string, garbage suffix, or overflow */
+	/* Reject empty string, garbage suffix, or overflow. */
 	if (end == arg || *end || errno == ERANGE)
 		argp_error(state, "`%s' is not a valid unsigned integer", arg);
 
@@ -244,15 +244,14 @@ int main (int argc, char *argv[])
 		return 1;
 	}
 
-	// Get and copy the filename before freeing the device
+	/* Get and copy the filename before freeing the device. */
 	const char *dev_filename = strdup(dev_get_filename(bdev));
 	if (!dev_filename) {
 		fprintf(stderr, "Failed to duplicate device filename\n");
 		free_device(bdev);
 		return 1;
 	}
-
-	free_device(bdev);  // Safe to free now that we have our copy
+	free_device(bdev);
 
 	opt = (struct partition_options){
 		.disk_type		= args.disk_type,

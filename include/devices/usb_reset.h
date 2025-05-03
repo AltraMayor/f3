@@ -6,4 +6,4 @@
 int bdev_manual_usb_reset(struct device *dev);
 int bdev_usb_reset(struct device *dev);
 
-#endif /* USB_RESET_H */
+#endif  /* USB_RESET_H */

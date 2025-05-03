@@ -17,7 +17,7 @@
 
 static inline struct block_device *dev_bdev(struct device *dev)
 {
-    return (struct block_device *)dev;
+	return (struct block_device *)dev;
 }
 
 static struct udev_device *map_dev_to_usb_dev(struct udev_device *dev)
@@ -40,7 +40,7 @@ static struct udev_device *map_dev_to_usb_dev(struct udev_device *dev)
 	 * See udev_device_get_parent_with_subsystem_devtype() for
 	 * details.
 	 */
-    return udev_device_ref(usb_dev);
+	return udev_device_ref(usb_dev);
 }
 
 static struct udev_device *dev_from_block_fd(struct udev *udev, int block_fd)
@@ -49,35 +49,35 @@ static struct udev_device *dev_from_block_fd(struct udev *udev, int block_fd)
 
 	if (fstat(block_fd, &fd_stat)) {
 		warn("Can't fstat() FD %i", block_fd);
-        return NULL;
-    }
+		return NULL;
+	}
 
 	if (!S_ISBLK(fd_stat.st_mode)) {
 		warnx("FD %i is not a block device", block_fd);
-        return NULL;
-    }
+		return NULL;
+	}
 
 	return udev_device_new_from_devnum(udev, 'b', fd_stat.st_rdev);
 }
 
 static struct udev_monitor *create_monitor(struct udev *udev,
-    const char *subsystem, const char *devtype)
+	const char *subsystem, const char *devtype)
 {
 	struct udev_monitor *mon;
 	int mon_fd, flags;
 
 	mon = udev_monitor_new_from_netlink(udev, "udev");
-    assert(mon);
+	assert(mon);
 	assert(!udev_monitor_filter_add_match_subsystem_devtype(mon,
 		subsystem, devtype));
-    assert(!udev_monitor_enable_receiving(mon));
+	assert(!udev_monitor_enable_receiving(mon));
 	mon_fd = udev_monitor_get_fd(mon);
 	assert(mon_fd >= 0);
 	flags = fcntl(mon_fd, F_GETFL);
-    assert(flags >= 0);
+	assert(flags >= 0);
 	assert(!fcntl(mon_fd, F_SETFL, flags & ~O_NONBLOCK));
 
-    return mon;
+	return mon;
 }
 
 static uint64_t get_udev_dev_size_byte(struct udev_device *dev)
@@ -87,9 +87,9 @@ static uint64_t get_udev_dev_size_byte(struct udev_device *dev)
 	char *end;
 	long long size_sector;
 	if (!str_size_sector)
-        return 0;
+		return 0;
 	size_sector = strtoll(str_size_sector, &end, 10);
-    assert(!*end);
+	assert(!*end);
 	return size_sector * 512LL;
 }
 
@@ -178,10 +178,10 @@ static int wait_for_reset(struct udev *udev, const char *id_serial,
 		}
 		free((void *)*pfinal_dev_filename);
 		*pfinal_dev_filename = devnode;
-                done = true;
+				done = true;
 
 next:
-        udev_device_unref(dev);
+		udev_device_unref(dev);
 	} while (!done);
 
 	rc = 0;

@@ -11,4 +11,4 @@
  */
  struct device *create_block_device(const char *filename, enum reset_type rt);
 
-#endif // INCLUDE_DEVICES_BLOCK_DEVICE_H
+#endif	/* INCLUDE_DEVICES_BLOCK_DEVICE_H */

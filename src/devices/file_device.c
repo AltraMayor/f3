@@ -26,7 +26,7 @@ struct file_device {
 
 static inline struct file_device *dev_fdev(struct device *dev)
 {
-    return (struct file_device *)dev;
+	return (struct file_device *)dev;
 }
 
 static int fdev_read_block(struct device *dev, char *buf, uint64_t block_pos)

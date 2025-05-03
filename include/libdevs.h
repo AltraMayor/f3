@@ -39,10 +39,10 @@ enum fake_type dev_param_to_type(uint64_t real_size_byte,
  */
 
 struct device {
-    uint64_t size_byte;
-    int block_order;
+	uint64_t size_byte;
+	int block_order;
 
-    int (*read_blocks)(struct device *dev, char *buf,
+	int (*read_blocks)(struct device *dev, char *buf,
 		uint64_t first_pos, uint64_t last_pos);
 	int (*write_blocks)(struct device *dev, const char *buf,
 		uint64_t first_pos, uint64_t last_pos);

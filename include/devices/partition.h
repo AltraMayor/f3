@@ -4,13 +4,13 @@
 #include "libdevs.h"
 #include <stdint.h>
 
-/* Partition creation options */
+/* Partition creation options. */
 struct partition_options {
-    const char *disk_type;  // default: "msdos"
-    const char *fs_type;    // default: "fat32"
-    bool boot;
-    uint64_t first_sector;
-    uint64_t last_sector;
+	const char *disk_type;  // default: "msdos"
+	const char *fs_type;    // default: "fat32"
+	bool boot;
+	uint64_t first_sector;
+	uint64_t last_sector;
 };
 
 /* Partition management functions */
@@ -28,4 +28,4 @@ size_t partition_list_disk_types(char ***out_array);
 size_t partition_list_fs_types(char ***out_array);
 void partition_free_types_array(char **array);
 
-#endif // INCLUDE_DEVICES_PARTITION_H
+#endif	/* INCLUDE_DEVICES_PARTITION_H */

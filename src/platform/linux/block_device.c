@@ -29,7 +29,7 @@ struct block_device {
 
 static inline struct block_device *dev_bdev(struct device *dev)
 {
-    return (struct block_device *)dev;
+	return (struct block_device *)dev;
 }
 
 static int read_all(int fd, char *buf, size_t count)
@@ -61,54 +61,54 @@ static int read_all(int fd, char *buf, size_t count)
 // Write "count" bytes via repeated write
 static int write_all(int fd, const char *buf, size_t count)
 {
-    size_t done = 0;
-    do {
-        ssize_t rc = write(fd, buf + done, count - done);
-        if (rc < 0)
-            return -errno;
-        done += rc;
-    } while (done < count);
-    return 0;
+	size_t done = 0;
+	do {
+		ssize_t rc = write(fd, buf + done, count - done);
+		if (rc < 0)
+			return -errno;
+		done += rc;
+	} while (done < count);
+	return 0;
 }
 
 static int bdev_read_blocks(struct device *dev, char *buf,
-                            uint64_t first_pos, uint64_t last_pos)
+	uint64_t first_pos, uint64_t last_pos)
 {
-    struct block_device *bdev = dev_bdev(dev);
-    const int bo = dev_get_block_order(dev);
-    size_t length = (last_pos - first_pos + 1) << bo;
-    off_t offset = first_pos << bo;
-    off_t ret = lseek(bdev->fd, offset, SEEK_SET);
-    if (ret < 0)
-        return -errno;
-    assert(ret == offset);
-    return read_all(bdev->fd, buf, length);
+	struct block_device *bdev = dev_bdev(dev);
+	const int bo = dev_get_block_order(dev);
+	size_t length = (last_pos - first_pos + 1) << bo;
+	off_t offset = first_pos << bo;
+	off_t ret = lseek(bdev->fd, offset, SEEK_SET);
+	if (ret < 0)
+		return -errno;
+	assert(ret == offset);
+	return read_all(bdev->fd, buf, length);
 }
 
 static int bdev_write_blocks(struct device *dev, const char *buf,
-    uint64_t first_pos, uint64_t last_pos)
+	uint64_t first_pos, uint64_t last_pos)
 {
-    struct block_device *bdev = dev_bdev(dev);
-    const int block_order = dev_get_block_order(dev);
-    size_t length = (last_pos - first_pos + 1) << block_order;
-    off_t offset = first_pos << block_order;
-    off_t off_ret = lseek(bdev->fd, offset, SEEK_SET);
-    int rc;
-    if (off_ret < 0)
-        return - errno;
-    assert(off_ret == offset);
-    rc = write_all(bdev->fd, buf, length);
-    if (rc)
-        return rc;
-    rc = fsync(bdev->fd);
-    if (rc)
-        return rc;
-    return posix_fadvise(bdev->fd, 0, 0, POSIX_FADV_DONTNEED);
+	struct block_device *bdev = dev_bdev(dev);
+	const int block_order = dev_get_block_order(dev);
+	size_t length = (last_pos - first_pos + 1) << block_order;
+	off_t offset = first_pos << block_order;
+	off_t off_ret = lseek(bdev->fd, offset, SEEK_SET);
+	int rc;
+	if (off_ret < 0)
+		return - errno;
+	assert(off_ret == offset);
+	rc = write_all(bdev->fd, buf, length);
+	if (rc)
+		return rc;
+	rc = fsync(bdev->fd);
+	if (rc)
+		return rc;
+	return posix_fadvise(bdev->fd, 0, 0, POSIX_FADV_DONTNEED);
 }
 
 static inline int bdev_open(const char *filename)
 {
-    return open(filename, O_RDWR | O_DIRECT);
+	return open(filename, O_RDWR | O_DIRECT);
 }
 
 static int bdev_none_reset(struct device *dev)
@@ -127,7 +127,7 @@ static void bdev_free(struct device *dev)
 
 static const char *bdev_get_filename(struct device *dev)
 {
-    return dev_bdev(dev)->filename;
+	return dev_bdev(dev)->filename;
 }
 
 // Map a partition udev_device to its parent disk device

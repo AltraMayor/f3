@@ -12,19 +12,19 @@
 
 #include "libdevs.h"
 
-// Map fake_type to string
+/* Map fake_type to string. */
 static const char * const ftype_to_name[FKTY_MAX] = {
-    [FKTY_GOOD]       = "good",
-    [FKTY_BAD]        = "bad",
-    [FKTY_LIMBO]      = "limbo",
-    [FKTY_WRAPAROUND] = "wraparound",
-    [FKTY_CHAIN]      = "chain",
+	[FKTY_GOOD]		= "good",
+	[FKTY_BAD]		= "bad",
+	[FKTY_LIMBO]		= "limbo",
+	[FKTY_WRAPAROUND]	= "wraparound",
+	[FKTY_CHAIN]		= "chain",
 };
 
 const char *fake_type_to_name(enum fake_type fake_type)
 {
-    assert(fake_type < FKTY_MAX);
-    return ftype_to_name[fake_type];
+	assert(fake_type < FKTY_MAX);
+	return ftype_to_name[fake_type];
 }
 
 int dev_param_valid(uint64_t real_size_byte,
@@ -75,25 +75,25 @@ enum fake_type dev_param_to_type(uint64_t real_size_byte,
 	return FKTY_LIMBO;
 }
 
-// Abstract device interface and wrappers
+/* Abstract device interface and wrappers. */
 uint64_t dev_get_size_byte(struct device *dev)
 {
-    return dev->size_byte;
+	return dev->size_byte;
 }
 
 int dev_get_block_order(struct device *dev)
 {
-    return dev->block_order;
+	return dev->block_order;
 }
 
 int dev_get_block_size(struct device *dev)
 {
-    return 1 << dev->block_order;
+	return 1 << dev->block_order;
 }
 
 const char *dev_get_filename(struct device *dev)
 {
-    return dev->get_filename(dev);
+	return dev->get_filename(dev);
 }
 
 int dev_read_blocks(struct device *dev, char *buf,
@@ -116,12 +116,12 @@ int dev_write_blocks(struct device *dev, const char *buf,
 
 int dev_reset(struct device *dev)
 {
-    return dev->reset ? dev->reset(dev) : 0;
+	return dev->reset ? dev->reset(dev) : 0;
 }
 
 void free_device(struct device *dev)
 {
-    if (dev->free)
-        dev->free(dev);
-    free(dev);
+	if (dev->free)
+		dev->free(dev);
+	free(dev);
 }
