@@ -1,13 +1,3 @@
-#define _GNU_SOURCE
-
-#if __APPLE__ && __MACH__
-
-#define _DARWIN_C_SOURCE
-
-#include <fcntl.h>	/* For fcntl().	*/
-
-#endif	/* Apple Macintosh */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
