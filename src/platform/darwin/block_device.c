@@ -15,24 +15,13 @@
 #include "devices/usb_reset.h"
 #include "libutils.h"
 
+#include "block_device_private.h"
+
 /* XXX This is borrowing from glibc.
  * A better solution would be to return proper errors,
  * so callers write their own messages.
  */
 extern const char *__progname;
-
-struct block_device {
-	/* This must be the first field. See dev_bdev() for details. */
-	struct device dev;
-
-	const char *filename;
-	int fd;
-};
-
-static inline struct block_device *dev_bdev(struct device *dev)
-{
-	return (struct block_device *)dev;
-}
 
 static int read_all(int fd, char *buf, size_t count)
 {

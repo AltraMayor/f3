@@ -1,5 +1,8 @@
+#include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
+#include <inttypes.h>
 #include <assert.h>
 #include <errno.h>
 #include <err.h>
@@ -11,54 +14,11 @@
 #include <sys/ioctl.h>
 #include <libudev.h>
 
-#include "devices/block_device.h"
-#include "libdevs.h"
 #include "devices/usb_reset.h"
+#include "devices/block_device.h"
 
-static inline struct block_device *dev_bdev(struct device *dev)
-{
-	return (struct block_device *)dev;
-}
-
-static struct udev_device *map_dev_to_usb_dev(struct udev_device *dev)
-{
-	struct udev_device *usb_dev;
-
-	/* The device pointed to by dev contains information about
-	 * the USB device.
-	 * In order to get information about the USB device,
-	 * get the parent device with the subsystem/devtype pair of
-	 * "usb"/"usb_device".
-	 * This will be several levels up the tree,
-	 * but the function will find it.
-	 */
-	usb_dev = udev_device_get_parent_with_subsystem_devtype(
-		dev, "usb", "usb_device");
-
-	/* @usb_dev is not referenced, and will be freed when
-	 * the child (i.e. @dev) is freed.
-	 * See udev_device_get_parent_with_subsystem_devtype() for
-	 * details.
-	 */
-	return udev_device_ref(usb_dev);
-}
-
-static struct udev_device *dev_from_block_fd(struct udev *udev, int block_fd)
-{
-	struct stat fd_stat;
-
-	if (fstat(block_fd, &fd_stat)) {
-		warn("Can't fstat() FD %i", block_fd);
-		return NULL;
-	}
-
-	if (!S_ISBLK(fd_stat.st_mode)) {
-		warnx("FD %i is not a block device", block_fd);
-		return NULL;
-	}
-
-	return udev_device_new_from_devnum(udev, 'b', fd_stat.st_rdev);
-}
+#include "block_device_private.h"
+#include "private/private.h"
 
 static struct udev_monitor *create_monitor(struct udev *udev,
 	const char *subsystem, const char *devtype)

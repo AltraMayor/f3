@@ -1,3 +1,7 @@
+#if __APPLE__ && __MACH__
+#include <fcntl.h>	/* For fcntl().	*/
+#endif	/* Apple Macintosh */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>

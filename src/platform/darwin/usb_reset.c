@@ -9,13 +9,13 @@
 #include <IOKit/IOKitLib.h>
 #include <IOKit/storage/IOMedia.h>
 
-#include "devices/block_device.h"
-#include "libdevs.h"
 #include "devices/usb_reset.h"
+#include "devices/block_device.h"
 
 /* macOS stub for USB reset. */
 int bdev_manual_usb_reset(struct device *dev)
 {
+	// TODO: Use Disk Arbitration to eject and remount.
 	warnx("USB reset is not supported on macOS");
 	return -ENOSYS;
 }
@@ -23,6 +23,7 @@ int bdev_manual_usb_reset(struct device *dev)
 /* Reset a USB-backed block device by prompting a detach/reattach. */
 int bdev_usb_reset(struct device *dev)
 {
+	// TODO: Use USBDriverKit > IOUSBHostDevice > Reset()
 	warnx("USB reset is not supported on macOS");
 	return -ENOSYS;
 }

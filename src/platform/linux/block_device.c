@@ -3,34 +3,27 @@
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <errno.h>
 #include <assert.h>
+#include <errno.h>
+#include <err.h>
 #include <linux/fs.h>
 #include <sys/ioctl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <libudev.h>
 
 #include "devices/block_device.h"
 #include "devices/usb_reset.h"
 #include "libutils.h"
 
+#include "block_device_private.h"
+#include "private/private.h"
+
 /* XXX This is borrowing from glibc.
  * A better solution would be to return proper errors,
  * so callers write their own messages.
  */
 extern const char *__progname;
-
-struct block_device {
-	/* This must be the first field. See dev_bdev() for details. */
-	struct device dev;
-
-	const char *filename;
-	int fd;
-};
-
-static inline struct block_device *dev_bdev(struct device *dev)
-{
-	return (struct block_device *)dev;
-}
 
 static int read_all(int fd, char *buf, size_t count)
 {
@@ -104,11 +97,6 @@ static int bdev_write_blocks(struct device *dev, const char *buf,
 	if (rc)
 		return rc;
 	return posix_fadvise(bdev->fd, 0, 0, POSIX_FADV_DONTNEED);
-}
-
-static inline int bdev_open(const char *filename)
-{
-	return open(filename, O_RDWR | O_DIRECT);
 }
 
 static int bdev_none_reset(struct device *dev)

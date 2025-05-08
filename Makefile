@@ -1,7 +1,9 @@
 # --- Basic Configuration ---
 CC ?= gcc
-CFLAGS += -std=c99 -Wall -Wextra -pedantic -ggdb
-CFLAGS += -Iinclude
+CFLAGS += -std=c99 -Wall -Wextra -pedantic
+CFLAGS += -Iinclude  # headers include directory
+CFLAGS += -ggdb  # keep debug symbols
+CFLAGS += -ffunction-sections -fdata-sections  # strip dead code
 
 # --- Target Definitions ---
 TARGETS = f3write f3read
@@ -42,10 +44,10 @@ F3FIX_LIBS =
 ifeq ($(PLATFORM), linux)
     PLATFORM_DIR = linux
     PLATFORM_CFLAGS += -D_GNU_SOURCE -D_FILE_OFFSET_BITS=64
-    PLATFORM_LDFLAGS +=
+    PLATFORM_LDFLAGS += -Wl,--gc-sections # strip dead code
     F3PROBE_LIBS += -ludev
     F3BREW_LIBS += -ludev
-    F3FIX_LIBS += -lparted
+    F3FIX_LIBS += -ludev -lparted
 endif
 ifeq ($(PLATFORM), darwin)
     PLATFORM_DIR = darwin
@@ -54,8 +56,10 @@ ifeq ($(PLATFORM), darwin)
     else
         ARGP_PREFIX := /usr/local
     endif
+    PLATFORM_CFLAGS += -D_DARWIN_C_SOURCE
     PLATFORM_CFLAGS += -I$(ARGP_PREFIX)/include
     PLATFORM_LDFLAGS += -L$(ARGP_PREFIX)/lib -largp
+    PLATFORM_LDFLAGS += -Wl,-dead_strip # strip dead code
     PLATFORM_LDFLAGS += -framework DiskArbitration -framework CoreFoundation
 endif
 
@@ -76,12 +80,18 @@ vpath %.c $(SRC_DIRS)
 ALL_SRCS := $(wildcard $(addsuffix /*.c, $(SRC_DIRS)))
 ALL_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(ALL_SRCS))
 # Device and platform-specific object lists
-DEVICE_OBJS   := $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(wildcard src/devices/*.c))
-PLATFORM_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(wildcard src/platform/$(PLATFORM_DIR)/*.c))
+DEVICE_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(wildcard src/devices/*.c))
+PLATFORM_DEVICE_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(wildcard src/platform/$(PLATFORM_DIR)/block_device.c src/platform/$(PLATFORM_DIR)/usb_reset.c))
+PLATFORM_PARTITION_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o,src/platform/$(PLATFORM_DIR)/partition.c)
 # Reusable object lists
-LIBDEVS_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o, src/core/libdevs.c src/core/libutils.c)
-LIBFLOW_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o, src/core/libflow.c src/core/utils.c)
-LIBDEVICE_PLATFORM_OBJS := $(DEVICE_OBJS) $(PLATFORM_OBJS) $(LIBDEVS_OBJS)
+LIBDEVS_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o, src/core/libdevs.c)
+LIBFLOW_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o, src/core/libflow.c)
+LIBPROBE_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o, src/core/libprobe.c)
+LIBUTILS_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o, src/core/libutils.c)
+CORE_UTILS_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o, src/core/utils.c)
+# Object bundles
+DEVICE_PLATFORM_LIB_OBJS := $(DEVICE_OBJS) $(PLATFORM_DEVICE_OBJS) $(LIBDEVS_OBJS) $(LIBUTILS_OBJS)
+PARTITION_LIB_OBJS := $(PLATFORM_PARTITION_OBJS) $(LIBUTILS_OBJS)
 
 # --- Dependency Inclusion ---
 DEPFLAGS = -MMD -MT $@ -MP -MF $(@:.o=.d)
@@ -101,20 +111,23 @@ $(BUILD_DIR): ; @mkdir -p $@
 $(BIN_DIR): | $(BUILD_DIR) ; @mkdir -p $@
 $(OBJ_DIR): | $(BUILD_DIR) ; @mkdir -p $@
 
+# --- Private Platform Headers ---
+$(PLATFORM_DEVICE_OBJS): CFLAGS += -Isrc/platform/private -Isrc/platform/$(PLATFORM_DIR)/
+
 # --- Binary Linking Rules ---
-$(BIN_DIR)/f3write: $(OBJ_DIR)/commands/f3write.o $(LIBFLOW_OBJS) | $(BIN_DIR)
+$(BIN_DIR)/f3write: $(OBJ_DIR)/commands/f3write.o $(LIBFLOW_OBJS) $(CORE_UTILS_OBJS) | $(BIN_DIR)
 	$(CC) -o $@ $^ $(LDFLAGS) $(F3WRITE_LIBS)
 
-$(BIN_DIR)/f3read: $(OBJ_DIR)/commands/f3read.o $(LIBFLOW_OBJS) | $(BIN_DIR)
+$(BIN_DIR)/f3read: $(OBJ_DIR)/commands/f3read.o $(LIBFLOW_OBJS) $(CORE_UTILS_OBJS) | $(BIN_DIR)
 	$(CC) -o $@ $^ $(LDFLAGS) $(F3READ_LIBS)
 
-$(BIN_DIR)/f3probe: $(OBJ_DIR)/commands/f3probe.o $(OBJ_DIR)/core/libprobe.o $(LIBDEVICE_PLATFORM_OBJS) | $(BIN_DIR)
+$(BIN_DIR)/f3probe: $(OBJ_DIR)/commands/f3probe.o $(LIBPROBE_OBJS) $(DEVICE_PLATFORM_LIB_OBJS) | $(BIN_DIR)
 	$(CC) -o $@ $^ $(LDFLAGS) $(F3PROBE_LIBS)
 
-$(BIN_DIR)/f3brew: $(OBJ_DIR)/commands/f3brew.o $(LIBDEVICE_PLATFORM_OBJS) | $(BIN_DIR)
+$(BIN_DIR)/f3brew: $(OBJ_DIR)/commands/f3brew.o $(DEVICE_PLATFORM_LIB_OBJS) | $(BIN_DIR)
 	$(CC) -o $@ $^ $(LDFLAGS) $(F3BREW_LIBS)
 
-$(BIN_DIR)/f3fix: $(OBJ_DIR)/commands/f3fix.o $(LIBDEVICE_PLATFORM_OBJS) | $(BIN_DIR)
+$(BIN_DIR)/f3fix: $(OBJ_DIR)/commands/f3fix.o $(PARTITION_LIB_OBJS) $(DEVICE_PLATFORM_LIB_OBJS) | $(BIN_DIR)
 	$(CC) -o $@ $^ $(LDFLAGS) $(F3FIX_LIBS)
 
 # --- Installation Targets ---
