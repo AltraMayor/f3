@@ -1,8 +1,8 @@
-#ifndef INCLUDE_DEVICES_PERF_DEVICE_H
-#define INCLUDE_DEVICES_PERF_DEVICE_H
+#ifndef HEADER_DEVICES_PERF_DEVICE_H
+#define HEADER_DEVICES_PERF_DEVICE_H
 
 #include "libdevs.h"
-#include <stdint.h>
+#include <stdint.h>	/* For type uint64_t.	*/
 
 /* Create a performance‐measuring wrapper around a device. */
 struct device *create_perf_device(struct device *dev);
@@ -16,4 +16,4 @@ void perf_device_sample(struct device *dev,
 /* Detach underlying device and free the wrapper, returning the original device. */
 struct device *pdev_detach_and_free(struct device *dev);
 
-#endif	/* INCLUDE_DEVICES_PERF_DEVICE_H */
+#endif	/* HEADER_DEVICES_PERF_DEVICE_H */

@@ -1,8 +1,8 @@
-#ifndef INCLUDE_DEVICES_FILE_DEVICE_H
-#define INCLUDE_DEVICES_FILE_DEVICE_H
+#ifndef HEADER_DEVICES_FILE_DEVICE_H
+#define HEADER_DEVICES_FILE_DEVICE_H
 
 #include "libdevs.h"
-#include <stdint.h>
+#include <stdint.h>	/* For type uint64_t.	*/
 
 /* Create a file-backed device that masquerades as a block device.
  * filename: path to the backing file.
@@ -20,4 +20,4 @@
 	int wrap, int block_order, int cache_order,
 	int strict_cache, int keep_file);
 
-#endif	/* INCLUDE_DEVICES_FILE_DEVICE_H */
+#endif	/* HEADER_DEVICES_FILE_DEVICE_H */

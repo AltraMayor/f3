@@ -1,8 +1,9 @@
-#ifndef INCLUDE_DEVICES_PARTITION_H
-#define INCLUDE_DEVICES_PARTITION_H
+#ifndef HEADER_DEVICES_PARTITION_H
+#define HEADER_DEVICES_PARTITION_H
 
 #include "libdevs.h"
-#include <stdint.h>
+#include <stdint.h>	/* For type uint64_t.	*/
+#include <stdbool.h>	/* For type bool.	*/
 
 /* Partition creation options. */
 struct partition_options {
@@ -28,4 +29,4 @@ size_t partition_list_disk_types(char ***out_array);
 size_t partition_list_fs_types(char ***out_array);
 void partition_free_types_array(char **array);
 
-#endif	/* INCLUDE_DEVICES_PARTITION_H */
+#endif	/* HEADER_DEVICES_PARTITION_H */
