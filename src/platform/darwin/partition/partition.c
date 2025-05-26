@@ -79,7 +79,7 @@ static int run_diskutil(const char *disk, const char *scheme,
 }
 
 /* Function to unmount a disk using diskutil. */
-int unmount_disk(const char *disk) {
+static int unmount_disk(const char *disk) {
 	char cmd[128];
 	snprintf(cmd, sizeof(cmd),
 		"/usr/sbin/diskutil unmountDisk %s", disk);

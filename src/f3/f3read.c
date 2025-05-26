@@ -257,7 +257,7 @@ static void validate_file(const char *path, int number, struct flow *fw,
 	 * we should have a better reading-speed measurement.
 	 */
 	if (f3_fdatasync(fd) < 0) {
-		int saved_errno = errno;
+		saved_errno = errno;
 		/* The issue https://github.com/AltraMayor/f3/issues/211
 		 * motivated the warning below.
 		 */

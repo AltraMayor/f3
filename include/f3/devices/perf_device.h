@@ -13,7 +13,4 @@ void perf_device_sample(struct device *dev,
 	uint64_t *pwrite_count, uint64_t *pwrite_time_us,
 	uint64_t *preset_count, uint64_t *preset_time_us);
 
-/* Detach underlying device and free the wrapper, returning the original device. */
-struct device *pdev_detach_and_free(struct device *dev);
-
 #endif	/* HEADER_DEVICES_PERF_DEVICE_H */

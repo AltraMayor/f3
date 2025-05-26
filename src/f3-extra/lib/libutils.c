@@ -46,7 +46,7 @@ const char *adjust_unit(double *ptr_bytes)
 	int i = 0;
 	double final = *ptr_bytes;
 
-	while (i < 7 && final >= 1024) {
+	while (i < 6 && final >= 1024) {
 		final /= 1024;
 		i++;
 	}

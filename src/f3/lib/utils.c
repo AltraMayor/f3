@@ -49,7 +49,7 @@ const char *adjust_unit(double *ptr_bytes)
 	int i = 0;
 	double final = *ptr_bytes;
 
-	while (i < 7 && final >= 1024) {
+	while (i < 6 && final >= 1024) {
 		final /= 1024;
 		i++;
 	}
@@ -193,9 +193,12 @@ const long *ls_my_files(const char *path, long start_at, long end_at)
 long arg_to_long(const struct argp_state *state, const char *arg)
 {
 	char *end;
-	long l = strtol(arg, &end, 0);
+	long l;
+
 	if (!arg)
 		argp_error(state, "An integer must be provided");
+
+	l = strtol(arg, &end, 0);
 	if (!*arg || *end)
 		argp_error(state, "`%s' is not an integer", arg);
 	return l;

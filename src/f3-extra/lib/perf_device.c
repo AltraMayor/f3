@@ -81,7 +81,8 @@ static const char *pdev_get_filename(struct device *dev)
 	return dev_get_filename(dev_pdev(dev)->shadow_dev);
 }
 
-struct device *pdev_detach_and_free(struct device *dev)
+/* Detach underlying device and free the wrapper, returning the original device. */
+static struct device *pdev_detach_and_free(struct device *dev)
 {
 	struct perf_device *pdev = dev_pdev(dev);
 	struct device *shadow_dev = pdev->shadow_dev;

@@ -160,7 +160,7 @@ static void sdev_carefully_recover(struct safe_device *sdev, char *buffer,
 		return;
 
 	for (pos = first_pos; pos <= last_pos; pos++) {
-		int rc = sdev->shadow_dev->write_blocks(sdev->shadow_dev,
+		rc = sdev->shadow_dev->write_blocks(sdev->shadow_dev,
 			buffer, pos, pos);
 		if (rc) {
 			/* Do not abort, try to recover all bocks. */
