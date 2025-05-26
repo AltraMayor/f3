@@ -39,7 +39,7 @@ F3WRITE_LIBS = $(COMMON_LIBS)
 F3READ_LIBS = $(COMMON_LIBS)
 F3PROBE_LIBS = $(COMMON_LIBS)
 F3BREW_LIBS = $(COMMON_LIBS)
-F3FIX_LIBS =
+F3FIX_LIBS = $(COMMON_LIBS)
 
 ifeq ($(PLATFORM), linux)
     PLATFORM_DIR = linux
@@ -88,6 +88,7 @@ F3_EXTRA_LIB_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(wildcard src/f3-extra/l
 
 # Platform-specific object lists
 PLATFORM_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(wildcard src/platform/$(PLATFORM_DIR)/*.c))
+PLATFORM_COMPAT_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(wildcard src/platform/$(PLATFORM_DIR)/platform_compat.c))
 PLATFORM_PARTITION_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o,src/platform/$(PLATFORM_DIR)/partition/partition.c)
 
 ALL_OBJS := $(TARGET_OBJS) $(F3_LIB_OBJS) $(F3_EXTRA_LIB_OBJS) $(PLATFORM_OBJS) $(PLATFORM_PARTITION_OBJS)
@@ -112,10 +113,10 @@ $(BIN_DIR): | $(BUILD_DIR) ; @mkdir -p $@
 $(OBJ_DIR): | $(BUILD_DIR) ; @mkdir -p $@
 
 # --- Binary Linking Rules ---
-$(BIN_DIR)/f3write: $(OBJ_DIR)/f3/f3write.o $(F3_LIB_OBJS) | $(BIN_DIR)
+$(BIN_DIR)/f3write: $(OBJ_DIR)/f3/f3write.o $(F3_LIB_OBJS) $(PLATFORM_COMPAT_OBJS) | $(BIN_DIR)
 	$(CC) -o $@ $^ $(LDFLAGS) $(F3WRITE_LIBS)
 
-$(BIN_DIR)/f3read: $(OBJ_DIR)/f3/f3read.o $(F3_LIB_OBJS) | $(BIN_DIR)
+$(BIN_DIR)/f3read: $(OBJ_DIR)/f3/f3read.o $(F3_LIB_OBJS) $(PLATFORM_COMPAT_OBJS) | $(BIN_DIR)
 	$(CC) -o $@ $^ $(LDFLAGS) $(F3READ_LIBS)
 
 $(BIN_DIR)/f3probe: $(OBJ_DIR)/f3-extra/f3probe.o $(F3_EXTRA_LIB_OBJS) $(PLATFORM_OBJS) | $(BIN_DIR)

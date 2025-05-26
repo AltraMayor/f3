@@ -265,11 +265,11 @@ static int flush_chunk(const struct flow *fw, int fd)
 {
 	UNUSED(fw);
 
-	if (fdatasync(fd) < 0)
+	if (f3_fdatasync(fd) < 0)
 		return -1; /* Caller can read errno(3). */
 
 	/* Help the kernel to help us. */
-	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
+	assert(!f3_posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
 	return 0;
 }
 

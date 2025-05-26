@@ -8,6 +8,7 @@
 #include <f3/version.h>
 #include <f3/libutils.h>
 #include <f3/platform/partition.h>
+#include <f3/platform/block_device.h>
 
 /* Sentinel for unset last sector. */
 #define SEC_UNSET ((uint64_t)UINT64_MAX)

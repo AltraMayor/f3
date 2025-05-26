@@ -12,10 +12,10 @@
 #include <CoreFoundation/CoreFoundation.h>
 
 #include <f3/platform/block_device.h>
-#include <f3/platform/usb_reset.h>
 #include <f3/libutils.h>
 
 #include "../private/block_device_private.h"
+#include "../private/usb_reset_private.h"
 
 /* XXX This is borrowing from glibc.
  * A better solution would be to return proper errors,

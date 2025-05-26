@@ -3,6 +3,8 @@
 
 #include <sys/types.h>	/* For off_t	*/
 
+#define UNUSED(x)	((void)x)
+
 /* Define compatibility names to avoid clashes with standard library functions if they exist */
 void msleep_compat(double wait_ms);
 int fdatasync_compat(int fd);

@@ -256,7 +256,7 @@ static void validate_file(const char *path, int number, struct flow *fw,
 	 * even when testing small memory cards without a remount, and
 	 * we should have a better reading-speed measurement.
 	 */
-	if (fdatasync(fd) < 0) {
+	if (f3_fdatasync(fd) < 0) {
 		int saved_errno = errno;
 		/* The issue https://github.com/AltraMayor/f3/issues/211
 		 * motivated the warning below.
@@ -265,10 +265,10 @@ static void validate_file(const char *path, int number, struct flow *fw,
 			saved_errno, strerror(saved_errno));
 		exit(saved_errno);
 	}
-	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
+	assert(!f3_posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
 
 	/* Help the kernel to help us. */
-	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL));
+	assert(!f3_posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL));
 
 	dbuf_init(&dbuf);
 	saved_errno = 0;

@@ -10,8 +10,24 @@
 #include <err.h>
 #include <unistd.h>
 
-#include <f3/version.h>
 #include <f3/utils.h>
+#include <f3/version.h>
+#include <f3/platform/platform_compat.h>
+
+void msleep(double wait_ms)
+{
+	msleep_compat(wait_ms);
+}
+
+int f3_fdatasync(int fd)
+{
+	return fdatasync_compat(fd);
+}
+
+int f3_posix_fadvise(int fd, off_t offset, off_t len, int advice)
+{
+	return posix_fadvise_compat(fd, offset, len, advice);
+}
 
 void adjust_dev_path(const char **dev_path)
 {

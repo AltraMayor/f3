@@ -1,10 +1,8 @@
-#include <stdlib.h>	/* For ldiv_t and ldiv()			*/
-#include <unistd.h>	/* fdatasync, posix_fadvise			*/
-#include <fcntl.h>	/* For posix_fadvise() and its flags		*/
-#include <math.h>	/* For fmod					*/
+#include <unistd.h>	/* fdatasync, posix_fadvise 	*/
+#include <math.h>	/* For fmod	*/
 #include <time.h>	/* For clock_gettime() and clock_nanosleep().	*/
-#include <assert.h>	/* For assert()					*/
-#include <errno.h>	/* For EINTR					*/
+#include <assert.h>	/* For assert()	*/
+#include <errno.h>	/* For EINTR	*/
 
 #include <f3/platform/platform_compat.h>
 
@@ -46,7 +44,14 @@ int fdatasync_compat(int fd)
 	return fdatasync(fd);
 }
 
+/*
+ * OpenBSD doesn't have posix_fadvise() (...).
+ * There is some code [in F3] to emulate posix_fadvise for MacOS
+ * but it uses various fcntl(2) commands that we don't have [in OpenBSD].
+ *
+ *  -- Stuart Henderson, OpenBSD developer
+ */
 int posix_fadvise_compat(int fd, off_t offset, off_t len, int advice)
 {
-	return posix_fadvise(fd, offset, len, advice);
+	return 0;
 }

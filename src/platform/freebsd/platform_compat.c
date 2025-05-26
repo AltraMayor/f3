@@ -1,10 +1,8 @@
-#include <stdlib.h>	/* For ldiv_t and ldiv()			*/
-#include <unistd.h>	/* fdatasync, posix_fadvise			*/
-#include <fcntl.h>	/* For posix_fadvise() and its flags		*/
-#include <math.h>	/* For fmod					*/
+#include <unistd.h>	/* fdatasync, posix_fadvise 	*/
+#include <math.h>	/* For fmod	*/
 #include <time.h>	/* For clock_gettime() and clock_nanosleep().	*/
-#include <assert.h>	/* For assert()					*/
-#include <errno.h>	/* For EINTR					*/
+#include <assert.h>	/* For assert()	*/
+#include <errno.h>	/* For EINTR	*/
 
 #include <f3/platform/platform_compat.h>
 
@@ -43,7 +41,7 @@ void msleep_compat(double wait_ms)
 
 int fdatasync_compat(int fd)
 {
-	return fdatasync(fd);
+	return fsync(fd);
 }
 
 int posix_fadvise_compat(int fd, off_t offset, off_t len, int advice)

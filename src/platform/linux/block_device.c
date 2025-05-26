@@ -16,6 +16,7 @@
 #include <f3/libutils.h>
 
 #include "../private/block_device_private.h"
+#include "../private/usb_reset_private.h"
 #include "private/linux_private.h"
 
 /* XXX This is borrowing from glibc.
