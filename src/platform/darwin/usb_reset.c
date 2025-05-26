@@ -9,8 +9,7 @@
 #include <IOKit/IOKitLib.h>
 #include <IOKit/storage/IOMedia.h>
 
-#include "devices/usb_reset.h"
-#include "devices/block_device.h"
+#include <f3/platform/usb_reset.h>
 
 /* macOS stub for USB reset. */
 int bdev_manual_usb_reset(struct device *dev)

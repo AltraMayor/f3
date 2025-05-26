@@ -3,8 +3,8 @@
 #include <stdbool.h>
 #include <assert.h>
 
-#include "libutils.h"
-#include "version.h"
+#include <f3/libutils.h>
+#include <f3/version.h>
 
 /* Count the number of 1 bits. */
 static int pop(uint64_t x)

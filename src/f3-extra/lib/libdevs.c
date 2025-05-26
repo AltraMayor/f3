@@ -6,7 +6,7 @@
 #include <inttypes.h>
 #include <errno.h>
 
-#include "libdevs.h"
+#include <f3/libdevs.h>
 
 /* Map fake_type to string. */
 static const char * const ftype_to_name[FKTY_MAX] = {

@@ -7,9 +7,8 @@
 #include <errno.h>
 #include <assert.h>
 
-#include "libdevs.h"
-#include "devices/file_device.h"
-#include "libutils.h"
+#include <f3/devices/file_device.h>
+#include <f3/libutils.h>
 
 struct file_device {
 	/* This must be the first field. See dev_fdev() for details. */

@@ -5,8 +5,8 @@
 #include <math.h>
 #include <sys/time.h>
 
-#include "libflow.h"
-#include "utils.h"
+#include <f3/libflow.h>
+#include <f3/utils.h>
 
 static inline void move_to_inc_at_start(struct flow *fw)
 {

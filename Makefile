@@ -73,29 +73,29 @@ OBJ_DIR := $(BUILD_DIR)/obj
 
 BIN_TARGETS := $(addprefix $(BIN_DIR)/,$(TARGETS))
 BIN_EXTRAS := $(addprefix $(BIN_DIR)/,$(EXTRA_TARGETS))
+
 # Source directories and automatic search rules
-SRC_DIRS = src/commands src/core src/devices src/platform/$(PLATFORM_DIR)
+SRC_DIRS = src/f3 src/f3-extra
 vpath %.c $(SRC_DIRS)
+
 # Find source files relative to source root and map them to object paths in OBJ_DIR
-ALL_SRCS := $(wildcard $(addsuffix /*.c, $(SRC_DIRS)))
-ALL_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(ALL_SRCS))
-# Device and platform-specific object lists
-DEVICE_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(wildcard src/devices/*.c))
-PLATFORM_DEVICE_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(wildcard src/platform/$(PLATFORM_DIR)/block_device.c src/platform/$(PLATFORM_DIR)/usb_reset.c))
-PLATFORM_PARTITION_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o,src/platform/$(PLATFORM_DIR)/partition.c)
+TARGET_SRCS := $(wildcard $(addsuffix /*.c, $(SRC_DIRS)))
+TARGET_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(TARGET_SRCS))
+
 # Reusable object lists
-LIBDEVS_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o, src/core/libdevs.c)
-LIBFLOW_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o, src/core/libflow.c)
-LIBPROBE_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o, src/core/libprobe.c)
-LIBUTILS_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o, src/core/libutils.c)
-CORE_UTILS_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o, src/core/utils.c)
-# Object bundles
-DEVICE_PLATFORM_LIB_OBJS := $(DEVICE_OBJS) $(PLATFORM_DEVICE_OBJS) $(LIBDEVS_OBJS) $(LIBUTILS_OBJS)
-PARTITION_LIB_OBJS := $(PLATFORM_PARTITION_OBJS) $(LIBUTILS_OBJS)
+F3_LIB_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(wildcard src/f3/lib/*.c))
+F3_EXTRA_LIB_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(wildcard src/f3-extra/lib/*.c))
+
+# Platform-specific object lists
+PLATFORM_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o,$(wildcard src/platform/$(PLATFORM_DIR)/*.c))
+PLATFORM_PARTITION_OBJS := $(patsubst src/%.c,$(OBJ_DIR)/%.o,src/platform/$(PLATFORM_DIR)/partition/partition.c)
+
+ALL_OBJS := $(TARGET_OBJS) $(F3_LIB_OBJS) $(F3_EXTRA_LIB_OBJS) $(PLATFORM_OBJS) $(PLATFORM_PARTITION_OBJS)
 
 # --- Dependency Inclusion ---
 DEPFLAGS = -MMD -MT $@ -MP -MF $(@:.o=.d)
--include $(ALL_OBJS:.o=.d)
+ALL_DEPS := $(ALL_OBJS:.o=.d)
+-include $(ALL_DEPS)
 
 # --- Pattern Rule for Compilation ---
 $(OBJ_DIR)/%.o: src/%.c | $(OBJ_DIR)
@@ -111,23 +111,20 @@ $(BUILD_DIR): ; @mkdir -p $@
 $(BIN_DIR): | $(BUILD_DIR) ; @mkdir -p $@
 $(OBJ_DIR): | $(BUILD_DIR) ; @mkdir -p $@
 
-# --- Private Platform Headers ---
-$(PLATFORM_DEVICE_OBJS): CFLAGS += -Isrc/platform/private -Isrc/platform/$(PLATFORM_DIR)/
-
 # --- Binary Linking Rules ---
-$(BIN_DIR)/f3write: $(OBJ_DIR)/commands/f3write.o $(LIBFLOW_OBJS) $(CORE_UTILS_OBJS) | $(BIN_DIR)
+$(BIN_DIR)/f3write: $(OBJ_DIR)/f3/f3write.o $(F3_LIB_OBJS) | $(BIN_DIR)
 	$(CC) -o $@ $^ $(LDFLAGS) $(F3WRITE_LIBS)
 
-$(BIN_DIR)/f3read: $(OBJ_DIR)/commands/f3read.o $(LIBFLOW_OBJS) $(CORE_UTILS_OBJS) | $(BIN_DIR)
+$(BIN_DIR)/f3read: $(OBJ_DIR)/f3/f3read.o $(F3_LIB_OBJS) | $(BIN_DIR)
 	$(CC) -o $@ $^ $(LDFLAGS) $(F3READ_LIBS)
 
-$(BIN_DIR)/f3probe: $(OBJ_DIR)/commands/f3probe.o $(LIBPROBE_OBJS) $(DEVICE_PLATFORM_LIB_OBJS) | $(BIN_DIR)
+$(BIN_DIR)/f3probe: $(OBJ_DIR)/f3-extra/f3probe.o $(F3_EXTRA_LIB_OBJS) $(PLATFORM_OBJS) | $(BIN_DIR)
 	$(CC) -o $@ $^ $(LDFLAGS) $(F3PROBE_LIBS)
 
-$(BIN_DIR)/f3brew: $(OBJ_DIR)/commands/f3brew.o $(DEVICE_PLATFORM_LIB_OBJS) | $(BIN_DIR)
+$(BIN_DIR)/f3brew: $(OBJ_DIR)/f3-extra/f3brew.o $(F3_EXTRA_LIB_OBJS) $(PLATFORM_OBJS) | $(BIN_DIR)
 	$(CC) -o $@ $^ $(LDFLAGS) $(F3BREW_LIBS)
 
-$(BIN_DIR)/f3fix: $(OBJ_DIR)/commands/f3fix.o $(PARTITION_LIB_OBJS) $(DEVICE_PLATFORM_LIB_OBJS) | $(BIN_DIR)
+$(BIN_DIR)/f3fix: $(OBJ_DIR)/f3-extra/f3fix.o $(F3_EXTRA_LIB_OBJS) $(PLATFORM_OBJS) $(PLATFORM_PARTITION_OBJS) | $(BIN_DIR)
 	$(CC) -o $@ $^ $(LDFLAGS) $(F3FIX_LIBS)
 
 # --- Installation Targets ---

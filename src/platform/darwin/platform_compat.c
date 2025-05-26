@@ -2,7 +2,7 @@
 #include <unistd.h>	/* For chdir and chroot	*/
 #include <assert.h>
 
-#include "platform_compat.h"
+#include <f3/platform/platform_compat.h>
 
 void msleep_compat(double wait_ms)
 {

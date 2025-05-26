@@ -14,11 +14,9 @@
 #include <sys/ioctl.h>
 #include <libudev.h>
 
-#include "devices/usb_reset.h"
-#include "devices/block_device.h"
-
-#include "block_device_private.h"
-#include "private/private.h"
+#include "../private/usb_reset_private.h"
+#include "../private/block_device_private.h"
+#include "private/linux_private.h"
 
 static struct udev_monitor *create_monitor(struct udev *udev,
 	const char *subsystem, const char *devtype)

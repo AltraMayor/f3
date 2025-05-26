@@ -7,8 +7,8 @@
 #include <time.h>	/* For time().		*/
 #include <sys/time.h>	/* For gettimeofday().	*/
 
-#include "libutils.h"
-#include "libprobe.h"
+#include <f3/libutils.h>
+#include <f3/libprobe.h>
 
 static int write_blocks(struct device *dev,
 	uint64_t first_pos, uint64_t last_pos, uint64_t salt)

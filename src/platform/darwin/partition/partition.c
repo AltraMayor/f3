@@ -7,7 +7,7 @@
 #include <stdint.h>
 #include <crt_externs.h>  // for _NSGetEnviron()
 
-#include "devices/partition.h"
+#include <f3/platform/partition.h>
 
 /* Supported types. */
 static const char *const disk_types[] = { "msdos", "mbr", "gpt", NULL };

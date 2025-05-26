@@ -1,7 +1,7 @@
 #ifndef HEADER_LIBDEVS_H
 #define HEADER_LIBDEVS_H
 
-#include <stdint.h>
+#include <stdint.h>	/* For type uint64_t.	*/
 
 /*
  *	Device model
@@ -94,9 +94,9 @@ enum reset_type {
 	RT_MAX
 };
 
-#include "devices/file_device.h"
-#include "devices/block_device.h"
-#include "devices/perf_device.h"
-#include "devices/safe_device.h"
+#include <f3/devices/file_device.h>
+#include <f3/devices/perf_device.h>
+#include <f3/devices/safe_device.h>
+#include <f3/platform/block_device.h>
 
 #endif	/* HEADER_LIBDEVS_H */

@@ -2,9 +2,8 @@
 #include <sys/time.h>
 #include <assert.h>
 
-#include "libdevs.h"
-#include "devices/perf_device.h"
-#include "libutils.h"
+#include <f3/devices/perf_device.h>
+#include <f3/libutils.h>
 
 struct perf_device {
 	/* This must be the first field. See dev_pdev() for details. */

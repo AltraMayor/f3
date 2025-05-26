@@ -2,9 +2,7 @@
 #include <assert.h>
 #include <parted/parted.h>
 
-#include "devices/partition.h"
-#include "devices/block_device.h"
-#include "libutils.h"
+#include <f3/platform/partition.h>
 
 // Convert physical sector to logical sector
 static PedSector map_sector_to_logical_sector(PedSector sector,

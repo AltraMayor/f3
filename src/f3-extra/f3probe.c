@@ -7,9 +7,9 @@
 #include <inttypes.h>
 #include <sys/time.h>
 
-#include "version.h"
-#include "libprobe.h"
-#include "libutils.h"
+#include <f3/version.h>
+#include <f3/libprobe.h>
+#include <f3/libutils.h>
 
 /* Argp's global variables. */
 const char *argp_program_version = "F3 Probe " F3_STR_VERSION;

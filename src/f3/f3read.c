@@ -15,9 +15,9 @@
 #include <sys/stat.h>
 #include <argp.h>
 
-#include "utils.h"
-#include "libflow.h"
-#include "version.h"
+#include <f3/utils.h>
+#include <f3/libflow.h>
+#include <f3/version.h>
 
 /* Argp's global variables. */
 const char *argp_program_version = "F3 Read " F3_STR_VERSION;

@@ -1,9 +1,8 @@
 #ifndef HEADER_LIBPROBE_H
 #define HEADER_LIBPROBE_H
 
-#include <stdint.h>
-
-#include "libdevs.h"
+#include <stdint.h>	/* For type uint64_t.	*/
+#include <f3/libdevs.h>	/* For struct device.	*/
 
 uint64_t probe_device_max_blocks(struct device *dev);
 

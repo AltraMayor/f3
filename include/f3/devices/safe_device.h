@@ -1,7 +1,7 @@
 #ifndef HEADER_DEVICES_SAFE_DEVICE_H
 #define HEADER_DEVICES_SAFE_DEVICE_H
 
-#include "libdevs.h"
+#include <f3/libdevs.h>	/* For struct device.	*/
 #include <stdint.h>	/* For type uint64_t.	*/
 
 /* Create a safe device wrapper: snapshots writes for rollback. */

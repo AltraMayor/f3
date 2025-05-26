@@ -4,7 +4,6 @@
 #include <sys/types.h>	/* For off_t	*/
 
 /* Define compatibility names to avoid clashes with standard library functions if they exist */
-void adjust_dev_path_compat(const char **dev_path);
 void msleep_compat(double wait_ms);
 int fdatasync_compat(int fd);
 int posix_fadvise_compat(int fd, off_t offset, off_t len, int advice);
@@ -21,4 +20,4 @@ int posix_fadvise_compat(int fd, off_t offset, off_t len, int advice);
 #define POSIX_FADV_DONTNEED	4 /* Don't need these pages.		*/
 #endif
 
-#endif  /* HEADER_PLATFORM_COMPAT_H */
+#endif	/* HEADER_PLATFORM_COMPAT_H */

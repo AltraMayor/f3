@@ -4,7 +4,7 @@
 #include <assert.h>	/* For assert()	*/
 #include <errno.h>	/* For EINTR	*/
 
-#include "platform_compat.h"
+#include <f3/platform/platform_compat.h>
 
 void msleep_compat(double wait_ms)
 {

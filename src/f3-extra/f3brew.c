@@ -7,9 +7,9 @@
 #include <inttypes.h>
 #include <err.h>
 
-#include "version.h"
-#include "libutils.h"
-#include "libdevs.h"
+#include <f3/version.h>
+#include <f3/libutils.h>
+#include <f3/libdevs.h>
 
 /* Argp's global variables. */
 const char *argp_program_version = "F3 BREW " F3_STR_VERSION;

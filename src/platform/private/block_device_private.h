@@ -1,7 +1,7 @@
 #ifndef PLATFORM_PRIVATE_BLOCK_DEVICE_H
 #define PLATFORM_PRIVATE_BLOCK_DEVICE_H
 
-#include "libdevs.h"
+#include <f3/libdevs.h>	/* For struct device.	*/
 
 struct block_device {
 	/* This must be the first field. See dev_bdev() for details. */

@@ -10,8 +10,8 @@
 #include <err.h>
 #include <unistd.h>
 
-#include "version.h"
-#include "utils.h"
+#include <f3/version.h>
+#include <f3/utils.h>
 
 void adjust_dev_path(const char **dev_path)
 {

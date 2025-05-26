@@ -1,8 +1,8 @@
 #ifndef LINUX_PLATFORM_PRIVATE_H
 #define LINUX_PLATFORM_PRIVATE_H
 
-#include <libudev.h> // For struct udev, struct udev_device
-#include <sys/stat.h> // For struct stat, S_ISBLK, fstat
+#include <libudev.h>	/* For struct udev, struct udev_device	*/
+#include <sys/stat.h>	/* For struct stat, S_ISBLK, fstat	*/
 
 static inline int bdev_open(const char *filename)
 {
@@ -49,4 +49,4 @@ static struct udev_device *dev_from_block_fd(struct udev *udev, int block_fd)
 	return udev_device_new_from_devnum(udev, 'b', fd_stat.st_rdev);
 }
 
-#endif /* LINUX_PLATFORM_PRIVATE_H */
+#endif	/* LINUX_PLATFORM_PRIVATE_H */

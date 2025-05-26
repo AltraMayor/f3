@@ -6,9 +6,8 @@
 #include <err.h>
 #include <inttypes.h>
 
-#include "libdevs.h"
-#include "devices/safe_device.h"
-#include "libutils.h"
+#include <f3/devices/safe_device.h>
+#include <f3/libutils.h>
 
 #define SDEV_BITMAP_WORD long
 #define SDEV_BITMAP_BITS_PER_WORD (8 * sizeof(SDEV_BITMAP_WORD))
