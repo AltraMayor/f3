@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - run: sudo apt-get install -y libparted-dev libudev-dev
-      - run: make all extra
+      - run: make all extra BIN_DIR=.
 
       - if: matrix.volume == 'relative-path'
         run: mkdir relative-path
@@ -71,7 +71,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - run: brew install argp-standalone
-      - run: make
+      - run: make all extra BIN_DIR=.
 
       - if: matrix.volume == 'relative-path'
         run: mkdir relative-path
@@ -112,7 +112,7 @@ jobs:
         with:
           packages: gcc-core libargp-devel make
 
-      - run: "$Env:LDFLAGS = '-Wl,--stack,4000000'; make"
+      - run: "$Env:LDFLAGS = '-Wl,--stack,4000000'; make BIN_DIR=."
 
       - if: matrix.volume.windows == 'relative-path'
         run: New-Item -ItemType Directory -Path relative-path
