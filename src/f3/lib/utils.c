@@ -1,13 +1,3 @@
-#define _GNU_SOURCE
-
-#if __APPLE__ && __MACH__
-
-#define _DARWIN_C_SOURCE
-
-#include <fcntl.h>	/* For fcntl().	*/
-
-#endif	/* Apple Macintosh */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -20,8 +10,24 @@
 #include <err.h>
 #include <unistd.h>
 
-#include "version.h"
-#include "utils.h"
+#include <f3/utils.h>
+#include <f3/version.h>
+#include <f3/platform/platform_compat.h>
+
+void msleep(double wait_ms)
+{
+	msleep_compat(wait_ms);
+}
+
+int f3_fdatasync(int fd)
+{
+	return fdatasync_compat(fd);
+}
+
+int f3_posix_fadvise(int fd, off_t offset, off_t len, int advice)
+{
+	return posix_fadvise_compat(fd, offset, len, advice);
+}
 
 void adjust_dev_path(const char **dev_path)
 {
@@ -43,7 +49,7 @@ const char *adjust_unit(double *ptr_bytes)
 	int i = 0;
 	double final = *ptr_bytes;
 
-	while (i < 7 && final >= 1024) {
+	while (i < 6 && final >= 1024) {
 		final /= 1024;
 		i++;
 	}
@@ -187,9 +193,12 @@ const long *ls_my_files(const char *path, long start_at, long end_at)
 long arg_to_long(const struct argp_state *state, const char *arg)
 {
 	char *end;
-	long l = strtol(arg, &end, 0);
+	long l;
+
 	if (!arg)
 		argp_error(state, "An integer must be provided");
+
+	l = strtol(arg, &end, 0);
 	if (!*arg || *end)
 		argp_error(state, "`%s' is not an integer", arg);
 	return l;
@@ -203,72 +212,3 @@ void print_header(FILE *f, const char *name)
 	"This is free software; see the source for copying conditions.\n"
 	"\n", name);
 }
-
-#if __APPLE__ && __MACH__
-
-/* This function is a _rough_ approximation of fdatasync(2). */
-int fdatasync(int fd)
-{
-	return fcntl(fd, F_FULLFSYNC);
-}
-
-/* This function is a _rough_ approximation of posix_fadvise(2). */
-int posix_fadvise(int fd, off_t offset, off_t len, int advice)
-{
-	UNUSED(offset);
-	UNUSED(len);
-	switch (advice) {
-	case POSIX_FADV_SEQUENTIAL:
-		return fcntl(fd, F_RDAHEAD, 1);
-	case POSIX_FADV_DONTNEED:
-		return fcntl(fd, F_NOCACHE, 1);
-	default:
-		assert(0);
-	}
-}
-
-#endif	/* Apple Macintosh */
-
-#if (__APPLE__ && __MACH__) || defined(__OpenBSD__)
-
-void msleep(double wait_ms)
-{
-	assert(!usleep(wait_ms * 1000));
-}
-
-#else	/* Apple Macintosh / OpenBSD */
-
-#include <time.h> /* For clock_gettime() and clock_nanosleep(). */
-
-void msleep(double wait_ms)
-{
-	struct timespec req;
-	int ret;
-
-	assert(!clock_gettime(CLOCK_MONOTONIC, &req));
-
-	/* Add @wait_ms to @req. */
-	if (wait_ms > 1000) {
-		time_t sec = wait_ms / 1000;
-		wait_ms -= sec * 1000;
-		assert(wait_ms > 0);
-		req.tv_sec += sec;
-	}
-	req.tv_nsec += wait_ms * 1000000;
-
-	/* Round @req up. */
-	if (req.tv_nsec >= 1000000000) {
-		ldiv_t result = ldiv(req.tv_nsec, 1000000000);
-		req.tv_sec += result.quot;
-		req.tv_nsec = result.rem;
-	}
-
-	do {
-		ret = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,
-			&req, NULL);
-	} while (ret == EINTR);
-
-	assert(ret == 0);
-}
-
-#endif	/* Apple Macintosh / OpenBSD */

@@ -3,8 +3,8 @@
 #include <stdbool.h>
 #include <assert.h>
 
-#include "libutils.h"
-#include "version.h"
+#include <f3/libutils.h>
+#include <f3/version.h>
 
 /* Count the number of 1 bits. */
 static int pop(uint64_t x)
@@ -46,7 +46,7 @@ const char *adjust_unit(double *ptr_bytes)
 	int i = 0;
 	double final = *ptr_bytes;
 
-	while (i < 7 && final >= 1024) {
+	while (i < 6 && final >= 1024) {
 		final /= 1024;
 		i++;
 	}

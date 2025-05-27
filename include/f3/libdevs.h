@@ -1,7 +1,7 @@
 #ifndef HEADER_LIBDEVS_H
 #define HEADER_LIBDEVS_H
 
-#include <stdint.h>
+#include <stdint.h>	/* For type uint64_t.	*/
 
 /*
  *	Device model
@@ -38,7 +38,18 @@ enum fake_type dev_param_to_type(uint64_t real_size_byte,
  *	Abstract device
  */
 
-struct device;
+struct device {
+	uint64_t size_byte;
+	int block_order;
+
+	int (*read_blocks)(struct device *dev, char *buf,
+		uint64_t first_pos, uint64_t last_pos);
+	int (*write_blocks)(struct device *dev, const char *buf,
+		uint64_t first_pos, uint64_t last_pos);
+	int (*reset)(struct device *dev);
+	void (*free)(struct device *dev);
+	const char *(*get_filename)(struct device *dev);
+};
 
 /*
  *	Properties
@@ -76,11 +87,6 @@ void free_device(struct device *dev);
  *	Concrete devices
  */
 
-struct device *create_file_device(const char *filename,
-	uint64_t real_size_byte, uint64_t fake_size_byte, int wrap,
-	int block_order, int cache_order, int strict_cache,
-	int keep_file);
-
 enum reset_type {
 	RT_MANUAL_USB = 0,
 	RT_USB,
@@ -88,22 +94,9 @@ enum reset_type {
 	RT_MAX
 };
 
-struct device *create_block_device(const char *filename, enum reset_type rt);
-
-struct device *create_perf_device(struct device *dev);
-void perf_device_sample(struct device *dev,
-	uint64_t *pread_count, uint64_t *pread_time_us,
-	uint64_t *pwrite_count, uint64_t *pwrite_time_us,
-	uint64_t *preset_count, uint64_t *preset_time_us);
-/* Detach the shadow device of @pdev, free @pdev, and return
- * the shadow device.
- */
-struct device *pdev_detach_and_free(struct device *dev);
-
-struct device *create_safe_device(struct device *dev, uint64_t max_blocks,
-	int min_memory);
-
-void sdev_recover(struct device *dev, uint64_t very_last_pos);
-void sdev_flush(struct device *dev);
+#include <f3/devices/file_device.h>
+#include <f3/devices/perf_device.h>
+#include <f3/devices/safe_device.h>
+#include <f3/platform/block_device.h>
 
 #endif	/* HEADER_LIBDEVS_H */

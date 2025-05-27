@@ -1,5 +1,3 @@
-#define _POSIX_C_SOURCE 200809L
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,9 +7,9 @@
 #include <inttypes.h>
 #include <sys/time.h>
 
-#include "version.h"
-#include "libprobe.h"
-#include "libutils.h"
+#include <f3/version.h>
+#include <f3/libprobe.h>
+#include <f3/libutils.h>
 
 /* Argp's global variables. */
 const char *argp_program_version = "F3 Probe " F3_STR_VERSION;

@@ -1,6 +1,3 @@
-#define _POSIX_C_SOURCE 200112L
-#define _XOPEN_SOURCE 600
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <float.h>
@@ -8,8 +5,8 @@
 #include <math.h>
 #include <sys/time.h>
 
-#include "libflow.h"
-#include "utils.h"
+#include <f3/libflow.h>
+#include <f3/utils.h>
 
 static inline void move_to_inc_at_start(struct flow *fw)
 {

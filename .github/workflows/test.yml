@@ -24,12 +24,12 @@ jobs:
             sudo: 'sudo '
 
     name: Linux ${{ matrix.volume }}${{ matrix.asroot.name }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v3
       - run: sudo apt-get install -y libparted-dev libudev-dev
-      - run: make all extra
+      - run: make all extra BIN_DIR=.
 
       - if: matrix.volume == 'relative-path'
         run: mkdir relative-path
@@ -66,12 +66,12 @@ jobs:
             sudo: 'sudo '
 
     name: MacOS ${{ matrix.volume }}${{ matrix.asroot.name }}
-    runs-on: macos-12
+    runs-on: macos-latest
 
     steps:
       - uses: actions/checkout@v3
       - run: brew install argp-standalone
-      - run: make
+      - run: make all extra BIN_DIR=.
 
       - if: matrix.volume == 'relative-path'
         run: mkdir relative-path
@@ -88,6 +88,13 @@ jobs:
       - run: ./f3read --help
       - run: ${{ matrix.asroot.sudo }}./f3read -s 2 -e 4 -r 50000 ${{ matrix.volume }}
 
+      - name: Run F3Fix tests
+        if: matrix.volume == '.'
+        run: |
+          brew install gawk
+          chmod +x tests/test-macos-f3fix.sh
+          ./tests/test-macos-f3fix.sh
+
   Cygwin:
     strategy:
       fail-fast: false
@@ -103,7 +110,7 @@ jobs:
             windows: 'C:\cygwin'
 
     name: Cygwin ${{ matrix.volume.cygwin }}
-    runs-on: windows-2022
+    runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v3
@@ -112,7 +119,7 @@ jobs:
         with:
           packages: gcc-core libargp-devel make
 
-      - run: "$Env:LDFLAGS = '-Wl,--stack,4000000'; make"
+      - run: "$Env:LDFLAGS = '-Wl,--stack,4000000 -largp'; make BIN_DIR=."
 
       - if: matrix.volume.windows == 'relative-path'
         run: New-Item -ItemType Directory -Path relative-path

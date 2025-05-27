@@ -6,3 +6,4 @@ cscope.out
 *~
 
 doc/_build
+bin/

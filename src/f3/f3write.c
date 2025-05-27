@@ -1,6 +1,3 @@
-#define _POSIX_C_SOURCE 200112L
-#define _XOPEN_SOURCE 600
-
 #include <assert.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -17,9 +14,9 @@
 #include <err.h>
 #include <argp.h>
 
-#include "utils.h"
-#include "libflow.h"
-#include "version.h"
+#include <f3/utils.h>
+#include <f3/libflow.h>
+#include <f3/version.h>
 
 /* Argp's global variables. */
 const char *argp_program_version = "F3 Write " F3_STR_VERSION;
@@ -268,11 +265,11 @@ static int flush_chunk(const struct flow *fw, int fd)
 {
 	UNUSED(fw);
 
-	if (fdatasync(fd) < 0)
+	if (f3_fdatasync(fd) < 0)
 		return -1; /* Caller can read errno(3). */
 
 	/* Help the kernel to help us. */
-	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
+	assert(!f3_posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
 	return 0;
 }
 
