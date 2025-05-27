@@ -1,6 +1,13 @@
 #!/bin/bash
 set -euo pipefail
 
+# Determine the script directory and project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Change to project root
+cd "$PROJECT_ROOT" || log_error "Failed to change to project root: $PROJECT_ROOT"
+
 # Test configurations
 readonly TEST_CASES=(
     "--disk-type=msdos --fs-type=fat32"
@@ -86,7 +93,7 @@ main() {
     log_system_info
     
     local test_start_time=$(date +%s)
-    
+
     # Clean up from previous runs
     rm -f test.img
     
@@ -106,7 +113,7 @@ main() {
     log_info "Using device: $device"
     
     log_info "Building F3 with debug flags..."
-    if ! CFLAGS="-DDEBUG" make clean all extra; then
+    if ! CFLAGS="-DDEBUG" make -C "$PROJECT_ROOT" clean all extra; then
         log_error "Build failed"
     fi
     
@@ -119,7 +126,7 @@ main() {
         
         log_info "=== Test $test_count/${#TEST_CASES[@]}: $test_case ==="
         
-        if ./build/bin/f3fix $test_case --first-sec=2048 --last-sec=102400 --boot "$device"; then
+        if "$PROJECT_ROOT/build/bin/f3fix" $test_case --first-sec=2048 --last-sec=102400 --boot "$device"; then
             log_success "Test passed: $test_case"
             ((passed_count++))
         else

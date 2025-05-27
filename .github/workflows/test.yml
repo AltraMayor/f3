@@ -89,12 +89,11 @@ jobs:
       - run: ${{ matrix.asroot.sudo }}./f3read -s 2 -e 4 -r 50000 ${{ matrix.volume }}
 
       - name: Run F3Fix tests
-        if: matrix.volume == '.' && matrix.asroot.sudo == ''
+        if: matrix.volume == '.'
         run: |
           brew install gawk
           chmod +x tests/test-macos-f3fix.sh
-          cd tests
-          ./test-macos-f3fix.sh
+          ./tests/test-macos-f3fix.sh
 
   Cygwin:
     strategy:
