@@ -88,6 +88,14 @@ jobs:
       - run: ./f3read --help
       - run: ${{ matrix.asroot.sudo }}./f3read -s 2 -e 4 -r 50000 ${{ matrix.volume }}
 
+      - name: Run F3Fix tests
+        if: matrix.volume == '.' && matrix.asroot.sudo == ''
+        run: |
+          brew install gawk
+          chmod +x tests/test-macos-f3fix.sh
+          cd tests
+          ./test-macos-f3fix.sh
+
   Cygwin:
     strategy:
       fail-fast: false
@@ -112,7 +120,7 @@ jobs:
         with:
           packages: gcc-core libargp-devel make
 
-      - run: "$Env:LDFLAGS = '-Wl,--stack,4000000'; make BIN_DIR=."
+      - run: "$Env:LDFLAGS = '-Wl,--stack,4000000 -largp'; make BIN_DIR=."
 
       - if: matrix.volume.windows == 'relative-path'
         run: New-Item -ItemType Directory -Path relative-path
