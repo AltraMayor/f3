@@ -39,6 +39,17 @@ install-extra: extra
 	$(INSTALL) -d $(DESTDIR)$(PREFIX)/bin
 	$(INSTALL) -m755 $(EXTRA_TARGETS) $(DESTDIR)$(PREFIX)/bin
 
+uninstall:
+	rm -f $(DESTDIR)$(PREFIX)/bin/f3write
+	rm -f $(DESTDIR)$(PREFIX)/bin/f3read
+	rm -f $(DESTDIR)$(PREFIX)/share/man/man1/f3read.1
+	rm -f $(DESTDIR)$(PREFIX)/share/man/man1/f3write.1
+
+uninstall-extra:
+	rm -f $(DESTDIR)$(PREFIX)/bin/f3probe
+	rm -f $(DESTDIR)$(PREFIX)/bin/f3brew
+	rm -f $(DESTDIR)$(PREFIX)/bin/f3fix
+
 f3write: utils.o libflow.o f3write.o
 	$(CC) -o $@ $^ $(LDFLAGS) -lm
 
@@ -56,7 +67,7 @@ f3fix: libutils.o f3fix.o
 
 -include *.d
 
-PHONY: cscope clean
+.PHONY: cscope clean uninstall uninstall-extra
 
 cscope:
 	cscope -b *.c *.h
