@@ -7,6 +7,7 @@ EXTRA_TARGETS = f3probe f3brew f3fix
 PREFIX = /usr/local
 INSTALL = install
 LN = ln
+UNLINK = unlink
 
 ifndef OS
 	OS = $(shell uname -s)
@@ -39,6 +40,14 @@ install-extra: extra
 	$(INSTALL) -d $(DESTDIR)$(PREFIX)/bin
 	$(INSTALL) -m755 $(EXTRA_TARGETS) $(DESTDIR)$(PREFIX)/bin
 
+uninstall: uninstall-extra
+	cd $(DESTDIR)$(PREFIX)/bin ; rm $(TARGETS)
+	rm -f $(DESTDIR)$(PREFIX)/share/man/man1/f3read.1
+	$(UNLINK) $(DESTDIR)$(PREFIX)/share/man/man1/f3write.1
+
+uninstall-extra:
+	cd $(DESTDIR)$(PREFIX)/bin ; rm $(EXTRA_TARGETS)
+
 f3write: utils.o libflow.o f3write.o
 	$(CC) -o $@ $^ $(LDFLAGS) -lm
 
@@ -56,7 +65,7 @@ f3fix: libutils.o f3fix.o
 
 -include *.d
 
-PHONY: cscope clean
+.PHONY: cscope clean uninstall uninstall-extra
 
 cscope:
 	cscope -b *.c *.h
