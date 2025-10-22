@@ -358,6 +358,7 @@ Files
 - ``Makefile`` - make(1) file
 - ``README`` - This file
 - ``*.h`` and ``*.c`` - C code of F3
+- ``flake.nix`` - nix package manager configuration allowing automatic building and or installation of repository contents.
 
 Bash scripts
 ------------
