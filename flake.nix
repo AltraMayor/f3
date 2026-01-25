@@ -6,7 +6,7 @@
   };
 
   outputs = { self, nixpkgs }: {
-    packages = nixpkgs.lib.genAttrs [ "aarch64-linux" "x86_64-linux" ] (system:
+    packages = nixpkgs.lib.genAttrs [ "aarch64-linux" "x86_64-linux" "aarch64-darwin" ] (system:
     let
       pkgs = import nixpkgs { inherit system; };
     in
@@ -16,7 +16,12 @@
         version = builtins.head (builtins.match ''.*#define[[:space:]]+F3_STR_VERSION[[:space:]]+"([0-9.]+)".*'' (builtins.readFile (self + "/version.h")));
         src = ./.;
         nativeBuildInputs = [ pkgs.clang ];
-        buildInputs = [ pkgs.libusb1 pkgs.parted];
+        buildInputs = pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+            pkgs.systemd
+            pkgs.parted
+          ]
+          ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ pkgs.argp-standalone ];
+
         installPhase = ''
           runHook preInstall
 					mkdir -p $out/bin
@@ -45,6 +50,7 @@
 		defaultPackage = {
 			x86_64-linux = self.packages.x86_64-linux.f3;
 			aarch64-linux = self.packages.aarch64-linux.f3;
+			aarch64-darwin = self.packages.aarch64-darwin.f3;
 		};
   };
 }
