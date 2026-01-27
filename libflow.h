@@ -1,8 +1,11 @@
 #ifndef HEADER_LIBFLOW_H
 #define HEADER_LIBFLOW_H
 
-#include <stdint.h>
+#include <assert.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <sys/time.h>
 
 struct flow;
 
