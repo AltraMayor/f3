@@ -28,11 +28,11 @@ static struct argp_option options[] = {
 	{"debug",		'd',	NULL,		OPTION_HIDDEN,
 		"Enable debugging; only needed if none --debug-* option used",
 		1},
-	{"debug-real-size",	'r',	"SIZE_BYTE",	OPTION_HIDDEN,
+	{"debug-real-size",	'a',	"SIZE_BYTE",	OPTION_HIDDEN,
 		"Real size of the emulated drive",	0},
 	{"debug-fake-size",	'f',	"SIZE_BYTE",	OPTION_HIDDEN,
 		"Fake size of the emulated drive",	0},
-	{"debug-wrap",		'w',	"N",		OPTION_HIDDEN,
+	{"debug-wrap",		'm',	"N",		OPTION_HIDDEN,
 		"Wrap parameter of the emulated drive",	0},
 	{"debug-block-order",	'b',	"ORDER",	OPTION_HIDDEN,
 		"Block size of the emulated drive is 2^ORDER Bytes",	0},
@@ -91,7 +91,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		args->debug = true;
 		break;
 
-	case 'r':
+	case 'a':
 		ll = arg_to_ll_bytes(state, arg);
 		if (ll < 0)
 			argp_error(state,
@@ -109,7 +109,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		args->debug = true;
 		break;
 
-	case 'w':
+	case 'm':
 		ll = arg_to_ll_bytes(state, arg);
 		if (ll < 0 || ll >= 64)
 			argp_error(state,
