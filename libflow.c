@@ -9,6 +9,7 @@
 #include <sys/time.h>
 
 #include "libflow.h"
+#include "libutils.h"
 #include "utils.h"
 
 static inline void move_to_inc_at_start(struct flow *fw)
@@ -202,14 +203,6 @@ static inline int flush_chunk(const struct flow *fw, int fd)
 	if (fw->func_flush_chunk)
 		return fw->func_flush_chunk(fw, fd);
 	return 0;
-}
-
-/* XXX Avoid duplicate this function, which was copied from libutils.h. */
-static inline uint64_t diff_timeval_us(const struct timeval *t1,
-	const struct timeval *t2)
-{
-	return (t2->tv_sec - t1->tv_sec) * 1000000ULL +
-		t2->tv_usec - t1->tv_usec;
 }
 
 int measure(int fd, struct flow *fw, long processed)

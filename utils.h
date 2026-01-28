@@ -11,8 +11,6 @@
 
 void adjust_dev_path(const char **dev_path);
 
-const char *adjust_unit(double *ptr_bytes);
-
 /* Return true if @filename matches the regex /^[0-9]+\.h2w$/ */
 int is_my_file(const char *filename);
 
@@ -30,14 +28,10 @@ void msleep(double wait_ms);
 
 const long *ls_my_files(const char *path, long start_at, long end_at);
 
-void print_header(FILE *f, const char *name);
-
 static inline uint64_t random_number(uint64_t prv_number)
 {
 	return prv_number * 4294967311ULL + 17;
 }
-
-#define UNUSED(x)	((void)x)
 
 long arg_to_long(const struct argp_state *state, const char *arg);
 

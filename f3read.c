@@ -18,6 +18,7 @@
 #include <sys/stat.h>
 #include <argp.h>
 
+#include "libutils.h"
 #include "utils.h"
 #include "libflow.h"
 #include "version.h"

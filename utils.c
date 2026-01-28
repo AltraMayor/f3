@@ -20,7 +20,6 @@
 #include <err.h>
 #include <unistd.h>
 
-#include "version.h"
 #include "utils.h"
 
 void adjust_dev_path(const char **dev_path)
@@ -35,20 +34,6 @@ void adjust_dev_path(const char **dev_path)
 	} else if (errno != EPERM) {
 		err(errno, "Can't change root directory to %s at %s()", *dev_path, __func__);
 	}
-}
-
-const char *adjust_unit(double *ptr_bytes)
-{
-	const char *units[] = { "Byte", "KB", "MB", "GB", "TB", "PB", "EB" };
-	int i = 0;
-	double final = *ptr_bytes;
-
-	while (i < 7 && final >= 1024) {
-		final /= 1024;
-		i++;
-	}
-	*ptr_bytes = final;
-	return units[i];
 }
 
 int is_my_file(const char *filename)
@@ -193,15 +178,6 @@ long arg_to_long(const struct argp_state *state, const char *arg)
 	if (!*arg || *end)
 		argp_error(state, "`%s' is not an integer", arg);
 	return l;
-}
-
-void print_header(FILE *f, const char *name)
-{
-	fprintf(f,
-	"F3 %s " F3_STR_VERSION "\n"
-	"Copyright (C) 2010 Digirati Internet LTDA.\n"
-	"This is free software; see the source for copying conditions.\n"
-	"\n", name);
 }
 
 #if __APPLE__ && __MACH__

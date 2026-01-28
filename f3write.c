@@ -17,6 +17,7 @@
 #include <err.h>
 #include <argp.h>
 
+#include "libutils.h"
 #include "utils.h"
 #include "libflow.h"
 #include "version.h"

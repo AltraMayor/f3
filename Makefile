@@ -48,10 +48,10 @@ uninstall: uninstall-extra
 uninstall-extra:
 	cd $(DESTDIR)$(PREFIX)/bin ; rm $(EXTRA_TARGETS)
 
-f3write: utils.o libflow.o f3write.o
+f3write: libutils.o utils.o libflow.o f3write.o
 	$(CC) -o $@ $^ $(LDFLAGS) -lm
 
-f3read: utils.o libflow.o f3read.o
+f3read: libutils.o utils.o libflow.o f3read.o
 	$(CC) -o $@ $^ $(LDFLAGS) -lm
 
 f3probe: libutils.o libdevs.o libprobe.o f3probe.o
