@@ -131,11 +131,13 @@ int usec_to_str(uint64_t usec, char *str)
 	return tot;
 }
 
-void *align_mem(void *p, int order)
+void *align_mem2(void *p, int order, int *shift)
 {
-	uintptr_t ip = (uintptr_t)p;
+	uintptr_t ip0 = (uintptr_t)p;
 	uintptr_t head = align_head(order);
-	return (void *)(   (ip + head) & ~head   );
+	uintptr_t ip1 = (ip0 + head) & ~head;
+	*shift = ip1 - ip0;
+	return (void *)ip1;
 }
 
 void print_header(FILE *f, const char *name)

@@ -43,7 +43,13 @@ static inline int align_head(int order)
 	return (1 << order) - 1;
 }
 
-void *align_mem(void *p, int order);
+void *align_mem2(void *p, int order, int *shift);
+
+static inline void *align_mem(void *p, int order)
+{
+	int shift;
+	return align_mem2(p, order, &shift);
+}
 
 void print_header(FILE *f, const char *name);
 

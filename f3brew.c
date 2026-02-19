@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -10,6 +11,7 @@
 #include "version.h"
 #include "libutils.h"
 #include "libdevs.h"
+#include "libflow.h"
 
 /* Argp's global variables. */
 const char *argp_program_version = "F3 BREW " F3_STR_VERSION;
@@ -320,7 +322,7 @@ static void print_block_range(const struct block_range *range)
 	printf("\n");
 }
 
-static void validate_block(uint64_t expected_sector_offset,
+static void validate_block(struct flow *fw, uint64_t expected_sector_offset,
 	const char *probe_blk, int block_order, struct block_range *range)
 {
 	uint64_t found_sector_offset;
@@ -347,8 +349,10 @@ static void validate_block(uint64_t expected_sector_offset,
 		);
 
 	if (push_range) {
-		if (range->state != bs_unknown)
+		if (range->state != bs_unknown) {
+			clear_progress(fw);
 			print_block_range(range);
+		}
 		range->state = state;
 		range->start_sector_offset = expected_sector_offset;
 		range->end_sector_offset = expected_sector_offset;
@@ -358,16 +362,14 @@ static void validate_block(uint64_t expected_sector_offset,
 	}
 }
 
-static void read_blocks(struct device *dev,
-	uint64_t first_block, uint64_t last_block)
+static void read_blocks(struct device *dev, uint64_t first_block,
+	uint64_t last_block)
 {
 	const int block_size = dev_get_block_size(dev);
 	const int block_order = dev_get_block_order(dev);
-	char stack[align_head(block_order) + BIG_BLOCK_SIZE_BYTE];
-	char *buffer = align_mem(stack, block_order);
+	const uint64_t total_size = (last_block - first_block + 1) << block_order;
 	uint64_t expected_sector_offset = first_block << block_order;
 	uint64_t first_pos = first_block;
-	uint64_t step = (BIG_BLOCK_SIZE_BYTE >> block_order) - 1;
 	struct block_range range = {
 		.state = bs_unknown,
 		.block_order = block_order,
@@ -375,28 +377,56 @@ static void read_blocks(struct device *dev,
 		.end_sector_offset = 0,
 		.found_sector_offset = 0,
 	};
+	struct dynamic_buffer dbuf;
+	struct flow fw;
 
-	assert(BIG_BLOCK_SIZE_BYTE >= block_size);
+	dbuf_init(&dbuf);
+	init_flow(&fw, block_size, total_size, 0, 1, NULL);
 
+	start_measurement(&fw);
 	while (first_pos <= last_block) {
-		char *probe_blk = buffer;
-		uint64_t pos, next_pos = first_pos + step;
+		uint64_t chunk_bytes = get_rem_chunk_size(&fw);
+		uint64_t needed_size = align_head(block_order) + chunk_bytes;
+		uint64_t max_blocks_to_read = last_block - first_pos + 1;
+		uint64_t blocks_to_read;
+		int shift;
+		char *buffer, *probe_blk;
+		size_t buf_len;
+		uint64_t pos, next_pos;
 
-		if (next_pos > last_block)
-			next_pos = last_block;
-		if (dev_read_blocks(dev, buffer, first_pos, next_pos))
+		buffer = align_mem2(dbuf_get_buf(&dbuf, needed_size), block_order, &shift);
+		buf_len = dbuf_get_len(&dbuf);
+
+		blocks_to_read = buf_len >= needed_size
+			? chunk_bytes >> block_order
+			: (buf_len - shift) >> block_order;
+		if (blocks_to_read > max_blocks_to_read)
+			blocks_to_read = max_blocks_to_read;
+
+		next_pos = first_pos + blocks_to_read - 1;
+		if (dev_read_blocks(dev, buffer, first_pos, next_pos)) {
+			clear_progress(&fw);
 			warn("Failed to read blocks from 0x%" PRIx64
 				" to 0x%" PRIx64, first_pos, next_pos);
+		}
 
+		probe_blk = buffer;
 		for (pos = first_pos; pos <= next_pos; pos++) {
-			validate_block(expected_sector_offset, probe_blk,
+			validate_block(&fw, expected_sector_offset, probe_blk,
 				block_order, &range);
 			expected_sector_offset += block_size;
 			probe_blk += block_size;
 		}
 
+		/* Since parameter func_flush_chunk of init_flow() is NULL,
+		 * the parameter fd of measure() is ignored.
+		 */
+		measure(0, &fw, blocks_to_read << block_order);
 		first_pos = next_pos + 1;
 	}
+	end_measurement(0, &fw);
+	dbuf_free(&dbuf);
+
 	if (range.state != bs_unknown)
 		print_block_range(&range);
 	else

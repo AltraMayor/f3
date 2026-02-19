@@ -57,7 +57,7 @@ f3read: libutils.o utils.o libflow.o f3read.o
 f3probe: libutils.o libdevs.o libprobe.o f3probe.o
 	$(CC) -o $@ $^ $(LDFLAGS) -lm -ludev
 
-f3brew: libutils.o libdevs.o f3brew.o
+f3brew: libutils.o libflow.o libdevs.o f3brew.o
 	$(CC) -o $@ $^ $(LDFLAGS) -lm -ludev
 
 f3fix: libutils.o f3fix.o

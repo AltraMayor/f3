@@ -98,17 +98,17 @@ struct device {
 	const char *(*get_filename)(struct device *dev);
 };
 
-uint64_t dev_get_size_byte(struct device *dev)
+uint64_t dev_get_size_byte(const struct device *dev)
 {
 	return dev->size_byte;
 }
 
-int dev_get_block_order(struct device *dev)
+int dev_get_block_order(const struct device *dev)
 {
 	return dev->block_order;
 }
 
-int dev_get_block_size(struct device *dev)
+int dev_get_block_size(const struct device *dev)
 {
 	return 1 << dev->block_order;
 }

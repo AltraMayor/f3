@@ -102,6 +102,15 @@ static void erase(int count)
 	repeat_ch('\b',	count);
 }
 
+void clear_progress(struct flow *fw)
+{
+	if (!fw->progress)
+		return;
+	erase(fw->erase);
+	fw->erase = 0;
+	fflush(stdout);
+}
+
 static int pr_time(double sec)
 {
 	int has_h, has_m;

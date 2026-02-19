@@ -44,9 +44,9 @@ struct device;
  *	Properties
  */
 
-uint64_t dev_get_size_byte(struct device *dev);
-int dev_get_block_order(struct device *dev);
-int dev_get_block_size(struct device *dev);
+uint64_t dev_get_size_byte(const struct device *dev);
+int dev_get_block_order(const struct device *dev);
+int dev_get_block_size(const struct device *dev);
 /* File name of the device.
  * This information is important because the filename may change due to resets.
  */
