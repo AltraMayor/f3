@@ -11,6 +11,8 @@
 
 void adjust_dev_path(const char **dev_path);
 
+int get_block_size(const char *path);
+
 /* Return true if @filename matches the regex /^[0-9]+\.h2w$/ */
 int is_my_file(const char *filename);
 

@@ -19,6 +19,7 @@
 #include <errno.h>
 #include <err.h>
 #include <unistd.h>
+#include <sys/statvfs.h>
 
 #include "utils.h"
 
@@ -34,6 +35,13 @@ void adjust_dev_path(const char **dev_path)
 	} else if (errno != EPERM) {
 		err(errno, "Can't change root directory to %s at %s()", *dev_path, __func__);
 	}
+}
+
+int get_block_size(const char *path)
+{
+	struct statvfs fs;
+	assert(!statvfs(path, &fs));
+	return fs.f_bsize;
 }
 
 int is_my_file(const char *filename)

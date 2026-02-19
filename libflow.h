@@ -62,7 +62,7 @@ struct flow {
 /* If @max_process_rate <= 0, the maximum processing rate is infinity.
  * The unit of @max_process_rate is KB per second.
  */
-void init_flow(struct flow *fw, uint64_t total_size,
+void init_flow(struct flow *fw, int block_size, uint64_t total_size,
 	long max_process_rate, int progress,
 	flow_func_flush_chunk_t func_flush_chunk);
 
