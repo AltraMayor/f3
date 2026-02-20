@@ -5,6 +5,8 @@
 #include <argp.h>	/* For struct argp_state.	*/
 #include <sys/time.h>	/* For struct timeval.		*/
 
+#define SECTOR_SIZE (512)
+
 #define UNUSED(x)	((void)x)
 
 int ilog2(uint64_t x);

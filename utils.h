@@ -6,7 +6,6 @@
 #include <stdint.h>	/* For type uint64_t.		*/
 #include <argp.h>	/* For struct argp_state.	*/
 
-#define SECTOR_SIZE (512)
 #define GIGABYTES   (1024 * 1024 * 1024)
 
 void adjust_dev_path(const char **dev_path);

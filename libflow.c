@@ -10,7 +10,6 @@
 
 #include "libflow.h"
 #include "libutils.h"
-#include "utils.h"
 
 /* Apple Macintosh / OpenBSD */
 #if (__APPLE__ && __MACH__) || defined(__OpenBSD__)
