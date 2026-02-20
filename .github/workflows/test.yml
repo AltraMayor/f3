@@ -24,7 +24,7 @@ jobs:
             sudo: 'sudo '
 
     name: Linux ${{ matrix.volume }}${{ matrix.asroot.name }}
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v3
@@ -66,7 +66,7 @@ jobs:
             sudo: 'sudo '
 
     name: MacOS ${{ matrix.volume }}${{ matrix.asroot.name }}
-    runs-on: macos-12
+    runs-on: macos-14
 
     steps:
       - uses: actions/checkout@v3
