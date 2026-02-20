@@ -41,7 +41,7 @@ int get_block_size(const char *path)
 {
 	struct statvfs fs;
 	assert(!statvfs(path, &fs));
-	return fs.f_bsize;
+	return fs.f_frsize;
 }
 
 int is_my_file(const char *filename)
