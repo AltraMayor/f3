@@ -14,6 +14,7 @@
 /* Apple Macintosh / OpenBSD */
 #if (__APPLE__ && __MACH__) || defined(__OpenBSD__)
 
+#include <unistd.h>
 static void msleep(double wait_ms)
 {
 	assert(!usleep(wait_ms * 1000));

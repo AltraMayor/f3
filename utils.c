@@ -196,6 +196,7 @@ int fdatasync(int fd)
 	return fcntl(fd, F_FULLFSYNC);
 }
 
+#include "libutils.h" /* For UNUSED(). */
 /* This function is a _rough_ approximation of posix_fadvise(2). */
 int posix_fadvise(int fd, off_t offset, off_t len, int advice)
 {
