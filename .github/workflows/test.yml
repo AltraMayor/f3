@@ -49,6 +49,30 @@ jobs:
       - run: ./f3read --help
       - run: ${{ matrix.asroot.sudo }}./f3read -s 2 -e 4 -r 50000 ${{ matrix.volume }}
 
+      - run: ./f3probe -V
+      - run: ./f3probe --help
+      - run: ./f3brew -V
+      - run: ./f3brew --help
+      - run: ./f3fix -V
+      - run: ./f3fix --help
+
+      - name: Create loop device for f3probe, f3brew, and f3fix tests
+        id: loop
+        run: |
+          dd if=/dev/zero of=dummy.img bs=1M count=10
+          sudo losetup -fP dummy.img
+          echo "dev=$(sudo losetup -j dummy.img | cut -d: -f1)" >> $GITHUB_OUTPUT
+
+      - run: sudo ./f3probe ${{ steps.loop.outputs.dev }}
+      - run: sudo ./f3brew --reset-type=2 -h 0 -e 4 ${{ steps.loop.outputs.dev }}
+      - run: sudo ./f3fix --first-sec 1 --last-sec 10 ${{ steps.loop.outputs.dev }}
+
+      - name: Cleanup loop device
+        if: always()
+        run: |
+          sudo losetup -d ${{ steps.loop.outputs.dev }}
+          rm dummy.img
+
   MacOS:
     strategy:
       fail-fast: false
