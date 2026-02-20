@@ -19,8 +19,8 @@
 #include <errno.h>
 #include <err.h>
 #include <unistd.h>
+#include <sys/statvfs.h>
 
-#include "version.h"
 #include "utils.h"
 
 void adjust_dev_path(const char **dev_path)
@@ -37,18 +37,11 @@ void adjust_dev_path(const char **dev_path)
 	}
 }
 
-const char *adjust_unit(double *ptr_bytes)
+int get_block_size(const char *path)
 {
-	const char *units[] = { "Byte", "KB", "MB", "GB", "TB", "PB", "EB" };
-	int i = 0;
-	double final = *ptr_bytes;
-
-	while (i < 7 && final >= 1024) {
-		final /= 1024;
-		i++;
-	}
-	*ptr_bytes = final;
-	return units[i];
+	struct statvfs fs;
+	assert(!statvfs(path, &fs));
+	return fs.f_bsize;
 }
 
 int is_my_file(const char *filename)
@@ -195,15 +188,6 @@ long arg_to_long(const struct argp_state *state, const char *arg)
 	return l;
 }
 
-void print_header(FILE *f, const char *name)
-{
-	fprintf(f,
-	"F3 %s " F3_STR_VERSION "\n"
-	"Copyright (C) 2010 Digirati Internet LTDA.\n"
-	"This is free software; see the source for copying conditions.\n"
-	"\n", name);
-}
-
 #if __APPLE__ && __MACH__
 
 /* This function is a _rough_ approximation of fdatasync(2). */
@@ -228,47 +212,3 @@ int posix_fadvise(int fd, off_t offset, off_t len, int advice)
 }
 
 #endif	/* Apple Macintosh */
-
-#if (__APPLE__ && __MACH__) || defined(__OpenBSD__)
-
-void msleep(double wait_ms)
-{
-	assert(!usleep(wait_ms * 1000));
-}
-
-#else	/* Apple Macintosh / OpenBSD */
-
-#include <time.h> /* For clock_gettime() and clock_nanosleep(). */
-
-void msleep(double wait_ms)
-{
-	struct timespec req;
-	int ret;
-
-	assert(!clock_gettime(CLOCK_MONOTONIC, &req));
-
-	/* Add @wait_ms to @req. */
-	if (wait_ms > 1000) {
-		time_t sec = wait_ms / 1000;
-		wait_ms -= sec * 1000;
-		assert(wait_ms > 0);
-		req.tv_sec += sec;
-	}
-	req.tv_nsec += wait_ms * 1000000;
-
-	/* Round @req up. */
-	if (req.tv_nsec >= 1000000000) {
-		ldiv_t result = ldiv(req.tv_nsec, 1000000000);
-		req.tv_sec += result.quot;
-		req.tv_nsec = result.rem;
-	}
-
-	do {
-		ret = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,
-			&req, NULL);
-	} while (ret == EINTR);
-
-	assert(ret == 0);
-}
-
-#endif	/* Apple Macintosh / OpenBSD */

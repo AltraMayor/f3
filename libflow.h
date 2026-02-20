@@ -1,8 +1,11 @@
 #ifndef HEADER_LIBFLOW_H
 #define HEADER_LIBFLOW_H
 
-#include <stdint.h>
+#include <assert.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <sys/time.h>
 
 struct flow;
 
@@ -59,12 +62,13 @@ struct flow {
 /* If @max_process_rate <= 0, the maximum processing rate is infinity.
  * The unit of @max_process_rate is KB per second.
  */
-void init_flow(struct flow *fw, uint64_t total_size,
+void init_flow(struct flow *fw, int block_size, uint64_t total_size,
 	long max_process_rate, int progress,
 	flow_func_flush_chunk_t func_flush_chunk);
 
 void start_measurement(struct flow *fw);
 int measure(int fd, struct flow *fw, long processed);
+void clear_progress(struct flow *fw);
 int end_measurement(int fd, struct flow *fw);
 
 static inline int has_enough_measurements(const struct flow *fw)
@@ -72,7 +76,7 @@ static inline int has_enough_measurements(const struct flow *fw)
 	return fw->measured_time_ms > fw->delay_ms;
 }
 
-static inline double get_avg_speed_given_time(struct flow *fw,
+static inline double get_avg_speed_given_time(const struct flow *fw,
 	uint64_t total_time_ms)
 {
 	return (double)(fw->measured_blocks * fw->block_size * 1000) /
@@ -80,12 +84,12 @@ static inline double get_avg_speed_given_time(struct flow *fw,
 }
 
 /* Average writing speed in byte/s. */
-static inline double get_avg_speed(struct flow *fw)
+static inline double get_avg_speed(const struct flow *fw)
 {
 	return get_avg_speed_given_time(fw, fw->measured_time_ms);
 }
 
-static inline uint64_t get_rem_chunk_size(struct flow *fw)
+static inline uint64_t get_rem_chunk_size(const struct flow *fw)
 {
 	assert(fw->blocks_per_delay > fw->processed_blocks);
 	return (fw->blocks_per_delay - fw->processed_blocks) * fw->block_size;

@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -6,10 +7,12 @@
 #include <argp.h>
 #include <inttypes.h>
 #include <err.h>
+#include <unistd.h>
 
 #include "version.h"
 #include "libutils.h"
 #include "libdevs.h"
+#include "libflow.h"
 
 /* Argp's global variables. */
 const char *argp_program_version = "F3 BREW " F3_STR_VERSION;
@@ -28,11 +31,11 @@ static struct argp_option options[] = {
 	{"debug",		'd',	NULL,		OPTION_HIDDEN,
 		"Enable debugging; only needed if none --debug-* option used",
 		1},
-	{"debug-real-size",	'r',	"SIZE_BYTE",	OPTION_HIDDEN,
+	{"debug-real-size",	'a',	"SIZE_BYTE",	OPTION_HIDDEN,
 		"Real size of the emulated drive",	0},
 	{"debug-fake-size",	'f',	"SIZE_BYTE",	OPTION_HIDDEN,
 		"Fake size of the emulated drive",	0},
-	{"debug-wrap",		'w',	"N",		OPTION_HIDDEN,
+	{"debug-wrap",		'm',	"N",		OPTION_HIDDEN,
 		"Wrap parameter of the emulated drive",	0},
 	{"debug-block-order",	'b',	"ORDER",	OPTION_HIDDEN,
 		"Block size of the emulated drive is 2^ORDER Bytes",	0},
@@ -48,6 +51,12 @@ static struct argp_option options[] = {
 		"Where test begins; the default is block zero",	0},
 	{"end-at",		'e',	"BLOCK",	0,
 		"Where test ends; the default is the very last block",	0},
+	{"max-read-rate",	'r',	"KB/s",		0,
+		"Maximum read rate",					0},
+	{"max-write-rate",	'w',	"KB/s",		0,
+		"Maximum write rate",					0},
+	{"show-progress",	'p',	"NUM",		0,
+		"Show progress if NUM is not zero",			0},
 	{"do-not-write",	'W',	NULL,		0,
 		"Do not write blocks",				0},
 	{"do-not-read",		'R',	NULL,		0,
@@ -79,6 +88,11 @@ struct args {
 	/* What to do. */
 	uint64_t	first_block;
 	uint64_t	last_block;
+
+	/* Flow control and reporting. */
+	long		max_read_rate;
+	long		max_write_rate;
+	int		show_progress;
 };
 
 static error_t parse_opt(int key, char *arg, struct argp_state *state)
@@ -91,7 +105,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		args->debug = true;
 		break;
 
-	case 'r':
+	case 'a':
 		ll = arg_to_ll_bytes(state, arg);
 		if (ll < 0)
 			argp_error(state,
@@ -109,7 +123,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		args->debug = true;
 		break;
 
-	case 'w':
+	case 'm':
 		ll = arg_to_ll_bytes(state, arg);
 		if (ll < 0 || ll >= 64)
 			argp_error(state,
@@ -171,6 +185,26 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		args->last_block = ll;
 		break;
 
+	case 'r':
+		ll = arg_to_ll_bytes(state, arg);
+		if (ll <= 0)
+			argp_error(state,
+				"KB/s must be greater than zero");
+		args->max_read_rate = ll;
+		break;
+
+	case 'w':
+		ll = arg_to_ll_bytes(state, arg);
+		if (ll <= 0)
+			argp_error(state,
+				"KB/s must be greater than zero");
+		args->max_write_rate = ll;
+		break;
+
+	case 'p':
+		args->show_progress = !!arg_to_ll_bytes(state, arg);
+		break;
+
 	case 'W':
 		args->test_write = false;
 		break;
@@ -218,43 +252,77 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
 
 static void write_blocks(struct device *dev,
-	uint64_t first_block, uint64_t last_block)
+	uint64_t first_block, uint64_t last_block,
+	long max_write_rate, int show_progress)
 {
-	const int block_order = dev_get_block_order(dev);
 	const int block_size = dev_get_block_size(dev);
-	char stack[align_head(block_order) + BIG_BLOCK_SIZE_BYTE];
-	char *buffer = align_mem(stack, block_order);
-	char *stamp_blk = buffer;
-	char *flush_blk = buffer + BIG_BLOCK_SIZE_BYTE;
+	const int block_order = dev_get_block_order(dev);
+	const uint64_t total_size = (last_block - first_block + 1) << block_order;
 	uint64_t offset = first_block << block_order;
-	uint64_t pos, first_pos = first_block;
+	uint64_t first_pos = first_block;
+	struct dynamic_buffer dbuf;
+	struct flow fw;
 
-	assert(BIG_BLOCK_SIZE_BYTE >= block_size);
+	dbuf_init(&dbuf);
+	init_flow(&fw, block_size, total_size, max_write_rate, show_progress,
+		NULL);
 
-	for (pos = first_block; pos <= last_block; pos++) {
-		fill_buffer_with_block(stamp_blk, block_order, offset, 0);
-		stamp_blk += block_size;
-		offset += block_size;
+	start_measurement(&fw);
+	while (first_pos <= last_block) {
+		uint64_t chunk_bytes = get_rem_chunk_size(&fw);
+		uint64_t needed_size = align_head(block_order) + chunk_bytes;
+		uint64_t max_blocks_to_write = last_block - first_pos + 1;
+		uint64_t blocks_to_write;
+		int shift;
+		char *buffer, *stamp_blk;
+		size_t buf_len;
+		uint64_t pos, next_pos;
 
-		if (stamp_blk == flush_blk || pos == last_block) {
-			if (dev_write_blocks(dev, buffer, first_pos, pos))
-				warn("Failed to write blocks from 0x%" PRIx64
-					" to 0x%" PRIx64, first_pos, pos);
-			stamp_blk = buffer;
-			first_pos = pos + 1;
+		buffer = align_mem2(dbuf_get_buf(&dbuf, needed_size), block_order, &shift);
+		buf_len = dbuf_get_len(&dbuf);
+
+		blocks_to_write = buf_len >= needed_size
+			? chunk_bytes >> block_order
+			: (buf_len - shift) >> block_order;
+		if (blocks_to_write > max_blocks_to_write)
+			blocks_to_write = max_blocks_to_write;
+
+		next_pos = first_pos + blocks_to_write - 1;
+
+		stamp_blk = buffer;
+		for (pos = first_pos; pos <= next_pos; pos++) {
+			fill_buffer_with_block(stamp_blk, block_order, offset, 0);
+			stamp_blk += block_size;
+			offset += block_size;
 		}
+
+		if (dev_write_blocks(dev, buffer, first_pos, next_pos)) {
+			clear_progress(&fw);
+			warn("Failed to write blocks from 0x%" PRIx64
+				" to 0x%" PRIx64, first_pos, next_pos);
+		}
+
+		/* Since parameter func_flush_chunk of init_flow() is NULL,
+		 * the parameter fd of measure() is ignored.
+		 */
+		measure(0, &fw, blocks_to_write << block_order);
+		first_pos = next_pos + 1;
 	}
+	end_measurement(0, &fw);
+	dbuf_free(&dbuf);
 }
 
 /* XXX Properly handle return errors. */
 static void test_write_blocks(struct device *dev,
-	uint64_t first_block, uint64_t last_block)
+	uint64_t first_block, uint64_t last_block,
+	long max_write_rate, int show_progress)
 {
-	printf("Writing blocks from 0x%" PRIx64 " to 0x%" PRIx64 "...",
+	printf("Writing blocks from 0x%" PRIx64 " to 0x%" PRIx64 "... ",
 		first_block, last_block);
 	fflush(stdout);
-	write_blocks(dev, first_block, last_block);
-	printf(" Done\n\n");
+	write_blocks(dev, first_block, last_block,
+		max_write_rate, show_progress);
+	printf("Done\n\n");
 }
 
 enum block_state {
@@ -320,7 +388,7 @@ static void print_block_range(const struct block_range *range)
 	printf("\n");
 }
 
-static void validate_block(uint64_t expected_sector_offset,
+static void validate_block(struct flow *fw, uint64_t expected_sector_offset,
 	const char *probe_blk, int block_order, struct block_range *range)
 {
 	uint64_t found_sector_offset;
@@ -347,8 +415,10 @@ static void validate_block(uint64_t expected_sector_offset,
 		);
 
 	if (push_range) {
-		if (range->state != bs_unknown)
+		if (range->state != bs_unknown) {
+			clear_progress(fw);
 			print_block_range(range);
+		}
 		range->state = state;
 		range->start_sector_offset = expected_sector_offset;
 		range->end_sector_offset = expected_sector_offset;
@@ -358,16 +428,14 @@ static void validate_block(uint64_t expected_sector_offset,
 	}
 }
 
-static void read_blocks(struct device *dev,
-	uint64_t first_block, uint64_t last_block)
+static void read_blocks(struct device *dev, uint64_t first_block,
+	uint64_t last_block, long max_read_rate, int show_progress)
 {
 	const int block_size = dev_get_block_size(dev);
 	const int block_order = dev_get_block_order(dev);
-	char stack[align_head(block_order) + BIG_BLOCK_SIZE_BYTE];
-	char *buffer = align_mem(stack, block_order);
+	const uint64_t total_size = (last_block - first_block + 1) << block_order;
 	uint64_t expected_sector_offset = first_block << block_order;
 	uint64_t first_pos = first_block;
-	uint64_t step = (BIG_BLOCK_SIZE_BYTE >> block_order) - 1;
 	struct block_range range = {
 		.state = bs_unknown,
 		.block_order = block_order,
@@ -375,28 +443,57 @@ static void read_blocks(struct device *dev,
 		.end_sector_offset = 0,
 		.found_sector_offset = 0,
 	};
+	struct dynamic_buffer dbuf;
+	struct flow fw;
 
-	assert(BIG_BLOCK_SIZE_BYTE >= block_size);
+	dbuf_init(&dbuf);
+	init_flow(&fw, block_size, total_size, max_read_rate, show_progress,
+		NULL);
 
+	start_measurement(&fw);
 	while (first_pos <= last_block) {
-		char *probe_blk = buffer;
-		uint64_t pos, next_pos = first_pos + step;
+		uint64_t chunk_bytes = get_rem_chunk_size(&fw);
+		uint64_t needed_size = align_head(block_order) + chunk_bytes;
+		uint64_t max_blocks_to_read = last_block - first_pos + 1;
+		uint64_t blocks_to_read;
+		int shift;
+		char *buffer, *probe_blk;
+		size_t buf_len;
+		uint64_t pos, next_pos;
 
-		if (next_pos > last_block)
-			next_pos = last_block;
-		if (dev_read_blocks(dev, buffer, first_pos, next_pos))
+		buffer = align_mem2(dbuf_get_buf(&dbuf, needed_size), block_order, &shift);
+		buf_len = dbuf_get_len(&dbuf);
+
+		blocks_to_read = buf_len >= needed_size
+			? chunk_bytes >> block_order
+			: (buf_len - shift) >> block_order;
+		if (blocks_to_read > max_blocks_to_read)
+			blocks_to_read = max_blocks_to_read;
+
+		next_pos = first_pos + blocks_to_read - 1;
+		if (dev_read_blocks(dev, buffer, first_pos, next_pos)) {
+			clear_progress(&fw);
 			warn("Failed to read blocks from 0x%" PRIx64
 				" to 0x%" PRIx64, first_pos, next_pos);
+		}
 
+		probe_blk = buffer;
 		for (pos = first_pos; pos <= next_pos; pos++) {
-			validate_block(expected_sector_offset, probe_blk,
+			validate_block(&fw, expected_sector_offset, probe_blk,
 				block_order, &range);
 			expected_sector_offset += block_size;
 			probe_blk += block_size;
 		}
 
+		/* Since parameter func_flush_chunk of init_flow() is NULL,
+		 * the parameter fd of measure() is ignored.
+		 */
+		measure(0, &fw, blocks_to_read << block_order);
 		first_pos = next_pos + 1;
 	}
+	end_measurement(0, &fw);
+	dbuf_free(&dbuf);
+
 	if (range.state != bs_unknown)
 		print_block_range(&range);
 	else
@@ -405,11 +502,13 @@ static void read_blocks(struct device *dev,
 
 /* XXX Properly handle return errors. */
 static void test_read_blocks(struct device *dev,
-	uint64_t first_block, uint64_t last_block)
+	uint64_t first_block, uint64_t last_block,
+	long max_read_rate, int show_progress)
 {
 	printf("Reading blocks from 0x%" PRIx64 " to 0x%" PRIx64 ":\n",
 		first_block, last_block);
-	read_blocks(dev, first_block, last_block);
+	read_blocks(dev, first_block, last_block,
+		max_read_rate, show_progress);
 	printf("\n");
 }
 
@@ -430,6 +529,10 @@ int main(int argc, char **argv)
 		.strict_cache	= false,
 		.first_block	= 0,
 		.last_block	= -1ULL,
+		.max_read_rate	= 0,
+		.max_write_rate = 0,
+		/* If stdout isn't a terminal, suppress progress. */
+		.show_progress	= isatty(STDOUT_FILENO),
 	};
 	struct device *dev;
 	uint64_t very_last_block;
@@ -458,7 +561,8 @@ int main(int argc, char **argv)
 		args.last_block = very_last_block;
 
 	if (args.test_write)
-		test_write_blocks(dev, args.first_block, args.last_block);
+		test_write_blocks(dev, args.first_block, args.last_block,
+			args.max_write_rate, args.show_progress);
 
 	if (args.test_write && args.test_read) {
 		const char *final_dev_filename;
@@ -471,7 +575,8 @@ int main(int argc, char **argv)
 	}
 
 	if (args.test_read)
-		test_read_blocks(dev, args.first_block, args.last_block);
+		test_read_blocks(dev, args.first_block, args.last_block,
+			args.max_read_rate, args.show_progress);
 
 	free_device(dev);
 	return 0;

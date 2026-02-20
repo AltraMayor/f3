@@ -6,12 +6,11 @@
 #include <stdint.h>	/* For type uint64_t.		*/
 #include <argp.h>	/* For struct argp_state.	*/
 
-#define SECTOR_SIZE (512)
 #define GIGABYTES   (1024 * 1024 * 1024)
 
 void adjust_dev_path(const char **dev_path);
 
-const char *adjust_unit(double *ptr_bytes);
+int get_block_size(const char *path);
 
 /* Return true if @filename matches the regex /^[0-9]+\.h2w$/ */
 int is_my_file(const char *filename);
@@ -26,18 +25,12 @@ static inline int64_t delay_ms(const struct timeval *t1,
 			(t2->tv_usec - t1->tv_usec) / 1000;
 }
 
-void msleep(double wait_ms);
-
 const long *ls_my_files(const char *path, long start_at, long end_at);
-
-void print_header(FILE *f, const char *name);
 
 static inline uint64_t random_number(uint64_t prv_number)
 {
 	return prv_number * 4294967311ULL + 17;
 }
-
-#define UNUSED(x)	((void)x)
 
 long arg_to_long(const struct argp_state *state, const char *arg);
 

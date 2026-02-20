@@ -5,6 +5,8 @@
 #include <argp.h>	/* For struct argp_state.	*/
 #include <sys/time.h>	/* For struct timeval.		*/
 
+#define SECTOR_SIZE (512)
+
 #define UNUSED(x)	((void)x)
 
 int ilog2(uint64_t x);
@@ -41,7 +43,13 @@ static inline int align_head(int order)
 	return (1 << order) - 1;
 }
 
-void *align_mem(void *p, int order);
+void *align_mem2(void *p, int order, int *shift);
+
+static inline void *align_mem(void *p, int order)
+{
+	int shift;
+	return align_mem2(p, order, &shift);
+}
 
 void print_header(FILE *f, const char *name);
 

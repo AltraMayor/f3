@@ -9,7 +9,51 @@
 #include <sys/time.h>
 
 #include "libflow.h"
-#include "utils.h"
+#include "libutils.h"
+
+/* Apple Macintosh / OpenBSD */
+#if (__APPLE__ && __MACH__) || defined(__OpenBSD__)
+
+static void msleep(double wait_ms)
+{
+	assert(!usleep(wait_ms * 1000));
+}
+
+#else	/* Everyone else */
+
+#include <time.h> /* For clock_gettime() and clock_nanosleep(). */
+static void msleep(double wait_ms)
+{
+	struct timespec req;
+	int ret;
+
+	assert(!clock_gettime(CLOCK_MONOTONIC, &req));
+
+	/* Add @wait_ms to @req. */
+	if (wait_ms > 1000) {
+		time_t sec = wait_ms / 1000;
+		wait_ms -= sec * 1000;
+		assert(wait_ms > 0);
+		req.tv_sec += sec;
+	}
+	req.tv_nsec += wait_ms * 1000000;
+
+	/* Round @req up. */
+	if (req.tv_nsec >= 1000000000) {
+		ldiv_t result = ldiv(req.tv_nsec, 1000000000);
+		req.tv_sec += result.quot;
+		req.tv_nsec = result.rem;
+	}
+
+	do {
+		ret = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME,
+			&req, NULL);
+	} while (ret == EINTR);
+
+	assert(ret == 0);
+}
+
+#endif	/* msleep() */
 
 static inline void move_to_inc_at_start(struct flow *fw)
 {
@@ -17,16 +61,16 @@ static inline void move_to_inc_at_start(struct flow *fw)
 	fw->state = FW_INC;
 }
 
-void init_flow(struct flow *fw, uint64_t total_size,
+void init_flow(struct flow *fw, int block_size, uint64_t total_size,
 	long max_process_rate, int progress,
 	flow_func_flush_chunk_t func_flush_chunk)
 {
 	fw->total_size		= total_size;
 	fw->total_processed	= 0;
 	fw->progress		= progress;
-	fw->block_size		= 512;	/* Bytes	*/
-	fw->blocks_per_delay	= 1;	/* 512B/s	*/
-	fw->delay_ms		= 1000;	/* 1s		*/
+	fw->block_size		= block_size; /* Bytes		*/
+	fw->blocks_per_delay	= 1;	/* block_size B/s	*/
+	fw->delay_ms		= 1000;	/* 1s			*/
 	fw->max_process_rate	= max_process_rate <= 0
 		? DBL_MAX : max_process_rate * 1024.;
 	fw->measured_blocks	= 0;
@@ -56,6 +100,15 @@ static void erase(int count)
 	repeat_ch('\b',	count);
 	repeat_ch(' ',	count);
 	repeat_ch('\b',	count);
+}
+
+void clear_progress(struct flow *fw)
+{
+	if (!fw->progress)
+		return;
+	erase(fw->erase);
+	fw->erase = 0;
+	fflush(stdout);
 }
 
 static int pr_time(double sec)
@@ -202,14 +255,6 @@ static inline int flush_chunk(const struct flow *fw, int fd)
 	if (fw->func_flush_chunk)
 		return fw->func_flush_chunk(fw, fd);
 	return 0;
-}
-
-/* XXX Avoid duplicate this function, which was copied from libutils.h. */
-static inline uint64_t diff_timeval_us(const struct timeval *t1,
-	const struct timeval *t2)
-{
-	return (t2->tv_sec - t1->tv_sec) * 1000000ULL +
-		t2->tv_usec - t1->tv_usec;
 }
 
 int measure(int fd, struct flow *fw, long processed)

@@ -17,6 +17,7 @@
 #include <err.h>
 #include <argp.h>
 
+#include "libutils.h"
 #include "utils.h"
 #include "libflow.h"
 #include "version.h"
@@ -310,7 +311,8 @@ static int fill_fs(const char *path, long start_at, long end_at,
 		end_at = start_at + (free_space >> 30);
 	}
 
-	init_flow(&fw, free_space, max_write_rate, progress, flush_chunk);
+	init_flow(&fw, get_block_size(path), free_space, max_write_rate,
+		progress, flush_chunk);
 	assert(!gettimeofday(&t1, NULL));
 	for (i = start_at; i <= end_at; i++)
 		if (create_and_fill_file(path, i, GIGABYTES,
