@@ -222,41 +222,71 @@ static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
 static void write_blocks(struct device *dev,
 	uint64_t first_block, uint64_t last_block)
 {
-	const int block_order = dev_get_block_order(dev);
 	const int block_size = dev_get_block_size(dev);
-	char stack[align_head(block_order) + BIG_BLOCK_SIZE_BYTE];
-	char *buffer = align_mem(stack, block_order);
-	char *stamp_blk = buffer;
-	char *flush_blk = buffer + BIG_BLOCK_SIZE_BYTE;
+	const int block_order = dev_get_block_order(dev);
+	const uint64_t total_size = (last_block - first_block + 1) << block_order;
 	uint64_t offset = first_block << block_order;
-	uint64_t pos, first_pos = first_block;
+	uint64_t first_pos = first_block;
+	struct dynamic_buffer dbuf;
+	struct flow fw;
 
-	assert(BIG_BLOCK_SIZE_BYTE >= block_size);
+	dbuf_init(&dbuf);
+	init_flow(&fw, block_size, total_size, 0, 1, NULL);
 
-	for (pos = first_block; pos <= last_block; pos++) {
-		fill_buffer_with_block(stamp_blk, block_order, offset, 0);
-		stamp_blk += block_size;
-		offset += block_size;
+	start_measurement(&fw);
+	while (first_pos <= last_block) {
+		uint64_t chunk_bytes = get_rem_chunk_size(&fw);
+		uint64_t needed_size = align_head(block_order) + chunk_bytes;
+		uint64_t max_blocks_to_write = last_block - first_pos + 1;
+		uint64_t blocks_to_write;
+		int shift;
+		char *buffer, *stamp_blk;
+		size_t buf_len;
+		uint64_t pos, next_pos;
 
-		if (stamp_blk == flush_blk || pos == last_block) {
-			if (dev_write_blocks(dev, buffer, first_pos, pos))
-				warn("Failed to write blocks from 0x%" PRIx64
-					" to 0x%" PRIx64, first_pos, pos);
-			stamp_blk = buffer;
-			first_pos = pos + 1;
+		buffer = align_mem2(dbuf_get_buf(&dbuf, needed_size), block_order, &shift);
+		buf_len = dbuf_get_len(&dbuf);
+
+		blocks_to_write = buf_len >= needed_size
+			? chunk_bytes >> block_order
+			: (buf_len - shift) >> block_order;
+		if (blocks_to_write > max_blocks_to_write)
+			blocks_to_write = max_blocks_to_write;
+
+		next_pos = first_pos + blocks_to_write - 1;
+
+		stamp_blk = buffer;
+		for (pos = first_pos; pos <= next_pos; pos++) {
+			fill_buffer_with_block(stamp_blk, block_order, offset, 0);
+			stamp_blk += block_size;
+			offset += block_size;
 		}
+
+		if (dev_write_blocks(dev, buffer, first_pos, next_pos)) {
+			clear_progress(&fw);
+			warn("Failed to write blocks from 0x%" PRIx64
+				" to 0x%" PRIx64, first_pos, next_pos);
+		}
+
+		/* Since parameter func_flush_chunk of init_flow() is NULL,
+		 * the parameter fd of measure() is ignored.
+		 */
+		measure(0, &fw, blocks_to_write << block_order);
+		first_pos = next_pos + 1;
 	}
+	end_measurement(0, &fw);
+	dbuf_free(&dbuf);
 }
 
 /* XXX Properly handle return errors. */
 static void test_write_blocks(struct device *dev,
 	uint64_t first_block, uint64_t last_block)
 {
-	printf("Writing blocks from 0x%" PRIx64 " to 0x%" PRIx64 "...",
+	printf("Writing blocks from 0x%" PRIx64 " to 0x%" PRIx64 "... ",
 		first_block, last_block);
 	fflush(stdout);
 	write_blocks(dev, first_block, last_block);
-	printf(" Done\n\n");
+	printf("Done\n\n");
 }
 
 enum block_state {
