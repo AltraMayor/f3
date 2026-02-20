@@ -7,6 +7,7 @@
 #include <argp.h>
 #include <inttypes.h>
 #include <err.h>
+#include <unistd.h>
 
 #include "version.h"
 #include "libutils.h"
@@ -50,6 +51,12 @@ static struct argp_option options[] = {
 		"Where test begins; the default is block zero",	0},
 	{"end-at",		'e',	"BLOCK",	0,
 		"Where test ends; the default is the very last block",	0},
+	{"max-read-rate",	'r',	"KB/s",		0,
+		"Maximum read rate",					0},
+	{"max-write-rate",	'w',	"KB/s",		0,
+		"Maximum write rate",					0},
+	{"show-progress",	'p',	"NUM",		0,
+		"Show progress if NUM is not zero",			0},
 	{"do-not-write",	'W',	NULL,		0,
 		"Do not write blocks",				0},
 	{"do-not-read",		'R',	NULL,		0,
@@ -81,6 +88,11 @@ struct args {
 	/* What to do. */
 	uint64_t	first_block;
 	uint64_t	last_block;
+
+	/* Flow control and reporting. */
+	long		max_read_rate;
+	long		max_write_rate;
+	int		show_progress;
 };
 
 static error_t parse_opt(int key, char *arg, struct argp_state *state)
@@ -173,6 +185,26 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		args->last_block = ll;
 		break;
 
+	case 'r':
+		ll = arg_to_ll_bytes(state, arg);
+		if (ll <= 0)
+			argp_error(state,
+				"KB/s must be greater than zero");
+		args->max_read_rate = ll;
+		break;
+
+	case 'w':
+		ll = arg_to_ll_bytes(state, arg);
+		if (ll <= 0)
+			argp_error(state,
+				"KB/s must be greater than zero");
+		args->max_write_rate = ll;
+		break;
+
+	case 'p':
+		args->show_progress = !!arg_to_ll_bytes(state, arg);
+		break;
+
 	case 'W':
 		args->test_write = false;
 		break;
@@ -220,7 +252,8 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
 
 static void write_blocks(struct device *dev,
-	uint64_t first_block, uint64_t last_block)
+	uint64_t first_block, uint64_t last_block,
+	long max_write_rate, int show_progress)
 {
 	const int block_size = dev_get_block_size(dev);
 	const int block_order = dev_get_block_order(dev);
@@ -231,7 +264,8 @@ static void write_blocks(struct device *dev,
 	struct flow fw;
 
 	dbuf_init(&dbuf);
-	init_flow(&fw, block_size, total_size, 0, 1, NULL);
+	init_flow(&fw, block_size, total_size, max_write_rate, show_progress,
+		NULL);
 
 	start_measurement(&fw);
 	while (first_pos <= last_block) {
@@ -280,12 +314,14 @@ static void write_blocks(struct device *dev,
 
 /* XXX Properly handle return errors. */
 static void test_write_blocks(struct device *dev,
-	uint64_t first_block, uint64_t last_block)
+	uint64_t first_block, uint64_t last_block,
+	long max_write_rate, int show_progress)
 {
 	printf("Writing blocks from 0x%" PRIx64 " to 0x%" PRIx64 "... ",
 		first_block, last_block);
 	fflush(stdout);
-	write_blocks(dev, first_block, last_block);
+	write_blocks(dev, first_block, last_block,
+		max_write_rate, show_progress);
 	printf("Done\n\n");
 }
 
@@ -393,7 +429,7 @@ static void validate_block(struct flow *fw, uint64_t expected_sector_offset,
 }
 
 static void read_blocks(struct device *dev, uint64_t first_block,
-	uint64_t last_block)
+	uint64_t last_block, long max_read_rate, int show_progress)
 {
 	const int block_size = dev_get_block_size(dev);
 	const int block_order = dev_get_block_order(dev);
@@ -411,7 +447,8 @@ static void read_blocks(struct device *dev, uint64_t first_block,
 	struct flow fw;
 
 	dbuf_init(&dbuf);
-	init_flow(&fw, block_size, total_size, 0, 1, NULL);
+	init_flow(&fw, block_size, total_size, max_read_rate, show_progress,
+		NULL);
 
 	start_measurement(&fw);
 	while (first_pos <= last_block) {
@@ -465,11 +502,13 @@ static void read_blocks(struct device *dev, uint64_t first_block,
 
 /* XXX Properly handle return errors. */
 static void test_read_blocks(struct device *dev,
-	uint64_t first_block, uint64_t last_block)
+	uint64_t first_block, uint64_t last_block,
+	long max_read_rate, int show_progress)
 {
 	printf("Reading blocks from 0x%" PRIx64 " to 0x%" PRIx64 ":\n",
 		first_block, last_block);
-	read_blocks(dev, first_block, last_block);
+	read_blocks(dev, first_block, last_block,
+		max_read_rate, show_progress);
 	printf("\n");
 }
 
@@ -490,6 +529,10 @@ int main(int argc, char **argv)
 		.strict_cache	= false,
 		.first_block	= 0,
 		.last_block	= -1ULL,
+		.max_read_rate	= 0,
+		.max_write_rate = 0,
+		/* If stdout isn't a terminal, suppress progress. */
+		.show_progress	= isatty(STDOUT_FILENO),
 	};
 	struct device *dev;
 	uint64_t very_last_block;
@@ -518,7 +561,8 @@ int main(int argc, char **argv)
 		args.last_block = very_last_block;
 
 	if (args.test_write)
-		test_write_blocks(dev, args.first_block, args.last_block);
+		test_write_blocks(dev, args.first_block, args.last_block,
+			args.max_write_rate, args.show_progress);
 
 	if (args.test_write && args.test_read) {
 		const char *final_dev_filename;
@@ -531,7 +575,8 @@ int main(int argc, char **argv)
 	}
 
 	if (args.test_read)
-		test_read_blocks(dev, args.first_block, args.last_block);
+		test_read_blocks(dev, args.first_block, args.last_block,
+			args.max_read_rate, args.show_progress);
 
 	free_device(dev);
 	return 0;
