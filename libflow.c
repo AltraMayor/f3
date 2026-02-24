@@ -1,12 +1,14 @@
 #define _POSIX_C_SOURCE 200112L
 #define _XOPEN_SOURCE 600
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <float.h>
 #include <assert.h>
 #include <math.h>
 #include <sys/time.h>
+#include <string.h>
 
 #include "libflow.h"
 #include "libutils.h"
@@ -147,6 +149,19 @@ static int pr_time(double sec)
 		c = printf("%is", (int)round(sec));
 	assert(c > 0);
 	return tot + c;
+}
+
+static inline double get_avg_speed_given_time(const struct flow *fw,
+	uint64_t total_time_ms)
+{
+	return (double)(fw->measured_blocks * fw->block_size * 1000) /
+		total_time_ms;
+}
+
+/* Average writing speed in byte/s. */
+static inline double get_avg_speed(const struct flow *fw)
+{
+	return get_avg_speed_given_time(fw, fw->measured_time_ms);
 }
 
 static void report_progress(struct flow *fw, double inst_speed)
@@ -411,6 +426,40 @@ out:
 		errno = saved_errno;
 	}
 	return ret;
+}
+
+static inline void pr_avg_speed(const char *speed_type, double speed)
+{
+	const char *unit = adjust_unit(&speed);
+	printf("Average %s speed: %.2f %s/s\n", speed_type, speed, unit);
+}
+
+static inline int64_t delay_ms(const struct timeval *t1,
+	const struct timeval *t2)
+{
+	return (int64_t)(t2->tv_sec  - t1->tv_sec)  * 1000 +
+			(t2->tv_usec - t1->tv_usec) / 1000;
+}
+
+void print_measured_speed(const struct flow *fw, const struct timeval *t1,
+	const struct timeval *t2, const char *speed_type)
+{
+	if (has_enough_measurements(fw)) {
+		pr_avg_speed(speed_type, get_avg_speed(fw));
+	} else {
+		/* If the drive is too fast for the measurements above,
+		 * try a coarse approximation of the speed.
+		 */
+		int64_t total_time_ms = delay_ms(t1, t2);
+		if (total_time_ms > 0) {
+			pr_avg_speed(speed_type,
+				get_avg_speed_given_time(fw, total_time_ms));
+		} else {
+			assert(strlen(speed_type) > 0);
+			printf("%c%s speed not available\n",
+				toupper(speed_type[0]), speed_type + 1);
+		}
+	}
 }
 
 static inline void __dbuf_free(struct dynamic_buffer *dbuf)

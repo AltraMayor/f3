@@ -259,12 +259,6 @@ static inline void pr_freespace(uint64_t fs)
 	printf("Free space: %.2f %s\n", f, unit);
 }
 
-static inline void pr_avg_speed(double speed)
-{
-	const char *unit = adjust_unit(&speed);
-	printf("Average writing speed: %.2f %s/s\n", speed, unit);
-}
-
 static int flush_chunk(const struct flow *fw, int fd)
 {
 	UNUSED(fw);
@@ -323,20 +317,7 @@ static int fill_fs(const char *path, long start_at, long end_at,
 	/* Final report. */
 	pr_freespace(get_freespace(path));
 	/* Writing speed. */
-	if (has_enough_measurements(&fw)) {
-		pr_avg_speed(get_avg_speed(&fw));
-	} else {
-		/* If the drive is too fast for the measurements above,
-		 * try a coarse approximation of the writing speed.
-		 */
-		int64_t total_time_ms = delay_ms(&t1, &t2);
-		if (total_time_ms > 0) {
-			pr_avg_speed(get_avg_speed_given_time(&fw,
-				total_time_ms));
-		} else {
-			printf("Writing speed not available\n");
-		}
-	}
+	print_measured_speed(&fw, &t1, &t2, "writing");
 
 	return 0;
 }

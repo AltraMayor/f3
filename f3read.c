@@ -346,12 +346,6 @@ static uint64_t get_total_size(const char *path, const long *files)
 	return total_size;
 }
 
-static inline void pr_avg_speed(double speed)
-{
-	const char *unit = adjust_unit(&speed);
-	printf("Average reading speed: %.2f %s/s\n", speed, unit);
-}
-
 static void iterate_files(const char *path, const long *files,
 	long start_at, long end_at, long max_read_rate, int progress)
 {
@@ -414,20 +408,7 @@ static void iterate_files(const char *path, const long *files,
 		printf("WARNING: Not all data was read due to I/O error(s)\n");
 
 	/* Reading speed. */
-	if (has_enough_measurements(&fw)) {
-		pr_avg_speed(get_avg_speed(&fw));
-	} else {
-		/* If the drive is too fast for the measurements above,
-		 * try a coarse approximation of the reading speed.
-		 */
-		int64_t total_time_ms = delay_ms(&t1, &t2);
-		if (total_time_ms > 0) {
-			pr_avg_speed(get_avg_speed_given_time(&fw,
-				total_time_ms));
-		} else {
-			printf("Reading speed not available\n");
-		}
-	}
+	print_measured_speed(&fw, &t1, &t2, "reading");
 }
 
 int main(int argc, char **argv)

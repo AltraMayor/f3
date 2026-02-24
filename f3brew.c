@@ -251,27 +251,22 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
 
-static void write_blocks(struct device *dev,
-	uint64_t first_block, uint64_t last_block,
-	long max_write_rate, int show_progress)
+static void write_blocks(struct device *dev, struct flow *fw,
+	uint64_t first_block, uint64_t last_block)
 {
 	const int block_size = dev_get_block_size(dev);
 	const int block_order = dev_get_block_order(dev);
-	const uint64_t total_size = (last_block - first_block + 1) << block_order;
 	uint64_t offset = first_block << block_order;
 	uint64_t first_pos = first_block;
 	struct dynamic_buffer dbuf;
-	struct flow fw;
 
 	dbuf_init(&dbuf);
-	init_flow(&fw, block_size, total_size, max_write_rate, show_progress,
-		NULL);
 
-	start_measurement(&fw);
+	start_measurement(fw);
 	while (first_pos <= last_block) {
-		uint64_t chunk_bytes = get_rem_chunk_size(&fw);
-		uint64_t needed_size = align_head(block_order) + chunk_bytes;
-		uint64_t max_blocks_to_write = last_block - first_pos + 1;
+		const uint64_t chunk_bytes = get_rem_chunk_size(fw);
+		const uint64_t needed_size = align_head(block_order) + chunk_bytes;
+		const uint64_t max_blocks_to_write = last_block - first_pos + 1;
 		uint64_t blocks_to_write;
 		int shift;
 		char *buffer, *stamp_blk;
@@ -297,7 +292,7 @@ static void write_blocks(struct device *dev,
 		}
 
 		if (dev_write_blocks(dev, buffer, first_pos, next_pos)) {
-			clear_progress(&fw);
+			clear_progress(fw);
 			warn("Failed to write blocks from 0x%" PRIx64
 				" to 0x%" PRIx64, first_pos, next_pos);
 		}
@@ -305,10 +300,10 @@ static void write_blocks(struct device *dev,
 		/* Since parameter func_flush_chunk of init_flow() is NULL,
 		 * the parameter fd of measure() is ignored.
 		 */
-		measure(0, &fw, blocks_to_write << block_order);
+		measure(0, fw, blocks_to_write << block_order);
 		first_pos = next_pos + 1;
 	}
-	end_measurement(0, &fw);
+	end_measurement(0, fw);
 	dbuf_free(&dbuf);
 }
 
@@ -317,12 +312,26 @@ static void test_write_blocks(struct device *dev,
 	uint64_t first_block, uint64_t last_block,
 	long max_write_rate, int show_progress)
 {
+	const int block_size = dev_get_block_size(dev);
+	const int block_order = dev_get_block_order(dev);
+	const uint64_t total_size = (last_block - first_block + 1) << block_order;
+	struct flow fw;
+	struct timeval t1, t2;
+
 	printf("Writing blocks from 0x%" PRIx64 " to 0x%" PRIx64 "... ",
 		first_block, last_block);
 	fflush(stdout);
-	write_blocks(dev, first_block, last_block,
-		max_write_rate, show_progress);
-	printf("Done\n\n");
+
+	init_flow(&fw, block_size, total_size, max_write_rate, show_progress,
+		NULL);
+
+	assert(!gettimeofday(&t1, NULL));
+	write_blocks(dev, &fw, first_block, last_block);
+	assert(!gettimeofday(&t2, NULL));
+
+	printf("Done\n");
+	print_measured_speed(&fw, &t1, &t2, "writing");
+	printf("\n");
 }
 
 enum block_state {
@@ -428,12 +437,11 @@ static void validate_block(struct flow *fw, uint64_t expected_sector_offset,
 	}
 }
 
-static void read_blocks(struct device *dev, uint64_t first_block,
-	uint64_t last_block, long max_read_rate, int show_progress)
+static void read_blocks(struct device *dev, struct flow *fw,
+	uint64_t first_block, uint64_t last_block)
 {
 	const int block_size = dev_get_block_size(dev);
 	const int block_order = dev_get_block_order(dev);
-	const uint64_t total_size = (last_block - first_block + 1) << block_order;
 	uint64_t expected_sector_offset = first_block << block_order;
 	uint64_t first_pos = first_block;
 	struct block_range range = {
@@ -444,17 +452,14 @@ static void read_blocks(struct device *dev, uint64_t first_block,
 		.found_sector_offset = 0,
 	};
 	struct dynamic_buffer dbuf;
-	struct flow fw;
 
 	dbuf_init(&dbuf);
-	init_flow(&fw, block_size, total_size, max_read_rate, show_progress,
-		NULL);
 
-	start_measurement(&fw);
+	start_measurement(fw);
 	while (first_pos <= last_block) {
-		uint64_t chunk_bytes = get_rem_chunk_size(&fw);
-		uint64_t needed_size = align_head(block_order) + chunk_bytes;
-		uint64_t max_blocks_to_read = last_block - first_pos + 1;
+		const uint64_t chunk_bytes = get_rem_chunk_size(fw);
+		const uint64_t needed_size = align_head(block_order) + chunk_bytes;
+		const uint64_t max_blocks_to_read = last_block - first_pos + 1;
 		uint64_t blocks_to_read;
 		int shift;
 		char *buffer, *probe_blk;
@@ -472,14 +477,14 @@ static void read_blocks(struct device *dev, uint64_t first_block,
 
 		next_pos = first_pos + blocks_to_read - 1;
 		if (dev_read_blocks(dev, buffer, first_pos, next_pos)) {
-			clear_progress(&fw);
+			clear_progress(fw);
 			warn("Failed to read blocks from 0x%" PRIx64
 				" to 0x%" PRIx64, first_pos, next_pos);
 		}
 
 		probe_blk = buffer;
 		for (pos = first_pos; pos <= next_pos; pos++) {
-			validate_block(&fw, expected_sector_offset, probe_blk,
+			validate_block(fw, expected_sector_offset, probe_blk,
 				block_order, &range);
 			expected_sector_offset += block_size;
 			probe_blk += block_size;
@@ -488,10 +493,10 @@ static void read_blocks(struct device *dev, uint64_t first_block,
 		/* Since parameter func_flush_chunk of init_flow() is NULL,
 		 * the parameter fd of measure() is ignored.
 		 */
-		measure(0, &fw, blocks_to_read << block_order);
+		measure(0, fw, blocks_to_read << block_order);
 		first_pos = next_pos + 1;
 	}
-	end_measurement(0, &fw);
+	end_measurement(0, fw);
 	dbuf_free(&dbuf);
 
 	if (range.state != bs_unknown)
@@ -505,10 +510,23 @@ static void test_read_blocks(struct device *dev,
 	uint64_t first_block, uint64_t last_block,
 	long max_read_rate, int show_progress)
 {
+	const int block_size = dev_get_block_size(dev);
+	const int block_order = dev_get_block_order(dev);
+	const uint64_t total_size = (last_block - first_block + 1) << block_order;
+	struct flow fw;
+	struct timeval t1, t2;
+
 	printf("Reading blocks from 0x%" PRIx64 " to 0x%" PRIx64 ":\n",
 		first_block, last_block);
-	read_blocks(dev, first_block, last_block,
-		max_read_rate, show_progress);
+
+	init_flow(&fw, block_size, total_size, max_read_rate, show_progress,
+		NULL);
+
+	assert(!gettimeofday(&t1, NULL));
+	read_blocks(dev, &fw, first_block, last_block);
+	assert(!gettimeofday(&t2, NULL));
+
+	print_measured_speed(&fw, &t1, &t2, "reading");
 	printf("\n");
 }
 
