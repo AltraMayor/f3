@@ -76,24 +76,14 @@ static inline int has_enough_measurements(const struct flow *fw)
 	return fw->measured_time_ms > fw->delay_ms;
 }
 
-static inline double get_avg_speed_given_time(const struct flow *fw,
-	uint64_t total_time_ms)
-{
-	return (double)(fw->measured_blocks * fw->block_size * 1000) /
-		total_time_ms;
-}
-
-/* Average writing speed in byte/s. */
-static inline double get_avg_speed(const struct flow *fw)
-{
-	return get_avg_speed_given_time(fw, fw->measured_time_ms);
-}
-
 static inline uint64_t get_rem_chunk_size(const struct flow *fw)
 {
 	assert(fw->blocks_per_delay > fw->processed_blocks);
 	return (fw->blocks_per_delay - fw->processed_blocks) * fw->block_size;
 }
+
+void print_measured_speed(const struct flow *fw, const struct timeval *t1,
+	const struct timeval *t2, const char *speed_type);
 
 struct dynamic_buffer {
 	char   *buf;
