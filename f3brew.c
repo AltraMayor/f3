@@ -524,7 +524,7 @@ int main(int argc, char **argv)
 		.real_size_byte	= 1ULL << 31,
 		.fake_size_byte	= 1ULL << 34,
 		.wrap		= 31,
-		.block_order	= 0,
+		.block_order	= 9,
 		.cache_order	= -1,
 		.strict_cache	= false,
 		.first_block	= 0,
