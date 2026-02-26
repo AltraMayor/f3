@@ -70,4 +70,7 @@ static inline uint64_t diff_timeval_us(const struct timeval *t1,
 		t2->tv_usec - t1->tv_usec;
 }
 
+void print_stats(uint64_t ok, uint64_t corrupted, uint64_t changed,
+	uint64_t overwritten, int block_size, const char *unit_name);
+
 #endif	/* HEADER_LIBUTILS_H */

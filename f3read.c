@@ -314,13 +314,6 @@ static void validate_file(const char *path, int number, struct flow *fw,
 	free(full_fn);
 }
 
-static void report(const char *prefix, uint64_t i)
-{
-	double f = (double) (i * SECTOR_SIZE);
-	const char *unit = adjust_unit(&f);
-	printf("%s %.2f %s (%" PRIu64 " sectors)\n", prefix, f, unit, i);
-}
-
 static uint64_t get_total_size(const char *path, const long *files)
 {
 	uint64_t total_size = 0;
@@ -396,11 +389,8 @@ static void iterate_files(const char *path, const long *files,
 	 * in @files is important since @end_at could be very large.
 	 */
 
-	report("\n  Data OK:", tot_ok);
-	report("Data LOST:", tot_corrupted + tot_changed + tot_overwritten);
-	report("\t       Corrupted:", tot_corrupted);
-	report("\tSlightly changed:", tot_changed);
-	report("\t     Overwritten:", tot_overwritten);
+	print_stats(tot_ok, tot_corrupted, tot_changed, tot_overwritten,
+		SECTOR_SIZE, "sectors");
 	if (or_missing_file)
 		printf("WARNING: Not all F3 files in the range %li to %li are available\n",
 			start_at + 1, number);

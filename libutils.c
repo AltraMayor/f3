@@ -2,6 +2,7 @@
 #include <stdlib.h>	/* For strtoll().	*/
 #include <stdbool.h>
 #include <assert.h>
+#include <inttypes.h>
 
 #include "libutils.h"
 #include "version.h"
@@ -239,4 +240,23 @@ int validate_buffer_with_block(const void *buf, int block_order,
 
 	*pfound_offset = found_offset;
 	return false;
+}
+
+static void print_stat(const char *prefix, uint64_t count,
+	int block_size, const char *unit_name)
+{
+	double f = (double) count * block_size;
+	const char *unit = adjust_unit(&f);
+	printf("%s %.2f %s (%" PRIu64 " %s)\n", prefix, f, unit, count, unit_name);
+}
+
+void print_stats(uint64_t ok, uint64_t corrupted, uint64_t changed,
+	uint64_t overwritten, int block_size, const char *unit_name)
+{
+	print_stat("\n  Data OK:", ok, block_size, unit_name);
+	print_stat("Data LOST:", corrupted + changed + overwritten,
+		block_size, unit_name);
+	print_stat("\t       Corrupted:", corrupted, block_size, unit_name);
+	print_stat("\tSlightly changed:", changed, block_size, unit_name);
+	print_stat("\t     Overwritten:", overwritten, block_size, unit_name);
 }

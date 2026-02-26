@@ -397,20 +397,31 @@ static void print_block_range(const struct block_range *range)
 	printf("\n");
 }
 
+struct block_stats {
+	uint64_t ok;
+	uint64_t bad;
+	uint64_t overwritten;
+};
+
 static void validate_block(struct flow *fw, uint64_t expected_sector_offset,
-	const char *probe_blk, int block_order, struct block_range *range)
+	const char *probe_blk, int block_order, struct block_range *range,
+	struct block_stats *stats)
 {
 	uint64_t found_sector_offset;
 	enum block_state state;
 	bool push_range;
 
 	if (validate_buffer_with_block(probe_blk, block_order,
-		&found_sector_offset, 0))
+		&found_sector_offset, 0)) {
 		state = bs_bad; /* Bad block. */
-	else if (expected_sector_offset == found_sector_offset)
+		stats->bad++;
+	} else if (expected_sector_offset == found_sector_offset) {
 		state = bs_good; /* Good block. */
-	else
+		stats->ok++;
+	} else {
 		state = bs_overwritten; /* Overwritten block. */
+		stats->overwritten++;
+	}
 
 	push_range = (range->state != state) || (
 			state == bs_overwritten
@@ -438,7 +449,7 @@ static void validate_block(struct flow *fw, uint64_t expected_sector_offset,
 }
 
 static void read_blocks(struct device *dev, struct flow *fw,
-	uint64_t first_block, uint64_t last_block)
+	uint64_t first_block, uint64_t last_block, struct block_stats *stats)
 {
 	const int block_size = dev_get_block_size(dev);
 	const int block_order = dev_get_block_order(dev);
@@ -485,7 +496,7 @@ static void read_blocks(struct device *dev, struct flow *fw,
 		probe_blk = buffer;
 		for (pos = first_pos; pos <= next_pos; pos++) {
 			validate_block(fw, expected_sector_offset, probe_blk,
-				block_order, &range);
+				block_order, &range, stats);
 			expected_sector_offset += block_size;
 			probe_blk += block_size;
 		}
@@ -515,6 +526,7 @@ static void test_read_blocks(struct device *dev,
 	const uint64_t total_size = (last_block - first_block + 1) << block_order;
 	struct flow fw;
 	struct timeval t1, t2;
+	struct block_stats stats = { 0, 0, 0 };
 
 	printf("Reading blocks from 0x%" PRIx64 " to 0x%" PRIx64 ":\n",
 		first_block, last_block);
@@ -523,9 +535,10 @@ static void test_read_blocks(struct device *dev,
 		NULL);
 
 	assert(!gettimeofday(&t1, NULL));
-	read_blocks(dev, &fw, first_block, last_block);
+	read_blocks(dev, &fw, first_block, last_block, &stats);
 	assert(!gettimeofday(&t2, NULL));
 
+	print_stats(stats.ok, stats.bad, 0, stats.overwritten, block_size, "blocks");
 	print_measured_speed(&fw, &t1, &t2, "reading");
 	printf("\n");
 }
