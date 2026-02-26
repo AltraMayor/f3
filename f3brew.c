@@ -334,13 +334,6 @@ static void test_write_blocks(struct device *dev,
 	printf("\n");
 }
 
-enum block_state {
-	bs_unknown,
-	bs_good,
-	bs_bad,
-	bs_overwritten,
-};
-
 struct block_range {
 	enum block_state	state;
 	int			block_order;
@@ -357,6 +350,7 @@ static const char *block_state_to_str(enum block_state state)
 		[bs_unknown] = "Unknown",
 		[bs_good] = "Good",
 		[bs_bad] = "Bad",
+		[bs_changed] = "Changed",
 		[bs_overwritten] = "Overwritten",
 	};
 	return conv_array[state];
@@ -383,6 +377,7 @@ static void print_block_range(const struct block_range *range)
 	switch (range->state) {
 	case bs_good:
 	case bs_bad:
+	case bs_changed:
 		break;
 
 	case bs_overwritten:
@@ -397,31 +392,14 @@ static void print_block_range(const struct block_range *range)
 	printf("\n");
 }
 
-struct block_stats {
-	uint64_t ok;
-	uint64_t bad;
-	uint64_t overwritten;
-};
-
 static void validate_block(struct flow *fw, uint64_t expected_sector_offset,
 	const char *probe_blk, int block_order, struct block_range *range,
 	struct block_stats *stats)
 {
 	uint64_t found_sector_offset;
-	enum block_state state;
+	enum block_state state = validate_block_update_stats(probe_blk, block_order,
+		expected_sector_offset, &found_sector_offset, 0, stats);
 	bool push_range;
-
-	if (validate_buffer_with_block(probe_blk, block_order,
-		&found_sector_offset, 0)) {
-		state = bs_bad; /* Bad block. */
-		stats->bad++;
-	} else if (expected_sector_offset == found_sector_offset) {
-		state = bs_good; /* Good block. */
-		stats->ok++;
-	} else {
-		state = bs_overwritten; /* Overwritten block. */
-		stats->overwritten++;
-	}
 
 	push_range = (range->state != state) || (
 			state == bs_overwritten
@@ -526,7 +504,7 @@ static void test_read_blocks(struct device *dev,
 	const uint64_t total_size = (last_block - first_block + 1) << block_order;
 	struct flow fw;
 	struct timeval t1, t2;
-	struct block_stats stats = { 0, 0, 0 };
+	struct block_stats stats = { 0, 0, 0, 0 };
 
 	printf("Reading blocks from 0x%" PRIx64 " to 0x%" PRIx64 ":\n",
 		first_block, last_block);
@@ -538,7 +516,8 @@ static void test_read_blocks(struct device *dev,
 	read_blocks(dev, &fw, first_block, last_block, &stats);
 	assert(!gettimeofday(&t2, NULL));
 
-	print_stats(stats.ok, stats.bad, 0, stats.overwritten, block_size, "blocks");
+	print_stats(stats.ok, stats.bad, stats.changed, stats.overwritten,
+		block_size, "blocks");
 	print_measured_speed(&fw, &t1, &t2, "reading");
 	printf("\n");
 }

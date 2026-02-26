@@ -115,10 +115,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
 
 struct file_stats {
-	uint64_t secs_ok;
-	uint64_t secs_corrupted;
-	uint64_t secs_changed;
-	uint64_t secs_overwritten;
+	struct block_stats secs;
 
 	uint64_t bytes_read;
 	int read_all;
@@ -129,35 +126,12 @@ static inline void zero_fstats(struct file_stats *stats)
 	memset(stats, 0, sizeof(*stats));
 }
 
-#define TOLERANCE	2
-
-static void check_sector(char *_sector, uint64_t expected_offset,
+static inline void check_sector(char *sector, uint64_t expected_offset,
 	struct file_stats *stats)
 {
-	uint64_t *sector = (uint64_t *)_sector;
-	uint64_t rn;
-	const int num_int64 = SECTOR_SIZE >> 3;
-	int error_count, i;
-
-	rn = sector[0];
-	error_count = 0;
-	for (i = 1; error_count <= TOLERANCE && i < num_int64; i++) {
-		rn = random_number(rn);
-		if (rn != sector[i])
-			error_count++;
-	}
-
-	if (expected_offset == sector[0]) {
-		if (error_count == 0)
-			stats->secs_ok++;
-		else if (error_count <= TOLERANCE)
-			stats->secs_changed++;
-		else
-			stats->secs_corrupted++;
-	} else if (error_count <= TOLERANCE)
-		stats->secs_overwritten++;
-	else
-		stats->secs_corrupted++;
+	uint64_t found_offset;
+	validate_block_update_stats(sector, 9, expected_offset, &found_offset,
+		0, &stats->secs);
 }
 
 static uint64_t check_buffer(char *buf, size_t size, uint64_t expected_offset,
@@ -225,8 +199,8 @@ static ssize_t check_chunk(struct dynamic_buffer *dbuf, int fd,
 static inline void print_status(const struct file_stats *stats)
 {
 	printf("%7" PRIu64 "/%9" PRIu64 "/%7" PRIu64 "/%7" PRIu64,
-		stats->secs_ok, stats->secs_corrupted, stats->secs_changed,
-		stats->secs_overwritten);
+		stats->secs.ok, stats->secs.bad, stats->secs.changed,
+		stats->secs.overwritten);
 }
 
 static void validate_file(const char *path, int number, struct flow *fw,
@@ -373,10 +347,10 @@ static void iterate_files(const char *path, const long *files,
 		number++;
 
 		validate_file(path, *files, &fw, &stats);
-		tot_ok += stats.secs_ok;
-		tot_corrupted += stats.secs_corrupted;
-		tot_changed += stats.secs_changed;
-		tot_overwritten += stats.secs_overwritten;
+		tot_ok += stats.secs.ok;
+		tot_corrupted += stats.secs.bad;
+		tot_changed += stats.secs.changed;
+		tot_overwritten += stats.secs.overwritten;
 		tot_size += stats.bytes_read;
 		and_read_all = and_read_all && stats.read_all;
 		files++;

@@ -198,9 +198,8 @@ static int is_block_good(struct device *dev, uint64_t pos, int *pis_good,
 		dev_read_blocks(dev, probe_blk, pos, pos))
 		return true;
 
-	*pis_good = !validate_buffer_with_block(probe_blk, block_order,
-			&found_offset, salt) &&
-		found_offset == (pos << block_order);
+	*pis_good = validate_buffer_with_block(probe_blk, block_order,
+			(pos << block_order), &found_offset, salt) == bs_good;
 	return false;
 }
 
@@ -296,9 +295,9 @@ static int count_good_blocks(struct device *dev, uint64_t *pcount,
 
 		for (pos = start_pos; pos <= next_pos; pos++) {
 			uint64_t found_sector_offset;
-			if (!validate_buffer_with_block(probe_blk, block_order,
-					&found_sector_offset, salt) &&
-				expected_sector_offset == found_sector_offset)
+			if (validate_buffer_with_block(probe_blk, block_order,
+					expected_sector_offset,
+					&found_sector_offset, salt) == bs_good)
 				count++;
 			expected_sector_offset += block_size;
 			probe_blk += block_size;
@@ -667,9 +666,8 @@ static int find_wrap(struct device *dev,
 			dev_read_blocks(dev, probe_blk, pos, pos))
 			return true;
 
-		if (!validate_buffer_with_block(probe_blk, block_order,
-			&found_offset, salt) &&
-			found_offset == offset) {
+		if (validate_buffer_with_block(probe_blk, block_order,
+				offset, &found_offset, salt) == bs_good) {
 			*pright_pos = high_bit;
 			return false;
 		}

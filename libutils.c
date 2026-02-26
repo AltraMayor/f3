@@ -222,24 +222,69 @@ void fill_buffer_with_block(void *buf, int block_order, uint64_t offset,
 			next_random_number(random_number);
 }
 
-int validate_buffer_with_block(const void *buf, int block_order,
-	uint64_t *pfound_offset, uint64_t salt)
+enum block_state validate_buffer_with_block(const void *buf, int block_order,
+	uint64_t expected_offset, uint64_t *pfound_offset, uint64_t salt)
 {
 	const uint64_t *int64_array = buf;
-	int i, num_int64 = 1 << (block_order - 3);
-	uint64_t found_offset = int64_array[0];
+	const uint64_t found_offset = int64_array[0];
+	const int num_int64 = 1 << (block_order - 3);
 	uint64_t random_number = found_offset ^ salt;
+	const int tolerance = 2;
+	int error_count = 0;
+	int i;
 
 	assert(block_order >= 9);
 
 	for (i = 1; i < num_int64; i++) {
 		random_number = next_random_number(random_number);
-		if (int64_array[i] != random_number)
-			return true;
+		if (int64_array[i] != random_number) {
+			error_count++;
+			if (error_count > tolerance)
+				break;
+		}
 	}
 
 	*pfound_offset = found_offset;
-	return false;
+
+	if (expected_offset == found_offset) {
+		if (error_count == 0)
+			return bs_good;
+		if (error_count <= tolerance)
+			return bs_changed;
+		return bs_bad;
+	}
+
+	if (error_count <= tolerance)
+		return bs_overwritten;
+
+	return bs_bad;
+}
+
+enum block_state validate_block_update_stats(const void *buf, int block_order,
+	uint64_t expected_offset, uint64_t *pfound_offset, uint64_t salt,
+	struct block_stats *stats)
+{
+	enum block_state state = validate_buffer_with_block(buf, block_order,
+		expected_offset, pfound_offset, salt);
+
+	switch (state) {
+	case bs_good:
+		stats->ok++;
+		break;
+	case bs_changed:
+		stats->changed++;
+		break;
+	case bs_bad:
+		stats->bad++;
+		break;
+	case bs_overwritten:
+		stats->overwritten++;
+		break;
+	default:
+		assert(0);
+	}
+
+	return state;
 }
 
 static void print_stat(const char *prefix, uint64_t count,

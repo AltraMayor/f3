@@ -59,9 +59,28 @@ long long arg_to_ll_bytes(const struct argp_state *state, const char *arg);
 void fill_buffer_with_block(void *buf, int block_order, uint64_t offset,
 	uint64_t salt);
 
+enum block_state {
+	bs_unknown,
+	bs_good,
+	bs_bad,
+	bs_changed,
+	bs_overwritten,
+};
+
+struct block_stats {
+	uint64_t ok;
+	uint64_t bad;
+	uint64_t changed;
+	uint64_t overwritten;
+};
+
 /* Dependent on the byte order of the processor (i.e. endianness). */
-int validate_buffer_with_block(const void *buf, int block_order,
-	uint64_t *pfound_offset, uint64_t salt);
+enum block_state validate_buffer_with_block(const void *buf, int block_order,
+	uint64_t expected_offset, uint64_t *pfound_offset, uint64_t salt);
+
+enum block_state validate_block_update_stats(const void *buf, int block_order,
+	uint64_t expected_offset, uint64_t *pfound_offset, uint64_t salt,
+	struct block_stats *stats);
 
 static inline uint64_t diff_timeval_us(const struct timeval *t1,
 	const struct timeval *t2)
