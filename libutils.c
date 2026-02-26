@@ -162,7 +162,7 @@ long long arg_to_ll_bytes(const struct argp_state *state,
 	switch (*end) {
 	case 's':
 	case 'S': /* Sectors */
-		ll <<= 9;
+		ll <<= SECTOR_ORDER;
 		end++;
 		break;
 
@@ -208,7 +208,7 @@ void fill_buffer_with_block(void *buf, int block_order, uint64_t offset,
 	int i, num_int64 = 1 << (block_order - 3);
 	uint64_t random_number = offset ^ salt;
 
-	assert(block_order >= 9);
+	assert(block_order >= SECTOR_ORDER);
 
 	/* The offset is known by drives,
 	 * so one doesn't have to encrypt it.
@@ -233,7 +233,7 @@ enum block_state validate_buffer_with_block(const void *buf, int block_order,
 	int error_count = 0;
 	int i;
 
-	assert(block_order >= 9);
+	assert(block_order >= SECTOR_ORDER);
 
 	for (i = 1; i < num_int64; i++) {
 		random_number = next_random_number(random_number);

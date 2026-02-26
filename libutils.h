@@ -6,6 +6,7 @@
 #include <sys/time.h>	/* For struct timeval.		*/
 
 #define SECTOR_SIZE (512)
+#define SECTOR_ORDER (9)
 
 #define UNUSED(x)	((void)x)
 

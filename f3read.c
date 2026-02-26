@@ -130,8 +130,8 @@ static inline void check_sector(char *sector, uint64_t expected_offset,
 	struct file_stats *stats)
 {
 	uint64_t found_offset;
-	validate_block_update_stats(sector, 9, expected_offset, &found_offset,
-		0, &stats->secs);
+	validate_block_update_stats(sector, SECTOR_ORDER, expected_offset,
+		&found_offset, 0, &stats->secs);
 }
 
 static uint64_t check_buffer(char *buf, size_t size, uint64_t expected_offset,

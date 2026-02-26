@@ -117,9 +117,10 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 	case 'b':
 		ll = arg_to_ll_bytes(state, arg);
-		if (ll != 0 && (ll < 9 || ll > 20))
+		if (ll != 0 && (ll < SECTOR_ORDER || ll > 20))
 			argp_error(state,
-				"Block order must be in the interval [9, 20] or be zero");
+				"Block order must be in the interval [%i, 20] or be zero",
+				SECTOR_ORDER);
 		args->block_order = ll;
 		args->debug = true;
 		break;
@@ -210,37 +211,37 @@ struct unit_test_item {
 
 static const struct unit_test_item ftype_to_params[] = {
 	/* Smallest good drive. */
-	{1ULL << 21,	1ULL << 21,	21,	9,	-1,	false},
+	{1ULL << 21,	1ULL << 21,	21,	SECTOR_ORDER,	-1,	false},
 
 	/* Good, 4KB-block, 1GB drive. */
-	{1ULL << 30,	1ULL << 30,	30,	12,	-1,	false},
+	{1ULL << 30,	1ULL << 30,	30,	12,		-1,	false},
 
 	/* Bad drive. */
-	{0,		1ULL << 30,	30,	9,	-1,	false},
+	{0,		1ULL << 30,	30,	SECTOR_ORDER,	-1,	false},
 
 	/* Geometry of a real limbo drive. */
-	{1777645568ULL,	32505331712ULL,	35,	9,	-1,	false},
+	{1777645568ULL,	32505331712ULL,	35,	SECTOR_ORDER,	-1,	false},
 
 	/* Wraparound drive. */
-	{1ULL << 31,	1ULL << 34,	31,	9,	-1,	false},
+	{1ULL << 31,	1ULL << 34,	31,	SECTOR_ORDER,	-1,	false},
 
 	/* Chain drive. */
-	{1ULL << 31,	1ULL << 34,	32,	9,	-1,	false},
+	{1ULL << 31,	1ULL << 34,	32,	SECTOR_ORDER,	-1,	false},
 
 	/* Extreme case for memory usage (limbo drive). */
-	{(1ULL<<20)+512,1ULL << 40,	40,	9,	-1,	false},
+	{(1ULL<<20)+512,1ULL << 40,	40,	SECTOR_ORDER,	-1,	false},
 
 	/* Geometry of a real limbo drive with 256MB of strict cache. */
-	{7600799744ULL,	67108864000ULL,	36,	9,	19,	true},
+	{7600799744ULL,	67108864000ULL,	36,	SECTOR_ORDER,	19,	true},
 
 	/* The drive before with a non-strict cache. */
-	{7600799744ULL,	67108864000ULL,	36,	9,	19,	false},
+	{7600799744ULL,	67108864000ULL,	36,	SECTOR_ORDER,	19,	false},
 
 	/* The devil drive I. */
-	{0,		1ULL << 40,	40,	9,	21,	true},
+	{0,		1ULL << 40,	40,	SECTOR_ORDER,	21,	true},
 
 	/* The devil drive II. */
-	{0,		1ULL << 40,	40,	9,	21,	false},
+	{0,		1ULL << 40,	40,	SECTOR_ORDER,	21,	false},
 };
 
 #define UNIT_TEST_N_CASES \
@@ -474,8 +475,8 @@ static int test_device(struct args *args)
 	case FKTY_LIMBO:
 	case FKTY_WRAPAROUND:
 	case FKTY_CHAIN: {
-		uint64_t last_good_sector = (real_size_byte >> 9) - 1;
-		assert(block_order >= 9);
+		uint64_t last_good_sector = (real_size_byte >> SECTOR_ORDER) - 1;
+		assert(block_order >= SECTOR_ORDER);
 		printf("Bad news: The device `%s' is a counterfeit of type %s\n\n"
 			"You can \"fix\" this device using the following command:\n"
 			"f3fix --last-sec=%" PRIu64 " %s\n",
@@ -542,7 +543,7 @@ int main(int argc, char **argv)
 		.real_size_byte	= 1ULL << 31,
 		.fake_size_byte	= 1ULL << 34,
 		.wrap		= 31,
-		.block_order	= 9,
+		.block_order	= SECTOR_ORDER,
 		.cache_order	= -1,
 		.strict_cache	= false,
 	};

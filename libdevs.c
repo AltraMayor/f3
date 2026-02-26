@@ -44,7 +44,7 @@ int dev_param_valid(uint64_t real_size_byte,
 
 	/* Check general ranges. */
 	if (real_size_byte > announced_size_byte || wrap < 0 || wrap >= 64 ||
-		block_order < 9 || block_order > 20)
+		block_order < SECTOR_ORDER || block_order > 20)
 		return false;
 
 	/* Check alignment of the sizes. */

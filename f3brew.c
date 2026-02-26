@@ -134,9 +134,10 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 	case 'b':
 		ll = arg_to_ll_bytes(state, arg);
-		if (ll != 0 && (ll < 9 || ll > 20))
+		if (ll != 0 && (ll < SECTOR_ORDER || ll > 20))
 			argp_error(state,
-				"Block order must be in the interval [9, 20] or be zero");
+				"Block order must be in the interval [%i, 20] or be zero",
+				SECTOR_ORDER);
 		args->block_order = ll;
 		args->debug = true;
 		break;
@@ -534,7 +535,7 @@ int main(int argc, char **argv)
 		.real_size_byte	= 1ULL << 31,
 		.fake_size_byte	= 1ULL << 34,
 		.wrap		= 31,
-		.block_order	= 9,
+		.block_order	= SECTOR_ORDER,
 		.cache_order	= -1,
 		.strict_cache	= false,
 		.first_block	= 0,
