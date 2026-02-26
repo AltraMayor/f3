@@ -3,7 +3,6 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <math.h>
-#include <errno.h>
 #include <time.h>	/* For time().		*/
 #include <sys/time.h>	/* For gettimeofday().	*/
 
