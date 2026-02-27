@@ -316,7 +316,8 @@ static uint64_t get_total_size(const char *path, const long *files)
 static void iterate_files(const char *path, const long *files,
 	long start_at, long end_at, long max_read_rate, int progress)
 {
-	uint64_t tot_ok, tot_corrupted, tot_changed, tot_overwritten, tot_size;
+	struct block_stats tot_stats = { 0, 0, 0, 0 };
+	uint64_t tot_size = 0;
 	int and_read_all = 1;
 	int or_missing_file = 0;
 	long number = start_at;
@@ -327,7 +328,6 @@ static void iterate_files(const char *path, const long *files,
 
 	init_flow(&fw, get_block_size(path), get_total_size(path, files),
 		max_read_rate, progress, NULL);
-	tot_ok = tot_corrupted = tot_changed = tot_overwritten = tot_size = 0;
 	printf("                  SECTORS "
 		"     ok/corrupted/changed/overwritten\n");
 
@@ -347,24 +347,24 @@ static void iterate_files(const char *path, const long *files,
 		number++;
 
 		validate_file(path, *files, &fw, &stats);
-		tot_ok += stats.secs.ok;
-		tot_corrupted += stats.secs.bad;
-		tot_changed += stats.secs.changed;
-		tot_overwritten += stats.secs.overwritten;
+		tot_stats.ok += stats.secs.ok;
+		tot_stats.bad += stats.secs.bad;
+		tot_stats.changed += stats.secs.changed;
+		tot_stats.overwritten += stats.secs.overwritten;
 		tot_size += stats.bytes_read;
 		and_read_all = and_read_all && stats.read_all;
 		files++;
 	}
 	assert(!gettimeofday(&t2, NULL));
 	assert(tot_size == SECTOR_SIZE *
-		(tot_ok + tot_corrupted + tot_changed + tot_overwritten));
+		(tot_stats.ok + tot_stats.bad + tot_stats.changed
+			+ tot_stats.overwritten));
 
 	/* Notice that not reporting `missing' files after the last file
 	 * in @files is important since @end_at could be very large.
 	 */
 
-	print_stats(tot_ok, tot_corrupted, tot_changed, tot_overwritten,
-		SECTOR_SIZE, "sectors");
+	print_stats(&tot_stats, SECTOR_SIZE, "sectors");
 	if (or_missing_file)
 		printf("WARNING: Not all F3 files in the range %li to %li are available\n",
 			start_at + 1, number);

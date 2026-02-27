@@ -517,8 +517,7 @@ static void test_read_blocks(struct device *dev,
 	read_blocks(dev, &fw, first_block, last_block, &stats);
 	assert(!gettimeofday(&t2, NULL));
 
-	print_stats(stats.ok, stats.bad, stats.changed, stats.overwritten,
-		block_size, "blocks");
+	print_stats(&stats, block_size, "blocks");
 	print_measured_speed(&fw, &t1, &t2, "reading");
 	printf("\n");
 }
