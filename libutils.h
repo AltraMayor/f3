@@ -68,6 +68,8 @@ enum block_state {
 	bs_overwritten,
 };
 
+const char *block_state_to_str(enum block_state state);
+
 struct block_stats {
 	uint64_t ok;
 	uint64_t bad;

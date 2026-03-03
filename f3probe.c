@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -51,6 +52,8 @@ static struct argp_option options[] = {
 		"Reset method to use during the probe",		0},
 	{"time-ops",		't',	NULL,		0,
 		"Time reads, writes, and resets",		0},
+	{"verbose",		'v',	NULL,		0,
+		"Show detailed progress",		0},
 	{ 0 }
 };
 
@@ -67,7 +70,7 @@ struct args {
 	bool		min_mem;
 	enum reset_type	reset_type;
 	bool		time_ops;
-	/* 1 free bytes. */
+	bool		verbose;
 
 	/* Geometry. */
 	uint64_t	real_size_byte;
@@ -169,6 +172,10 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		args->time_ops = true;
 		break;
 
+	case 'v':
+		args->verbose = true;
+		break;
+
 	case ARGP_KEY_INIT:
 		args->filename = NULL;
 		break;
@@ -199,6 +206,12 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 }
 
 static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
+
+static void dummy_probe_progress(const char *format, ...)
+{
+	/* Do nothing */
+	UNUSED(format);
+}
 
 struct unit_test_item {
 	uint64_t	real_size_byte;
@@ -275,7 +288,8 @@ static int unit_test(const char *filename)
 		assert(dev);
 		max_probe_blocks = probe_device_max_blocks(dev);
 		assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
-			&wrap, &cache_size_block, &need_reset, &block_order));
+			&wrap, &cache_size_block, &need_reset, &block_order,
+			dummy_probe_progress));
 		free_device(dev);
 		fake_type = dev_param_to_type(real_size_byte,
 			announced_size_byte, wrap, block_order);
@@ -324,29 +338,22 @@ static int unit_test(const char *filename)
 	return 0;
 }
 
-static void report_size(const char *prefix, uint64_t bytes, int block_order)
+static inline void report_size(const char *prefix, uint64_t bytes,
+	int block_order)
 {
-	double f = bytes;
-	const char *unit = adjust_unit(&f);
-	printf("%s %.2f %s (%" PRIu64 " blocks)\n", prefix, f, unit,
-		bytes >> block_order);
+	report_probed_size(printf_cb, prefix, bytes, block_order);
 }
 
-static void report_order(const char *prefix, int order)
+static inline void report_order(const char *prefix, int order)
 {
-	double f = (1ULL << order);
-	const char *unit = adjust_unit(&f);
-	printf("%s %.2f %s (2^%i Bytes)\n", prefix, f, unit, order);
+	report_probed_order(printf_cb, prefix, order);
 }
 
-static void report_cache(const char *prefix, uint64_t cache_size_block,
+static inline void report_cache(const char *prefix, uint64_t cache_size_block,
 	int need_reset, int order)
 {
-	double f = (cache_size_block << order);
-	const char *unit = adjust_unit(&f);
-	printf("%s %.2f %s (%" PRIu64 " blocks), need-reset=%s\n",
-		prefix, f, unit, cache_size_block,
-		need_reset ? "yes" : "no");
+	report_probed_cache(printf_cb, prefix, cache_size_block, need_reset,
+		order);
 }
 
 static void report_probe_time(const char *prefix, uint64_t usec)
@@ -362,6 +369,15 @@ static void report_ops(const char *op, uint64_t count, uint64_t time_us)
 	usec_to_str(time_us, str1);
 	usec_to_str(count > 0 ? time_us / count : 0, str2);
 	printf("%10s: %s / %" PRIu64 " = %s\n", op, str1, count, str2);
+}
+
+static void print_probe_progress(const char *format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	vprintf(format, args);
+	va_end(args);
+	fflush(stdout);
 }
 
 static int test_device(struct args *args)
@@ -418,8 +434,14 @@ static int test_device(struct args *args)
 	 * the state of the drive.
 	 */
 	assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
-		&wrap, &cache_size_block, &need_reset, &block_order));
+		&wrap, &cache_size_block, &need_reset, &block_order,
+		args->verbose ? print_probe_progress : dummy_probe_progress));
 	assert(!gettimeofday(&t2, NULL));
+
+	if (args->verbose) {
+		/* Isolate the verbose output. */
+		printf("\n");
+	}
 
 	if (!args->debug && args->reset_type == RT_MANUAL_USB) {
 		printf("CAUTION\t\tCAUTION\t\tCAUTION\n");
@@ -540,6 +562,7 @@ int main(int argc, char **argv)
 		.reset_type	= RT_NONE,
 
 		.time_ops	= false,
+		.verbose	= false,
 		.real_size_byte	= 1ULL << 31,
 		.fake_size_byte	= 1ULL << 34,
 		.wrap		= 31,
