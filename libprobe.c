@@ -1,4 +1,5 @@
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
@@ -56,19 +57,11 @@ static int write_blocks(struct device *dev,
 	return false;
 }
 
-static int high_level_reset(struct device *dev, uint64_t start_pos,
-	uint64_t cache_size_block, int need_reset, uint64_t salt,
-	probe_progress_cb cb)
+static inline int high_level_reset(struct device *dev, uint64_t start_pos,
+	uint64_t cache_size_block, uint64_t salt, probe_progress_cb cb)
 {
-	if (write_blocks(dev, start_pos,
-			start_pos + cache_size_block - 1, salt, cb))
-		return true;
-
-	/* Reset. */
-	if (need_reset && dev_reset(dev) && dev_reset(dev))
-		return true;
-
-	return false;
+	return write_blocks(dev, start_pos, start_pos + cache_size_block - 1,
+		salt, cb);
 }
 
 /* Statistics used by bisect() in order to optimize the proportion
@@ -200,13 +193,25 @@ static int write_bisect_blocks(struct device *dev,
 	return false;
 }
 
-static int read_blocks(struct device *dev, char *buf,
-	uint64_t first_pos, uint64_t last_pos, probe_progress_cb cb)
+/* Some fake drives have a "tiny" (e.g. 8KB) cache for random accesses and
+ * a "large" (e.g. 4MB) cache for sequential accesses.  So, for these
+ * fake drives, a random read may return a bad block, while a sequential
+ * read that includes that block returns it as a good block.
+ * This situation has been verified with the donated drive from
+ * issue #50 (https://github.com/AltraMayor/f3/issues/50).
+ *
+ * The example cache sizes come from the following
+ * discussion among Linux kernel developers:
+ * https://linux-arm-kernel.infradead.narkive.com/h3crV0D3/mmc-quirks-relating-to-performance-lifetime
+ *
+ * To circunvent this problem, the probe must only issue random reads.
+ */
+static int read_blocks(struct device *dev, char *buf, uint64_t pos,
+	probe_progress_cb cb)
 {
-	if (dev_read_blocks(dev, buf, first_pos, last_pos) &&
-		dev_read_blocks(dev, buf, first_pos, last_pos)) {
-		cb("I/O ERROR: Read error at blocks [%" PRIu64 ", %" PRIu64 "]!\n",
-			first_pos, last_pos);
+	if (dev_read_blocks(dev, buf, pos, pos) &&
+		dev_read_blocks(dev, buf, pos, pos)) {
+		cb("I/O ERROR: Read error at block %" PRIu64 "!\n", pos);
 		return true;
 	}
 	return false;
@@ -222,7 +227,7 @@ static int is_block_good(struct device *dev, uint64_t pos, int *pis_good,
 	uint64_t found_offset;
 	enum block_state bs;
 
-	if (read_blocks(dev, probe_blk, pos, pos, cb))
+	if (read_blocks(dev, probe_blk, pos, cb))
 		return true;
 
 	bs = validate_buffer_with_block(probe_blk, block_order,
@@ -264,8 +269,7 @@ static int probe_bisect_blocks(struct device *dev,
  */
 static int bisect(struct device *dev, struct bisect_stats *pstats,
 	uint64_t left_pos, uint64_t *pright_pos, uint64_t reset_pos,
-	uint64_t cache_size_block, int need_reset, uint64_t salt,
-	probe_progress_cb cb)
+	uint64_t cache_size_block, uint64_t salt, probe_progress_cb cb)
 {
 	uint64_t gap = *pright_pos - left_pos;
 	struct timeval t1, t2;
@@ -291,7 +295,7 @@ static int bisect(struct device *dev, struct bisect_stats *pstats,
 		/* Reset. */
 		assert(!gettimeofday(&t1, NULL));
 		if (high_level_reset(dev, reset_pos,
-			cache_size_block, need_reset, salt, cb))
+				cache_size_block, salt, cb))
 			return true;
 		assert(!gettimeofday(&t2, NULL));
 		pstats->reset_count++;
@@ -304,94 +308,6 @@ static int bisect(struct device *dev, struct bisect_stats *pstats,
 		gap = *pright_pos - left_pos;
 	}
 	assert(gap == 1);
-	return false;
-}
-
-static int count_good_blocks(struct device *dev, uint64_t *pcount,
-	uint64_t first_pos, uint64_t last_pos, uint64_t salt,
-	probe_progress_cb cb)
-{
-	const int block_size = dev_get_block_size(dev);
-	const int block_order = dev_get_block_order(dev);
-	char stack[align_head(block_order) + BIG_BLOCK_SIZE_BYTE];
-	char *buffer = align_mem(stack, block_order);
-	uint64_t expected_sector_offset = first_pos << block_order;
-	uint64_t start_pos = first_pos;
-	uint64_t step = (BIG_BLOCK_SIZE_BYTE >> block_order) - 1;
-	uint64_t count = 0;
-
-	assert(BIG_BLOCK_SIZE_BYTE >= block_size);
-
-	while (start_pos <= last_pos) {
-		char *probe_blk = buffer;
-		uint64_t pos, next_pos = start_pos + step;
-
-		if (next_pos > last_pos)
-			next_pos = last_pos;
-		if (read_blocks(dev, buffer, start_pos, next_pos, cb))
-			return true;
-
-		for (pos = start_pos; pos <= next_pos; pos++) {
-			uint64_t found_sector_offset;
-			if (validate_buffer_with_block(probe_blk, block_order,
-					expected_sector_offset,
-					&found_sector_offset, salt) == bs_good)
-				count++;
-			expected_sector_offset += block_size;
-			probe_blk += block_size;
-		}
-
-		start_pos = next_pos + 1;
-	}
-
-	*pcount = count;
-	return false;
-}
-
-static int assess_reset_effect(struct device *dev,
-	uint64_t *pcache_size_block, int *pneed_reset, int *pdone,
-	uint64_t first_pos, uint64_t last_pos, uint64_t salt,
-	probe_progress_cb cb)
-{
-	uint64_t write_target = (last_pos + 1) - first_pos;
-	uint64_t b4_reset_count_block, after_reset_count_block;
-
-	if (count_good_blocks(dev, &b4_reset_count_block,
-		first_pos, last_pos, salt, cb))
-		return true;
-
-	if (!b4_reset_count_block) {
-		/* The drive has no cache whatsoever. */
-		*pcache_size_block = 0;
-		*pneed_reset = false;
-		*pdone = true;
-		return false;
-	}
-
-	/* Reset. */
-	if (dev_reset(dev) && dev_reset(dev))
-		return true;
-
-	if (count_good_blocks(dev, &after_reset_count_block,
-		first_pos, last_pos, salt, cb))
-		return true;
-
-	/* Although unexpected, some fake cards do recover blocks after
-	 * a reset! This behavior is not consistent, though.
-	 * The first reported case is found here:
-	 * https://github.com/AltraMayor/f3/issues/50
-	 */
-	if (b4_reset_count_block < write_target ||
-		after_reset_count_block < write_target) {
-		*pneed_reset = after_reset_count_block < b4_reset_count_block;
-		*pcache_size_block = *pneed_reset
-			? after_reset_count_block
-			: write_target;
-		*pdone = true;
-		return false;
-	}
-
-	*pdone = false;
 	return false;
 }
 
@@ -468,8 +384,8 @@ static int uint64_cmp(const void *pa, const void *pb)
 
 static int find_a_bad_block(struct device *dev,
 	uint64_t left_pos, uint64_t *pright_pos, int *found_a_bad_block,
-	uint64_t reset_pos, uint64_t cache_size_block, int need_reset,
-	uint64_t salt, probe_progress_cb cb)
+	uint64_t reset_pos, uint64_t cache_size_block, uint64_t salt,
+	probe_progress_cb cb)
 {
 	/* We need to list all sampled blocks because
 	 * we need a sorted array; read the code to find the why.
@@ -525,9 +441,7 @@ static int find_a_bad_block(struct device *dev,
 		}
 	}
 
-	/* Reset. */
-	if (high_level_reset(dev, reset_pos, cache_size_block, need_reset,
-			salt, cb))
+	if (high_level_reset(dev, reset_pos, cache_size_block, salt, cb))
 		return true;
 
 	/* Test @samples. */
@@ -563,82 +477,43 @@ static void report_cache_size_test(probe_progress_cb cb,
 		f_size, unit, first_pos, last_pos);
 }
 
-/* Both need to be a power of 2 and larger than, or equal to 2^block_order. */
-#define MIN_CACHE_SIZE_BYTE	(1ULL << 20)
+/* This constant needs to be a power of 2 and larger than 2^block_order. */
 #define MAX_CACHE_SIZE_BYTE	(1ULL << 30)
 
-static int find_cache_size(struct device *dev,
-	uint64_t left_pos, uint64_t *pright_pos, uint64_t *pcache_size_block,
-	int *pneed_reset, int *pgood_drive, const uint64_t salt,
-	probe_progress_cb cb)
+static int find_cache_size(struct device *dev, const uint64_t left_pos,
+	uint64_t *pright_pos, uint64_t *pcache_size_block, int *pgood_drive,
+	const uint64_t salt, probe_progress_cb cb)
 {
 	const int block_order = dev_get_block_order(dev);
-	uint64_t write_target = MIN_CACHE_SIZE_BYTE >> block_order;
+	const uint64_t end_pos = *pright_pos - 1;
+	uint64_t write_target = 1;
 	uint64_t final_write_target = MAX_CACHE_SIZE_BYTE >> block_order;
-	uint64_t first_pos, last_pos, end_pos;
-	int done;
+	uint64_t first_pos = *pright_pos;
 
 	cb("# Find cache size\n");
-
-	/*
-	 *	Basis
-	 *
-	 * The key difference between the basis and the inductive step is
-	 * the fact that the basis always calls assess_reset_effect().
-	 * This difference is not for correctness, that is, one can remove it,
-	 * and fold the basis into the inductive step.
-	 * However, this difference is an important speedup because many
-	 * fake drives do not have permanent cache.
-	 */
 
 	assert(write_target > 0);
 	assert(write_target < final_write_target);
 
-	last_pos = end_pos = *pright_pos - 1;
-	/* This convoluted test is needed because
-	 * the variables are unsigned.
-	 * In a simplified form, it tests the following:
-	 *	*pright_pos - write_target > left_pos
-	 */
-	if (*pright_pos > left_pos + write_target) {
-		first_pos = *pright_pos - write_target;
-	} else if (*pright_pos > left_pos + 1) {
-		/* There's no room to write @write_target blocks,
-		 * so write what's possible.
-		 */
-		first_pos = left_pos + 1;
-	} else {
-		goto good;
-	}
-
-	report_cache_size_test(cb, dev, first_pos, end_pos);
-	if (write_blocks(dev, first_pos, last_pos, salt, cb))
-		goto bad;
-
-	if (assess_reset_effect(dev, pcache_size_block,
-		pneed_reset, &done, first_pos, end_pos, salt, cb))
-		goto bad;
-	if (done) {
-		*pright_pos = first_pos;
-		*pgood_drive = false;
-		return false;
-	}
-
-	/*
-	 *	Inductive step
-	 */
-
-	while (write_target < final_write_target) {
+	do {
+		uint64_t last_pos = first_pos - 1;
 		int found_a_bad_block;
 
-		write_target <<= 1;
-		last_pos = first_pos - 1;
-		if (first_pos > left_pos + write_target)
+		/* This convoluted test is needed because the variables are
+		 * unsigned. In a simplified form, it tests the following:
+		 *  first_pos - write_target > left_pos
+		 */
+		if (first_pos > left_pos + write_target) {
 			first_pos -= write_target;
-		else if (first_pos > left_pos + 1)
+		} else if (first_pos > left_pos + 1) {
+			/* There's no room to write @write_target blocks,
+			 * so write what's possible.
+			 */
 			first_pos = left_pos + 1;
-		else
-			break; /* Cannot write any further. */
+		} else {
+			/* Cannot write any further. */
+			break;
+		}
 
 		/* Write @write_target blocks before
 		 * the previously written blocks.
@@ -651,35 +526,35 @@ static int find_cache_size(struct device *dev,
 			&found_a_bad_block, salt, cb))
 			goto bad;
 		if (found_a_bad_block) {
-			if (assess_reset_effect(dev, pcache_size_block,
-				pneed_reset, &done, first_pos, end_pos, salt, cb))
-				goto bad;
-			assert(done);
 			*pright_pos = first_pos;
+			*pcache_size_block = write_target == 1
+				? 0 /* There is no cache. */
+				: end_pos - first_pos + 1;
 			*pgood_drive = false;
 			return false;
 		}
-	}
 
-good:
+		write_target <<= 1;
+
+	} while (write_target <= final_write_target);
+
+	/* Good drive. */
 	*pright_pos = end_pos + 1;
 	*pcache_size_block = 0;
-	*pneed_reset = false;
 	*pgood_drive = true;
 	return false;
 
 bad:
 	/* *pright_pos does not change. */
 	*pcache_size_block = 0;
-	*pneed_reset = false;
 	*pgood_drive = false;
 	return true;
 }
 
 static int find_wrap(struct device *dev,
 	uint64_t left_pos, uint64_t *pright_pos,
-	uint64_t reset_pos, uint64_t cache_size_block, int need_reset,
-	uint64_t salt, probe_progress_cb cb)
+	uint64_t reset_pos, uint64_t cache_size_block, uint64_t salt,
+	probe_progress_cb cb)
 {
 	uint64_t offset, high_bit, pos = left_pos + 1;
 	int is_good, block_order;
@@ -699,7 +574,7 @@ static int find_wrap(struct device *dev,
 
 	if (write_blocks(dev, pos, pos, salt, cb) ||
 			high_level_reset(dev, reset_pos, cache_size_block,
-				need_reset, salt, cb) ||
+				salt, cb) ||
 			is_block_good(dev, pos, &is_good, salt, cb) ||
 			!is_good)
 		return true;
@@ -720,7 +595,7 @@ static int find_wrap(struct device *dev,
 		char *probe_blk = align_mem(stack, block_order);
 		uint64_t found_offset;
 
-		if (read_blocks(dev, probe_blk, pos, pos, cb))
+		if (read_blocks(dev, probe_blk, pos, cb))
 			return true;
 
 		if (validate_buffer_with_block(probe_blk, block_order,
@@ -799,26 +674,25 @@ void report_probed_order(probe_progress_cb cb, const char *prefix, int order)
 }
 
 void report_probed_cache(probe_progress_cb cb, const char *prefix,
-	uint64_t cache_size_block, int need_reset, int order)
+	uint64_t cache_size_block, int block_order)
+
 {
-	double f = (cache_size_block << order);
+	double f = (cache_size_block << block_order);
 	const char *unit = adjust_unit(&f);
-	cb("%s %.2f %s (%" PRIu64 " blocks), need-reset=%s\n",
-		prefix, f, unit, cache_size_block,
-		need_reset ? "yes" : "no");
+	cb("%s %.2f %s (%" PRIu64 " blocks)\n",
+		prefix, f, unit, cache_size_block);
 }
 
 int probe_device(struct device *dev, uint64_t *preal_size_byte,
-	uint64_t *pannounced_size_byte, int *pwrap,
-	uint64_t *pcache_size_block, int *pneed_reset, int *pblock_order,
-	probe_progress_cb cb)
+	uint64_t *pannounced_size_byte, int *pwrap, uint64_t *pcache_size_block,
+	int *pblock_order, probe_progress_cb cb)
 {
 	const uint64_t dev_size_byte = dev_get_size_byte(dev);
 	const int block_order = dev_get_block_order(dev);
 	struct bisect_stats stats;
 	uint64_t salt, cache_size_block;
 	uint64_t left_pos, right_pos, mid_drive_pos, reset_pos;
-	int need_reset, good_drive, wrap, found_a_bad_block;
+	int good_drive, wrap, found_a_bad_block;
 
 	assert(block_order <= 20);
 
@@ -841,7 +715,6 @@ int probe_device(struct device *dev, uint64_t *preal_size_byte,
 	 */
 	if (left_pos >= right_pos) {
 		cache_size_block = 0;
-		need_reset = false;
 		goto bad;
 	}
 
@@ -864,15 +737,15 @@ int probe_device(struct device *dev, uint64_t *preal_size_byte,
 	report_probed_order(cb, "=> Physical block size:", block_order);
 
 	if (find_cache_size(dev, mid_drive_pos - 1, &right_pos,
-		&cache_size_block, &need_reset, &good_drive, salt, cb))
+		&cache_size_block, &good_drive, salt, cb))
 		goto bad;
 	assert(mid_drive_pos <= right_pos);
 	reset_pos = right_pos;
 	report_probed_cache(cb, "=> Approximate cache size:",
-		cache_size_block, need_reset, block_order);
+		cache_size_block, block_order);
 
 	if (find_wrap(dev, left_pos, &right_pos,
-		reset_pos, cache_size_block, need_reset, salt, cb))
+		reset_pos, cache_size_block, salt, cb))
 		goto bad;
 	wrap = ceiling_log2(right_pos << block_order);
 	report_probed_order(cb, "=> Module:", wrap);
@@ -884,20 +757,20 @@ int probe_device(struct device *dev, uint64_t *preal_size_byte,
 		if (mid_drive_pos < right_pos)
 			right_pos = mid_drive_pos;
 		if (bisect(dev, &stats, left_pos, &right_pos,
-			reset_pos, cache_size_block, need_reset, salt, cb))
+			reset_pos, cache_size_block, salt, cb))
 			goto bad;
 	}
 
 	do {
 		if (find_a_bad_block(dev, left_pos, &right_pos,
 				&found_a_bad_block, reset_pos,
-				cache_size_block, need_reset, salt, cb))
+				cache_size_block, salt, cb))
 			goto bad;
 
 		if (found_a_bad_block &&
 				bisect(dev, &stats, left_pos, &right_pos,
 					reset_pos, cache_size_block,
-					need_reset, salt, cb))
+					salt, cb))
 			goto bad;
 	} while (found_a_bad_block);
 
@@ -918,7 +791,6 @@ out:
 	report_probed_size(cb, "=> Usable size:", *preal_size_byte, block_order);
 	*pannounced_size_byte = dev_size_byte;
 	*pcache_size_block = cache_size_block;
-	*pneed_reset = need_reset;
 	*pblock_order = block_order;
 	return false;
 }
