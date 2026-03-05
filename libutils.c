@@ -222,6 +222,18 @@ void fill_buffer_with_block(void *buf, int block_order, uint64_t offset,
 			next_random_number(random_number);
 }
 
+const char *block_state_to_str(enum block_state state)
+{
+	const char *conv_array[] = {
+		[bs_unknown] = "Unknown",
+		[bs_good] = "Good",
+		[bs_bad] = "Bad",
+		[bs_changed] = "Changed",
+		[bs_overwritten] = "Overwritten",
+	};
+	return conv_array[state];
+}
+
 enum block_state validate_buffer_with_block(const void *buf, int block_order,
 	uint64_t expected_offset, uint64_t *pfound_offset, uint64_t salt)
 {

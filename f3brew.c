@@ -345,18 +345,6 @@ struct block_range {
 	uint64_t		found_sector_offset;
 };
 
-static const char *block_state_to_str(enum block_state state)
-{
-	const char *conv_array[] = {
-		[bs_unknown] = "Unknown",
-		[bs_good] = "Good",
-		[bs_bad] = "Bad",
-		[bs_changed] = "Changed",
-		[bs_overwritten] = "Overwritten",
-	};
-	return conv_array[state];
-}
-
 static int is_block(uint64_t offset, int block_order)
 {
 	return !(((1ULL << block_order) - 1) & offset);
