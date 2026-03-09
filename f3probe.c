@@ -13,6 +13,7 @@
 #include "version.h"
 #include "libprobe.h"
 #include "libutils.h"
+#include "libdevs.h"
 
 /* Argp's global variables. */
 const char *argp_program_version = "F3 Probe " F3_STR_VERSION;
@@ -48,8 +49,6 @@ static struct argp_option options[] = {
 		"Do not restore blocks of the device after probing it",	2},
 	{"min-memory",		'l',	NULL,		0,
 		"Trade speed for less use of memory",		0},
-	{"reset-type",		's',	"TYPE",		0,
-		"Reset method to use during the probe",		0},
 	{"time-ops",		't',	NULL,		0,
 		"Time reads, writes, and resets",		0},
 	{"verbose",		'v',	NULL,		0,
@@ -68,7 +67,6 @@ struct args {
 	/* Behavior options. */
 	bool		save;
 	bool		min_mem;
-	enum reset_type	reset_type;
 	bool		time_ops;
 	bool		verbose;
 
@@ -157,15 +155,6 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 	case 'l':
 		args->min_mem = true;
-		break;
-
-	case 's':
-		ll = arg_to_ll_bytes(state, arg);
-		if (ll < 0 || ll >= RT_MAX)
-			argp_error(state,
-				"Reset type must be in the interval [0, %i]",
-				RT_MAX - 1);
-		args->reset_type = ll;
 		break;
 
 	case 't':
@@ -279,7 +268,7 @@ static int unit_test(const char *filename)
 
 		enum fake_type fake_type;
 		uint64_t real_size_byte, announced_size_byte, cache_size_block;
-		int wrap, need_reset, block_order, max_probe_blocks;
+		int wrap, block_order, max_probe_blocks;
 		struct device *dev;
 
 		dev = create_file_device(filename, item->real_size_byte,
@@ -288,16 +277,16 @@ static int unit_test(const char *filename)
 		assert(dev);
 		max_probe_blocks = probe_device_max_blocks(dev);
 		assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
-			&wrap, &cache_size_block, &need_reset, &block_order,
+			&wrap, &cache_size_block, &block_order,
 			dummy_probe_progress));
 		free_device(dev);
 		fake_type = dev_param_to_type(real_size_byte,
 			announced_size_byte, wrap, block_order);
 
 		/* Report */
-		printf("Test %i\t\ttype/real size/fake size/module/cache size/reset/block size\n",
+		printf("Test %i\t\ttype/real size/fake size/module/cache size/block size\n",
 			i + 1);
-		printf("\t\t%s/%.2f %s/%.2f %s/2^%i Byte/%.2f %s/no/2^%i Byte\n",
+		printf("\t\t%s/%.2f %s/%.2f %s/2^%i Byte/%.2f %s/2^%i Byte\n",
 			fake_type_to_name(origin_type),
 			f_real, unit_real, f_fake, unit_fake, item->wrap,
 			f_cache, unit_cache, item->block_order);
@@ -308,7 +297,6 @@ static int unit_test(const char *filename)
 			 * the cache size.
 			 */
 			item_cache_byte <= (cache_size_block << block_order) &&
-			!need_reset &&
 			block_order == item->block_order) {
 			success++;
 			printf("\t\tPerfect!\tMax # of probed blocks: %i\n\n",
@@ -320,12 +308,12 @@ static int unit_test(const char *filename)
 			const char *ret_unit_real = adjust_unit(&ret_f_real);
 			const char *ret_unit_fake = adjust_unit(&ret_f_fake);
 			const char *ret_unit_cache = adjust_unit(&ret_f_cache);
-			printf("\tError\t%s/%.2f %s/%.2f %s/2^%i Byte/%.2f %s/%s/2^%i Byte\n\n",
+			printf("\tError\t%s/%.2f %s/%.2f %s/2^%i Byte/%.2f %s/2^%i Byte\n\n",
 				fake_type_to_name(fake_type),
 				ret_f_real, ret_unit_real,
 				ret_f_fake, ret_unit_fake, wrap,
 				ret_f_cache, ret_unit_cache,
-				need_reset ? "yes" : "no", block_order);
+				block_order);
 		}
 	}
 
@@ -350,10 +338,9 @@ static inline void report_order(const char *prefix, int order)
 }
 
 static inline void report_cache(const char *prefix, uint64_t cache_size_block,
-	int need_reset, int order)
+	int block_order)
 {
-	report_probed_cache(printf_cb, prefix, cache_size_block, need_reset,
-		order);
+	report_probed_cache(printf_cb, prefix, cache_size_block, block_order);
 }
 
 static void report_probe_time(const char *prefix, uint64_t usec)
@@ -386,17 +373,16 @@ static int test_device(struct args *args)
 	struct device *dev, *pdev, *sdev;
 	enum fake_type fake_type;
 	uint64_t real_size_byte, announced_size_byte, cache_size_block;
-	int wrap, need_reset, block_order;
+	int wrap, block_order;
 	uint64_t read_count, read_time_us;
 	uint64_t write_count, write_time_us;
 	uint64_t reset_count, reset_time_us;
-	const char *final_dev_filename;
 
 	dev = args->debug
 		? create_file_device(args->filename, args->real_size_byte,
 			args->fake_size_byte, args->wrap, args->block_order,
 			args->cache_order, args->strict_cache, args->keep_file)
-		: create_block_device(args->filename, args->reset_type);
+		: create_block_device(args->filename, RT_NONE);
 	if (!dev) {
 		fprintf(stderr, "\nApplication cannot continue, finishing...\n");
 		exit(1);
@@ -434,19 +420,13 @@ static int test_device(struct args *args)
 	 * the state of the drive.
 	 */
 	assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
-		&wrap, &cache_size_block, &need_reset, &block_order,
+		&wrap, &cache_size_block, &block_order,
 		args->verbose ? print_probe_progress : dummy_probe_progress));
 	assert(!gettimeofday(&t2, NULL));
 
 	if (args->verbose) {
 		/* Isolate the verbose output. */
 		printf("\n");
-	}
-
-	if (!args->debug && args->reset_type == RT_MANUAL_USB) {
-		printf("CAUTION\t\tCAUTION\t\tCAUTION\n");
-		printf("No more resets are needed, so do not unplug the drive\n");
-		fflush(stdout);
 	}
 
 	/* Keep free_device() as close of probe_device() as possible to
@@ -470,28 +450,22 @@ static int test_device(struct args *args)
 		sdev_flush(sdev);
 	}
 
-	final_dev_filename = strdup(dev_get_filename(dev));
-	assert(final_dev_filename);
 	free_device(dev);
 
-	if (args->save || (!args->debug && args->reset_type == RT_MANUAL_USB))
+	if (args->save)
 		printf("\n");
-
-	if (strcmp(args->filename, final_dev_filename))
-		printf("WARNING: device `%s' moved to `%s' due to the resets\n\n",
-			args->filename, final_dev_filename);
 
 	fake_type = dev_param_to_type(real_size_byte, announced_size_byte,
 		wrap, block_order);
 	switch (fake_type) {
 	case FKTY_GOOD:
 		printf("Good news: The device `%s' is the real thing\n",
-			final_dev_filename);
+			args->filename);
 		break;
 
 	case FKTY_BAD:
 		printf("Bad news: The device `%s' is damaged\n",
-			final_dev_filename);
+			args->filename);
 		break;
 
 	case FKTY_LIMBO:
@@ -502,8 +476,8 @@ static int test_device(struct args *args)
 		printf("Bad news: The device `%s' is a counterfeit of type %s\n\n"
 			"You can \"fix\" this device using the following command:\n"
 			"f3fix --last-sec=%" PRIu64 " %s\n",
-			final_dev_filename, fake_type_to_name(fake_type),
-			last_good_sector, final_dev_filename);
+			args->filename, fake_type_to_name(fake_type),
+			last_good_sector, args->filename);
 		break;
 	}
 
@@ -519,7 +493,7 @@ static int test_device(struct args *args)
 		block_order);
 	 report_order("\t                Module:", wrap);
 	 report_cache("\tApproximate cache size:", cache_size_block,
-		need_reset, block_order);
+		block_order);
 	 report_order("\t   Physical block size:", block_order);
 	report_probe_time("\nProbe time:", diff_timeval_us(&t1, &t2));
 
@@ -527,10 +501,9 @@ static int test_device(struct args *args)
 		printf(" Operation: total time / count = avg time\n");
 		report_ops("Read", read_count, read_time_us);
 		report_ops("Write", write_count, write_time_us);
-		report_ops("Reset", reset_count, reset_time_us);
+		assert(reset_count == 0);
 	}
 
-	free((void *)final_dev_filename);
 	return fake_type == FKTY_GOOD ? 0 : 100 + fake_type;
 }
 
@@ -543,24 +516,6 @@ int main(int argc, char **argv)
 		.keep_file	= false,
 		.save		= true,
 		.min_mem	= false,
-
-		/* RT_NONE is the only reliable reset type against fake flash.
-		 * See issue #81 for details:
-		 * https://github.com/AltraMayor/f3/issues/81
-		 *
-		 * A side benefit of this reset type is that it works on
-		 * non-USB-backed drives, such as card readers that are
-		 * commonly built in laptops.
-		 * See issue #79 for details:
-		 * https://github.com/AltraMayor/f3/issues/79
-		 *
-		 * A negative side effect is that f3probe runs slower
-		 * for cases in which RT_USB would work. But users can
-		 * still request the reset type RT_USB by
-		 * passing --reset-type=1
-		 */
-		.reset_type	= RT_NONE,
-
 		.time_ops	= false,
 		.verbose	= false,
 		.real_size_byte	= 1ULL << 31,
