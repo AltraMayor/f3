@@ -5,7 +5,7 @@
 
 #include "libdevs.h"
 
-uint64_t probe_device_max_blocks(struct device *dev);
+uint64_t probe_device_max_blocks(const struct device *dev);
 
 typedef void (*probe_progress_cb)(const char *format, ...);
 

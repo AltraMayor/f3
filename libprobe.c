@@ -277,6 +277,15 @@ not_found:
 	return false;
 }
 
+/* The following probabilities are caculated using the analytical result
+ * derived in probabilistic_test().
+ *
+ * min_n_samples: Pr_g <= 50% and k = 8		=> Pr_1b >= 99.6%
+ * max_n_samples: Pr_g <= 99% and k = 1024	=> Pr_1b >= 99.9966%
+ */
+#define SAMPLING_MIN (8)
+#define SAMPLING_MAX (1024)
+
 /* This function assumes that the block at @left_pos is good, and
  *	that the block at @*pright_pos is bad.
  */
@@ -285,19 +294,11 @@ static int sampling_probe(struct device *dev,
 	uint64_t reset_pos, uint64_t cache_size_block, uint64_t salt,
 	probe_progress_cb cb)
 {
-	/* The following probabilities are caculated using the analytical result
-	 * derived in probabilistic_test().
-	 *
-	 * min_n_samples: Pr_g <= 50% and k = 8		=> Pr_1b >= 99.6%
-	 * max_n_samples: Pr_g <= 99% and k = 1024	=> Pr_1b >= 99.9966%
-	 */
-	const uint32_t min_n_samples = 8;
-	const uint32_t max_n_samples = 1024;
-	uint32_t n_samples = min_n_samples;
+	uint32_t n_samples = SAMPLING_MIN;
 	int found_a_bad_block;
 	bool phase1 = true;
 
-	assert(max_n_samples >= min_n_samples);
+	assert(SAMPLING_MAX >= SAMPLING_MIN);
 	while (*pright_pos > left_pos + n_samples + 1) {
 		if (find_a_bad_block(dev, n_samples, left_pos, pright_pos,
 				&found_a_bad_block, reset_pos,
@@ -307,10 +308,10 @@ static int sampling_probe(struct device *dev,
 			continue;
 		if (phase1) {
 			n_samples <<= 1;
-			if (n_samples <= max_n_samples)
+			if (n_samples <= SAMPLING_MAX)
 				continue;
 			phase1 = false;
-			n_samples = min_n_samples;
+			n_samples = SAMPLING_MIN;
 		}
 
 		/* Phase 2: Minimize the probability that
@@ -465,43 +466,20 @@ static int find_wrap(struct device *dev,
 	return false;
 }
 
-#define MAX_N_BLOCK_ORDER	10
-uint64_t probe_device_max_blocks(struct device *dev)
+uint64_t probe_device_max_blocks(const struct device *dev)
 {
 	const int block_order = dev_get_block_order(dev);
-	uint64_t num_blocks = dev_get_size_byte(dev) >> block_order;
-	int n = ceiling_log2(num_blocks);
-
-	/* Make sure that there is no overflow in the formula below.
-	 * The number 10 is arbitrary here, that is, it's not tight.
-	 */
-	assert(MAX_N_BLOCK_ORDER < 8*sizeof(int) - 10);
+	const uint64_t num_blocks = dev_get_size_byte(dev) >> block_order;
+	const int n = ceiling_log2(num_blocks);
 
 	return
-		/* find_cache_size() */
-		(MAX_CACHE_SIZE_BYTE >> (block_order - 1)) +
-		/* find_wrap() */
+		/* find_cache_size(): sum all write targets. */
+		(MAX_CACHE_SIZE_BYTE >> block_order) * 2 - 1 +
+		/* find_wrap(): only one block is written. */
 		1 +
-		/* The number below is just an educated guess. */
-		128 * (
-			/* bisect()
-			 *
-			 * The number of used blocks is (p * w); see comments
-			 * in estimate_n_bisect_blocks() for the definition of
-			 * the variables.
-			 *
-			 * p * w = n/m * (2^m - 1) < n/m * 2^m = n * (2^m / m)
-			 *
-			 * Let f(m) be 2^m / m. One can prove that
-			 * f(m + 1) >= f(m) for all m >= 1.
-			 * Therefore, the following bound is true.
-			 *
-			 * p * w < n * f(max_m)
-			 */
-			((n << MAX_N_BLOCK_ORDER) / MAX_N_BLOCK_ORDER) +
-			/* find_a_bad_block() */
-			N_BLOCK_SAMPLES
-		);
+		/* sampling_probe() */
+		(3 * n) * SAMPLING_MAX +	/* Upper bound for phase 1. */
+		n * SAMPLING_MIN;		/* Upper bound for phase 2. */
 }
 
 void printf_cb(const char *format, ...)
