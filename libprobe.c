@@ -1,10 +1,8 @@
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <string.h>
 #include <stdbool.h>
 #include <assert.h>
-#include <math.h>
 #include <time.h>	/* For time().		*/
 #include <sys/time.h>	/* For gettimeofday().	*/
 #include <inttypes.h>
@@ -64,135 +62,6 @@ static inline int high_level_reset(struct device *dev, uint64_t start_pos,
 		salt, cb);
 }
 
-/* Statistics used by bisect() in order to optimize the proportion
- * between writes and resets.
- */
-struct bisect_stats {
-	int		write_count;
-	int		reset_count;
-	uint64_t	write_time_us;
-	uint64_t	reset_time_us;
-};
-
-static void init_bisect_stats(struct bisect_stats *stats)
-{
-	memset(stats, 0, sizeof(*stats));
-}
-
-#define MAX_N_BLOCK_ORDER	10
-
-static uint64_t estimate_n_bisect_blocks(struct bisect_stats *pstats)
-{
-	double t_w_us, t_2w_us, t_r_us;
-	uint64_t n_block_order;
-
-	if (pstats->write_count < 10 || pstats->reset_count < 1) {
-		/* There is not enough measurements. */
-		return (1 << 4) - 1;
-	}
-
-	/* Let 2^n be the total number of blocks on the drive.
-	 * Let p be the total number of passes.
-	 * Let w = (2^m - 1) be the number of blocks written on each pass,
-	 *   where m >= 1.
-	 *
-	 * A pass is an iteration of the loop in search_edge(), that is,
-	 * a call to write_test_blocks(), dev_reset(), and probe_test_blocks().
-	 *
-	 * The reason to have w = (2^m - 1) instead of w = 2^m is because
-	 * the former leads to a clean relationship between n, p, and m
-	 * when m is constant: 2^n / (w + 1)^p = 1 => p = n/m
-	 *
-	 * Let Tr be the time to reset the device.
-	 * Let Tw be the time to write a block to @dev.
-	 * Let Tw' be the time to write a block to the underlying device
-	 *   of @dev, that is, without overhead due to chaining multiple
-	 *   struct device. For example, when struct safe_device is used
-	 *   Tw > Tw'.
-	 * Let Trd be the time to read a block from @dev.
-	 *
-	 * Notice that each single-block pass reduces the search space in half,
-	 * and that to reduce the search space in half writing blocks,
-	 * one has to increase m of one.
-	 *
-	 * Thus, in order to be better writing more blocks than
-	 * going for another pass, the following relation must be true:
-	 *
-	 * Tr + Tw + Tw' >= (w - 1)(Tw + Tw')
-	 *
-	 * The relation above assumes Trd = 0.
-	 *
-	 * The left side of the relation above is the time to do _another_
-	 * pass writing a single block, whereas the right side is the time to
-	 * stay in the same pass and write (w - 1) more blocks.
-	 * In order words, if there is no advantage to write more blocks,
-	 * we stick to single-block passes.
-	 *
-	 * Tw' is there to account for any operation that writes
-	 * the blocks back (e.g. using struct safe_device), otherwise
-	 * processing operations related per written blocks that is not
-	 * being accounted for (e.g. reading the blocks back to test).
-	 *
-	 * Solving the relation for w: w <= Tr/(Tw + Tw') + 2
-	 *
-	 * However, we are not interested in any w, but only those of
-	 * of the form (2^m - 1) to make sure that we are not better off
-	 * calling another pass. Thus, solving the previous relation for m:
-	 *
-	 * m <= log_2(Tr/(Tw + Tw') + 3)
-	 *
-	 * We approximate Tw' making it equal to Tw.
-	 */
-	t_w_us = (double)pstats->write_time_us / pstats->write_count;
-	t_r_us = (double)pstats->reset_time_us / pstats->reset_count;
-	t_2w_us = t_w_us > 0. ? 2. * t_w_us : 1.; /* Avoid zero division. */
-	n_block_order = ilog2(round(t_r_us / t_2w_us + 3.));
-
-	/* Bound the maximum number of blocks per pass to limit
-	 * the necessary amount of memory struct safe_device pre-allocates.
-	 */
-	if (n_block_order > MAX_N_BLOCK_ORDER)
-		n_block_order = MAX_N_BLOCK_ORDER;
-
-	return (1 << n_block_order) - 1;
-}
-
-/* Write blocks whose offsets are after @left_pos and before @right_pos. */
-static int write_bisect_blocks(struct device *dev,
-	uint64_t left_pos, uint64_t right_pos, uint64_t n_blocks,
-	uint64_t salt, uint64_t *pa, uint64_t *pb, uint64_t *pmax_idx,
-	probe_progress_cb cb)
-{
-	uint64_t pos, last_pos;
-
-	assert(n_blocks >= 1);
-
-	/* Find coefficients of function a*idx + b where idx <= max_idx. */
-	assert(left_pos < right_pos);
-	assert(right_pos - left_pos >= 2);
-	*pb = left_pos + 1;
-	*pa = round((right_pos - *pb - 1.) / (n_blocks + 1.));
-	*pa = !*pa ? 1ULL : *pa;
-	*pmax_idx = (right_pos - *pb - 1) / *pa;
-	if (*pmax_idx >= n_blocks) {
-		/* Shift the zero of the function to the right.
-		 * This avoids picking the leftmost block when a more
-		 * informative block to the right is available.
-		 */
-		*pb += *pa;
-
-		*pmax_idx = n_blocks - 1;
-	}
-	last_pos = *pa * *pmax_idx + *pb;
-	assert(last_pos < right_pos);
-
-	/* Write test blocks. */
-	for (pos = *pb; pos <= last_pos; pos += *pa)
-		if (write_blocks(dev, pos, pos, salt, cb))
-			return true;
-	return false;
-}
-
 /* Some fake drives have a "tiny" (e.g. 8KB) cache for random accesses and
  * a "large" (e.g. 4MB) cache for sequential accesses.  So, for these
  * fake drives, a random read may return a bad block, while a sequential
@@ -237,77 +106,6 @@ static int is_block_good(struct device *dev, uint64_t pos, int *pis_good,
 		cb("INFO: Block %" PRIu64 " is %s!\n",
 			pos, block_state_to_str(bs));
 	}
-	return false;
-}
-
-static int probe_bisect_blocks(struct device *dev,
-	uint64_t *pleft_pos, uint64_t *pright_pos, uint64_t salt,
-	uint64_t a, uint64_t b, uint64_t max_idx, probe_progress_cb cb)
-{
-	/* Signed variables. */
-	int64_t left_idx = 0;
-	int64_t right_idx = max_idx;
-	while (left_idx <= right_idx) {
-		int64_t idx = (left_idx + right_idx) / 2;
-		uint64_t pos = a * idx + b;
-		int is_good;
-		if (is_block_good(dev, pos, &is_good, salt, cb))
-			return true;
-		if (is_good) {
-			left_idx = idx + 1;
-			*pleft_pos = pos;
-		} else {
-			right_idx = idx - 1;
-			*pright_pos = pos;
-		}
-	}
-	return false;
-}
-
-/* This function assumes that the block at @left_pos is good, and
- *	that the block at @*pright_pos is bad.
- */
-static int bisect(struct device *dev, struct bisect_stats *pstats,
-	uint64_t left_pos, uint64_t *pright_pos, uint64_t reset_pos,
-	uint64_t cache_size_block, uint64_t salt, probe_progress_cb cb)
-{
-	uint64_t gap = *pright_pos - left_pos;
-	struct timeval t1, t2;
-
-	cb("\t## Bisection\n");
-
-	assert(*pright_pos > left_pos);
-	while (gap >= 2) {
-		uint64_t a, b, max_idx;
-		uint64_t n_blocks = estimate_n_bisect_blocks(pstats);
-
-		cb("\t\tBisecting (%" PRIu64 ", %" PRIu64 ")\n",
-			left_pos, *pright_pos);
-
-		assert(!gettimeofday(&t1, NULL));
-		if (write_bisect_blocks(dev, left_pos, *pright_pos, n_blocks,
-			salt, &a, &b, &max_idx, cb))
-			return true;
-		assert(!gettimeofday(&t2, NULL));
-		pstats->write_count += max_idx + 1;
-		pstats->write_time_us += diff_timeval_us(&t1, &t2);
-
-		/* Reset. */
-		assert(!gettimeofday(&t1, NULL));
-		if (high_level_reset(dev, reset_pos,
-				cache_size_block, salt, cb))
-			return true;
-		assert(!gettimeofday(&t2, NULL));
-		pstats->reset_count++;
-		pstats->reset_time_us += diff_timeval_us(&t1, &t2);
-
-		if (probe_bisect_blocks(dev, &left_pos, pright_pos, salt,
-			 a, b, max_idx, cb))
-			return true;
-
-		gap = *pright_pos - left_pos;
-	}
-	assert(gap == 1);
 	return false;
 }
 
@@ -382,7 +180,7 @@ static int uint64_cmp(const void *pa, const void *pb)
 	return *pia - *pib;
 }
 
-static int find_a_bad_block(struct device *dev,
+static int find_a_bad_block(struct device *dev, uint32_t n_samples,
 	uint64_t left_pos, uint64_t *pright_pos, int *found_a_bad_block,
 	uint64_t reset_pos, uint64_t cache_size_block, uint64_t salt,
 	probe_progress_cb cb)
@@ -393,15 +191,17 @@ static int find_a_bad_block(struct device *dev,
 	 * of the random sequence and repeat the sequence to read the blocks
 	 * after writing them.
 	 */
-	uint64_t samples[N_BLOCK_SAMPLES];
+	uint64_t samples[n_samples];
 	uint64_t gap, prv_sample;
-	int n, i;
+	uint32_t i;
 
-	cb("\tSampling from blocks (%" PRIu64 ", %" PRIu64 ")\n",
-		left_pos, *pright_pos);
+	cb("\tSampling %" PRIu32 " blocks from blocks (%" PRIu64 ", %" PRIu64 ")\n",
+		n_samples, left_pos, *pright_pos);
 
-	if (*pright_pos <= left_pos + 1)
+	if (n_samples == 0 || *pright_pos <= left_pos + 1) {
+		/* Nothing to sample. */
 		goto not_found;
+	}
 
 	/* The code below relies on the same analytical result derived
 	 * in probabilistic_test().
@@ -409,17 +209,16 @@ static int find_a_bad_block(struct device *dev,
 
 	/* Fill up @samples. */
 	gap = *pright_pos - left_pos - 1;
-	if (gap <= N_BLOCK_SAMPLES) {
-		n = gap;
-		for (i = 0; i < n; i++)
+	if (gap <= n_samples) {
+		n_samples = gap;
+		for (i = 0; i < n_samples; i++)
 			samples[i] = left_pos + 1 + i;
 
 		/* Write @samples. */
 		if (write_blocks(dev, left_pos + 1, *pright_pos - 1, salt, cb))
 			return true;
 	} else {
-		n = N_BLOCK_SAMPLES;
-		for (i = 0; i < n; i++)
+		for (i = 0; i < n_samples; i++)
 			samples[i] = uint64_rand_range(left_pos + 1,
 				*pright_pos - 1);
 
@@ -428,11 +227,11 @@ static int find_a_bad_block(struct device *dev,
 		 * the remaining blocks because the found bad block is
 		 * the leftmost bad block.
 		 */
-		qsort(samples, n, sizeof(uint64_t), uint64_cmp);
+		qsort(samples, n_samples, sizeof(uint64_t), uint64_cmp);
 
 		/* Write @samples. */
 		prv_sample = left_pos;
-		for (i = 0; i < n; i++) {
+		for (i = 0; i < n_samples; i++) {
 			if (samples[i] == prv_sample)
 				continue;
 			prv_sample = samples[i];
@@ -446,7 +245,7 @@ static int find_a_bad_block(struct device *dev,
 
 	/* Test @samples. */
 	prv_sample = left_pos;
-	for (i = 0; i < n; i++) {
+	for (i = 0; i < n_samples; i++) {
 		int is_good;
 
 		if (samples[i] == prv_sample)
@@ -468,6 +267,54 @@ not_found:
 	return false;
 }
 
+/* This function assumes that the block at @left_pos is good, and
+ *	that the block at @*pright_pos is bad.
+ */
+static int sampling_probe(struct device *dev,
+	uint64_t left_pos, uint64_t *pright_pos,
+	uint64_t reset_pos, uint64_t cache_size_block, uint64_t salt,
+	probe_progress_cb cb)
+{
+	/* The following probabilities are caculated using the analytical result
+	 * derived in probabilistic_test().
+	 *
+	 * min_n_samples: Pr_g <= 50% and k = 8		=> Pr_1b >= 99.6%
+	 * max_n_samples: Pr_g <= 99% and k = 1024	=> Pr_1b >= 99.9966%
+	 */
+	const uint32_t min_n_samples = 8;
+	const uint32_t max_n_samples = 1024;
+	uint32_t n_samples = min_n_samples;
+	int found_a_bad_block;
+	bool phase1 = true;
+
+	assert(max_n_samples >= min_n_samples);
+	while (*pright_pos > left_pos + n_samples + 1) {
+		if (find_a_bad_block(dev, n_samples, left_pos, pright_pos,
+				&found_a_bad_block, reset_pos,
+				cache_size_block, salt, cb))
+			return true;
+		if (found_a_bad_block)
+			continue;
+		if (phase1) {
+			n_samples <<= 1;
+			if (n_samples <= max_n_samples)
+				continue;
+			phase1 = false;
+			n_samples = min_n_samples;
+		}
+
+		/* Phase 2: Minimize the probability that
+		 * the rightmost block is bad.
+		 */
+		left_pos = (*pright_pos + left_pos) / 2;
+	}
+	if (find_a_bad_block(dev, n_samples, left_pos, pright_pos,
+			&found_a_bad_block, reset_pos,
+			cache_size_block, salt, cb))
+		return true;
+	return false;
+}
+
 static void report_cache_size_test(probe_progress_cb cb,
 	const struct device *dev, uint64_t first_pos, uint64_t last_pos)
 {
@@ -481,8 +328,8 @@ static void report_cache_size_test(probe_progress_cb cb,
 #define MAX_CACHE_SIZE_BYTE	(1ULL << 30)
 
 static int find_cache_size(struct device *dev, const uint64_t left_pos,
-	uint64_t *pright_pos, uint64_t *pcache_size_block, int *pgood_drive,
-	const uint64_t salt, probe_progress_cb cb)
+	uint64_t *pright_pos, uint64_t *pcache_size_block, const uint64_t salt,
+	probe_progress_cb cb)
 {
 	const int block_order = dev_get_block_order(dev);
 	const uint64_t end_pos = *pright_pos - 1;
@@ -530,7 +377,6 @@ static int find_cache_size(struct device *dev, const uint64_t left_pos,
 			*pcache_size_block = write_target == 1
 				? 0 /* There is no cache. */
 				: end_pos - first_pos + 1;
-			*pgood_drive = false;
 			return false;
 		}
 
@@ -541,13 +387,11 @@ static int find_cache_size(struct device *dev, const uint64_t left_pos,
 	/* Good drive. */
 	*pright_pos = end_pos + 1;
 	*pcache_size_block = 0;
-	*pgood_drive = true;
 	return false;
 
 bad:
 	/* *pright_pos does not change. */
 	*pcache_size_block = 0;
-	*pgood_drive = false;
 	return true;
 }
 
@@ -611,6 +455,7 @@ static int find_wrap(struct device *dev,
 	return false;
 }
 
+#define MAX_N_BLOCK_ORDER	10
 uint64_t probe_device_max_blocks(struct device *dev)
 {
 	const int block_order = dev_get_block_order(dev);
@@ -689,10 +534,9 @@ int probe_device(struct device *dev, uint64_t *preal_size_byte,
 {
 	const uint64_t dev_size_byte = dev_get_size_byte(dev);
 	const int block_order = dev_get_block_order(dev);
-	struct bisect_stats stats;
 	uint64_t salt, cache_size_block;
 	uint64_t left_pos, right_pos, mid_drive_pos, reset_pos;
-	int good_drive, wrap, found_a_bad_block;
+	int wrap;
 
 	assert(block_order <= 20);
 
@@ -737,7 +581,7 @@ int probe_device(struct device *dev, uint64_t *preal_size_byte,
 	report_probed_order(cb, "=> Physical block size:", block_order);
 
 	if (find_cache_size(dev, mid_drive_pos - 1, &right_pos,
-		&cache_size_block, &good_drive, salt, cb))
+		&cache_size_block, salt, cb))
 		goto bad;
 	assert(mid_drive_pos <= right_pos);
 	reset_pos = right_pos;
@@ -750,29 +594,10 @@ int probe_device(struct device *dev, uint64_t *preal_size_byte,
 	wrap = ceiling_log2(right_pos << block_order);
 	report_probed_order(cb, "=> Module:", wrap);
 
-	cb("# Sampling and Bisecting\n");
-
-	init_bisect_stats(&stats);
-	if (!good_drive) {
-		if (mid_drive_pos < right_pos)
-			right_pos = mid_drive_pos;
-		if (bisect(dev, &stats, left_pos, &right_pos,
-			reset_pos, cache_size_block, salt, cb))
-			goto bad;
-	}
-
-	do {
-		if (find_a_bad_block(dev, left_pos, &right_pos,
-				&found_a_bad_block, reset_pos,
-				cache_size_block, salt, cb))
-			goto bad;
-
-		if (found_a_bad_block &&
-				bisect(dev, &stats, left_pos, &right_pos,
-					reset_pos, cache_size_block,
-					salt, cb))
-			goto bad;
-	} while (found_a_bad_block);
+	cb("# Sampling\n");
+	if (sampling_probe(dev, left_pos, &right_pos, reset_pos,
+			cache_size_block, salt, cb))
+		goto bad;
 
 	if (right_pos == left_pos + 1) {
 		/* Bad drive. */
