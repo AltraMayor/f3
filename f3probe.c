@@ -501,7 +501,7 @@ static int test_device(struct args *args)
 		printf(" Operation: total time / count = avg time\n");
 		report_ops("Read", read_count, read_time_us);
 		report_ops("Write", write_count, write_time_us);
-		report_ops("Reset", reset_count, reset_time_us);
+		assert(reset_count == 0);
 	}
 
 	return fake_type == FKTY_GOOD ? 0 : 100 + fake_type;
