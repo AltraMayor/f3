@@ -111,7 +111,17 @@ static int is_block_good(struct device *dev, uint64_t pos, int *pis_good,
 
 static inline uint64_t uint64_rand(void)
 {
-	return ((uint64_t)rand() << 32) | rand();
+	/* Use exclusive OR to avoid correlation between the two random
+	 * numbers. For the lower 32 bits, the zeros from the left shift make
+	 * the exclusive OR equivalent to OR. For each bit pair in the higher
+	 * 32 bits, there are 2 cases for which the exclusive OR produces 1
+	 * (i.e., 0^1 and 1^0), and 2 cases to produce 0 (i.e., 0^0 and 1^1).
+	 * If OR were used For each bit pair in the higher 32 bits, there
+	 * would be 3 cases to produce 1 (i.e., 0^1, 1^0, and 1^1), and
+	 * 1 case to produce 0 (i.e., 0^0). Therefore, the exclusive OR avoids
+	 * a bias towards higher values.
+	 */
+	return ((uint64_t)rand() << 32) ^ rand();
 }
 
 static uint64_t uint64_rand_range(uint64_t a, uint64_t b)
