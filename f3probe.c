@@ -196,12 +196,6 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
 
-static void dummy_probe_progress(const char *format, ...)
-{
-	/* Do nothing */
-	UNUSED(format);
-}
-
 struct unit_test_item {
 	uint64_t	real_size_byte;
 	uint64_t	fake_size_byte;
@@ -277,8 +271,7 @@ static int unit_test(const char *filename)
 		assert(dev);
 		max_probe_blocks = probe_device_max_blocks(dev);
 		assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
-			&wrap, &cache_size_block, &block_order,
-			dummy_probe_progress));
+			&wrap, &cache_size_block, &block_order, dummy_cb));
 		free_device(dev);
 		fake_type = dev_param_to_type(real_size_byte,
 			announced_size_byte, wrap, block_order);
@@ -358,15 +351,6 @@ static void report_ops(const char *op, uint64_t count, uint64_t time_us)
 	printf("%10s: %s / %" PRIu64 " = %s\n", op, str1, count, str2);
 }
 
-static void print_probe_progress(const char *format, ...)
-{
-	va_list args;
-	va_start(args, format);
-	vprintf(format, args);
-	va_end(args);
-	fflush(stdout);
-}
-
 static int test_device(struct args *args)
 {
 	struct timeval t1, t2;
@@ -421,7 +405,7 @@ static int test_device(struct args *args)
 	 */
 	assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
 		&wrap, &cache_size_block, &block_order,
-		args->verbose ? print_probe_progress : dummy_probe_progress));
+		args->verbose ? printf_flush_cb : dummy_cb));
 	assert(!gettimeofday(&t2, NULL));
 
 	if (args->verbose) {

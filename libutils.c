@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <inttypes.h>
+#include <stdarg.h>
 
 #include "libutils.h"
 #include "version.h"
@@ -318,4 +319,27 @@ void print_stats(const struct block_stats *stats, int block_size,
 	print_stat("\t       Corrupted:", stats->bad, block_size, unit_name);
 	print_stat("\tSlightly changed:", stats->changed, block_size, unit_name);
 	print_stat("\t     Overwritten:", stats->overwritten, block_size, unit_name);
+}
+
+void printf_cb(const char *format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	vprintf(format, args);
+	va_end(args);
+}
+
+void printf_flush_cb(const char *format, ...)
+{
+	va_list args;
+	va_start(args, format);
+	vprintf(format, args);
+	va_end(args);
+	fflush(stdout);
+}
+
+void dummy_cb(const char *format, ...)
+{
+	/* Do nothing */
+	UNUSED(format);
 }

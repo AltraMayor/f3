@@ -1,4 +1,3 @@
-#include <stdarg.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -11,7 +10,7 @@
 #include "libprobe.h"
 
 static int _write_blocks(struct device *dev, char *buf,
-	uint64_t first_pos, uint64_t last_pos, probe_progress_cb cb)
+	uint64_t first_pos, uint64_t last_pos, progress_cb cb)
 {
 	if (dev_write_blocks(dev, buf, first_pos, last_pos) &&
 		dev_write_blocks(dev, buf, first_pos, last_pos)) {
@@ -24,7 +23,7 @@ static int _write_blocks(struct device *dev, char *buf,
 
 static int write_blocks(struct device *dev,
 	uint64_t first_pos, uint64_t last_pos, uint64_t salt,
-	probe_progress_cb cb)
+	progress_cb cb)
 {
 	const int block_order = dev_get_block_order(dev);
 	const int block_size = dev_get_block_size(dev);
@@ -56,7 +55,7 @@ static int write_blocks(struct device *dev,
 }
 
 static inline int high_level_reset(struct device *dev, uint64_t start_pos,
-	uint64_t cache_size_block, uint64_t salt, probe_progress_cb cb)
+	uint64_t cache_size_block, uint64_t salt, progress_cb cb)
 {
 	return write_blocks(dev, start_pos, start_pos + cache_size_block - 1,
 		salt, cb);
@@ -76,7 +75,7 @@ static inline int high_level_reset(struct device *dev, uint64_t start_pos,
  * To circunvent this problem, the probe must only issue random reads.
  */
 static int read_blocks(struct device *dev, char *buf, uint64_t pos,
-	probe_progress_cb cb)
+	progress_cb cb)
 {
 	if (dev_read_blocks(dev, buf, pos, pos) &&
 		dev_read_blocks(dev, buf, pos, pos)) {
@@ -87,7 +86,7 @@ static int read_blocks(struct device *dev, char *buf, uint64_t pos,
 }
 
 static int is_block_good(struct device *dev, uint64_t pos, int *pis_good,
-	uint64_t salt, probe_progress_cb cb)
+	uint64_t salt, progress_cb cb)
 {
 	const int block_size = dev_get_block_size(dev);
 	const int block_order = dev_get_block_order(dev);
@@ -135,7 +134,7 @@ static uint64_t uint64_rand_range(uint64_t a, uint64_t b)
 
 static int probabilistic_test(struct device *dev,
 	uint64_t first_pos, uint64_t last_pos, int *pfound_a_bad_block,
-	uint64_t salt, probe_progress_cb cb)
+	uint64_t salt, progress_cb cb)
 {
 	uint64_t gap;
 	int i, n, is_linear;
@@ -193,7 +192,7 @@ static int uint64_cmp(const void *pa, const void *pb)
 static int find_a_bad_block(struct device *dev, uint32_t n_samples,
 	uint64_t left_pos, uint64_t *pright_pos, int *found_a_bad_block,
 	uint64_t reset_pos, uint64_t cache_size_block, uint64_t salt,
-	probe_progress_cb cb)
+	progress_cb cb)
 {
 	/* We need to list all sampled blocks because
 	 * we need a sorted array; read the code to find the why.
@@ -292,7 +291,7 @@ not_found:
 static int sampling_probe(struct device *dev,
 	uint64_t left_pos, uint64_t *pright_pos,
 	uint64_t reset_pos, uint64_t cache_size_block, uint64_t salt,
-	probe_progress_cb cb)
+	progress_cb cb)
 {
 	uint32_t n_samples = SAMPLING_MIN;
 	int found_a_bad_block;
@@ -326,8 +325,8 @@ static int sampling_probe(struct device *dev,
 	return false;
 }
 
-static void report_cache_size_test(probe_progress_cb cb,
-	const struct device *dev, uint64_t first_pos, uint64_t last_pos)
+static void report_cache_size_test(progress_cb cb, const struct device *dev,
+	uint64_t first_pos, uint64_t last_pos)
 {
 	double f_size = (last_pos - first_pos + 1) * dev_get_block_size(dev);
 	const char *unit = adjust_unit(&f_size);
@@ -340,7 +339,7 @@ static void report_cache_size_test(probe_progress_cb cb,
 
 static int find_cache_size(struct device *dev, const uint64_t left_pos,
 	uint64_t *pright_pos, uint64_t *pcache_size_block, const uint64_t salt,
-	probe_progress_cb cb)
+	progress_cb cb)
 {
 	const int block_order = dev_get_block_order(dev);
 	const uint64_t end_pos = *pright_pos - 1;
@@ -409,7 +408,7 @@ bad:
 static int find_wrap(struct device *dev,
 	uint64_t left_pos, uint64_t *pright_pos,
 	uint64_t reset_pos, uint64_t cache_size_block, uint64_t salt,
-	probe_progress_cb cb)
+	progress_cb cb)
 {
 	uint64_t offset, high_bit, pos = left_pos + 1;
 	int is_good, block_order;
@@ -482,16 +481,8 @@ uint64_t probe_device_max_blocks(const struct device *dev)
 		n * SAMPLING_MIN;		/* Upper bound for phase 2. */
 }
 
-void printf_cb(const char *format, ...)
-{
-	va_list args;
-	va_start(args, format);
-	vprintf(format, args);
-	va_end(args);
-}
-
-void report_probed_size(probe_progress_cb cb, const char *prefix,
-	uint64_t bytes, int block_order)
+void report_probed_size(progress_cb cb, const char *prefix, uint64_t bytes,
+	int block_order)
 {
 	double f = bytes;
 	const char *unit = adjust_unit(&f);
@@ -499,14 +490,14 @@ void report_probed_size(probe_progress_cb cb, const char *prefix,
 		bytes >> block_order);
 }
 
-void report_probed_order(probe_progress_cb cb, const char *prefix, int order)
+void report_probed_order(progress_cb cb, const char *prefix, int order)
 {
 	double f = (1ULL << order);
 	const char *unit = adjust_unit(&f);
 	cb("%s %.2f %s (2^%i Bytes)\n", prefix, f, unit, order);
 }
 
-void report_probed_cache(probe_progress_cb cb, const char *prefix,
+void report_probed_cache(progress_cb cb, const char *prefix,
 	uint64_t cache_size_block, int block_order)
 
 {
@@ -518,7 +509,7 @@ void report_probed_cache(probe_progress_cb cb, const char *prefix,
 
 int probe_device(struct device *dev, uint64_t *preal_size_byte,
 	uint64_t *pannounced_size_byte, int *pwrap, uint64_t *pcache_size_block,
-	int *pblock_order, probe_progress_cb cb)
+	int *pblock_order, progress_cb cb)
 {
 	const uint64_t dev_size_byte = dev_get_size_byte(dev);
 	const int block_order = dev_get_block_order(dev);

@@ -10,6 +10,12 @@
 
 #define UNUSED(x)	((void)x)
 
+typedef void (*progress_cb)(const char *format, ...);
+
+void printf_cb(const char *format, ...);
+void printf_flush_cb(const char *format, ...);
+void dummy_cb(const char *format, ...);
+
 int ilog2(uint64_t x);
 
 /* Least power of 2 greater than or equal to x. */

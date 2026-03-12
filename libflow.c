@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200112L
 #define _XOPEN_SOURCE 600
 
+#include <stddef.h>
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,12 +66,12 @@ static inline void move_to_inc_at_start(struct flow *fw)
 }
 
 void init_flow(struct flow *fw, int block_size, uint64_t total_size,
-	long max_process_rate, int progress,
+	long max_process_rate, progress_cb cb,
 	flow_func_flush_chunk_t func_flush_chunk)
 {
 	fw->total_size		= total_size;
 	fw->total_processed	= 0;
-	fw->progress		= progress;
+	fw->cb			= cb;
 	fw->block_size		= block_size; /* Bytes		*/
 	fw->blocks_per_delay	= 1;	/* block_size B/s	*/
 	fw->delay_ms		= 1000;	/* 1s			*/
@@ -88,46 +89,59 @@ void init_flow(struct flow *fw, int block_size, uint64_t total_size,
 	move_to_inc_at_start(fw);
 }
 
-static inline void repeat_ch(char ch, int count)
+static inline unsigned int repeat_ch(char *buf, char ch, int count)
 {
-	while (count > 0) {
-		printf("%c", ch);
-		count--;
-	}
-}
+	int i;
 
-static void erase(int count)
-{
-	if (count <= 0)
-		return;
-	repeat_ch('\b',	count);
-	repeat_ch(' ',	count);
-	repeat_ch('\b',	count);
+	for (i = 0; i < count; i++)
+		buf[i] = ch;
+	return count;
 }
 
 void clear_progress(struct flow *fw)
 {
-	if (!fw->progress)
-		return;
-	erase(fw->erase);
+	char buf[512], *at_buf = buf;
+
+	if (fw->erase <= 0)
+		goto out;
+	assert((size_t)fw->erase * 3 + 1 <= sizeof(buf));
+
+	at_buf += repeat_ch(at_buf, '\b', fw->erase);
+	at_buf += repeat_ch(at_buf, ' ', fw->erase);
+	at_buf += repeat_ch(at_buf, '\b', fw->erase);
+	at_buf[0] = '\0';
+
+	/* Pass buf as the format, so the implementation of cb can check that
+	 * the intention is to clear the previously reported progress.
+	 */
+	fw->cb(buf);
+out:
 	fw->erase = 0;
-	fflush(stdout);
 }
 
-static int pr_time(double sec)
-{
-	int has_h, has_m;
-	int c, tot;
+#define CHECK_AND_MOVE do {			\
+		assert(c > 0);			\
+		len += c;			\
+		assert((size_t)c < rem_size);	\
+		rem_size -= c;			\
+		at_buf += c;			\
+	} while (0)
 
-	tot = printf(" -- ");
-	assert(tot > 0);
+static int pr_time(char *buf, const size_t size, double sec)
+{
+	char *at_buf = buf;
+	size_t rem_size = size;
+	bool has_h, has_m;
+	int c, len = 0;
+
+	c = snprintf(at_buf, rem_size, " -- ");
+	CHECK_AND_MOVE;
 
 	has_h = sec >= 3600;
 	if (has_h) {
 		double h = floor(sec / 3600);
-		c = printf("%i:", (int)h);
-		assert(c > 0);
-		tot += c;
+		c = snprintf(at_buf, rem_size, "%i:", (int)h);
+		CHECK_AND_MOVE;
 		sec -= h * 3600;
 	}
 
@@ -135,20 +149,20 @@ static int pr_time(double sec)
 	if (has_m) {
 		double m = floor(sec / 60);
 		if (has_h)
-			c = printf("%02i:", (int)m);
+			c = snprintf(at_buf, rem_size, "%02i:", (int)m);
 		else
-			c = printf("%i:", (int)m);
-		assert(c > 0);
-		tot += c;
+			c = snprintf(at_buf, rem_size, "%i:", (int)m);
+		CHECK_AND_MOVE;
 		sec -= m * 60;
 	}
 
 	if (has_m)
-		c = printf("%02i", (int)round(sec));
+		c = snprintf(at_buf, rem_size, "%02i", (int)round(sec));
 	else
-		c = printf("%is", (int)round(sec));
-	assert(c > 0);
-	return tot + c;
+		c = snprintf(at_buf, rem_size, "%is", (int)round(sec));
+	CHECK_AND_MOVE;
+
+	return len;
 }
 
 static inline double get_avg_speed_given_time(const struct flow *fw,
@@ -168,22 +182,34 @@ static void report_progress(struct flow *fw, double inst_speed)
 {
 	const char *unit = adjust_unit(&inst_speed);
 	double percent;
+	char buf[256];
+	int c, len = 0;
+
 	/* The following shouldn't be necessary, but sometimes
 	 * the initial free space isn't exactly reported
 	 * by the kernel; this issue has been seen on Macs.
 	 */
 	if (fw->total_size < fw->total_processed)
 		fw->total_size = fw->total_processed;
+
 	percent = (double)fw->total_processed * 100 / fw->total_size;
-	erase(fw->erase);
-	fw->erase = printf("%.2f%% -- %.2f %s/s",
+	c = snprintf(buf, sizeof(buf), "%.2f%% -- %.2f %s/s",
 		percent, inst_speed, unit);
-	assert(fw->erase > 0);
-	if (has_enough_measurements(fw))
-		fw->erase += pr_time(
+	assert(c > 0);
+	len += c;
+
+	if (has_enough_measurements(fw)) {
+		c = pr_time(buf + len, sizeof(buf) - len,
 			(fw->total_size - fw->total_processed) /
 			get_avg_speed(fw));
-	fflush(stdout);
+		assert(c > 0);
+		len += c;
+	}
+
+	assert((size_t)len + 1 <= sizeof(buf));
+	clear_progress(fw);
+	fw->cb("%s", buf);
+	fw->erase = len;
 }
 
 static inline void __start_measurement(struct flow *fw)
@@ -197,9 +223,8 @@ void start_measurement(struct flow *fw)
 	 * The report below is especially useful when a single measurement spans
 	 * multiple files; this happens when a drive is faster than 1GB/s.
 	 */
-	if (fw->progress)
-		report_progress(fw, fw->blocks_per_delay * fw->block_size *
-			1000.0 / fw->delay_ms);
+	report_progress(fw,
+		fw->blocks_per_delay * fw->block_size * 1000.0 / fw->delay_ms);
 	__start_measurement(fw);
 }
 
@@ -386,8 +411,7 @@ int measure(int fd, struct flow *fw, long processed)
 		assert(0);
 	}
 
-	if (fw->progress)
-		report_progress(fw, inst_speed);
+	report_progress(fw, inst_speed);
 
 	/* Reset accumulators. */
 	fw->processed_blocks = 0;
@@ -417,9 +441,7 @@ int end_measurement(int fd, struct flow *fw)
 
 out:
 	/* Erase progress information. */
-	erase(fw->erase);
-	fw->erase = 0;
-	fflush(stdout);
+	clear_progress(fw);
 
 	if (ret < 0) {
 		/* Propagate errno(3) to caller. */

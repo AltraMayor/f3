@@ -7,6 +7,8 @@
 #include <stdint.h>
 #include <sys/time.h>
 
+#include "libutils.h"
+
 struct flow;
 
 typedef int (*flow_func_flush_chunk_t)(const struct flow *fw, int fd);
@@ -16,8 +18,8 @@ struct flow {
 	uint64_t	total_size;
 	/* Total number of bytes already processed. */
 	uint64_t	total_processed;
-	/* If true, show progress. */
-	int		progress;
+	/* Callback to show progress. */
+	progress_cb	cb;
 	/* Block size in bytes. */
 	int		block_size;
 	/* Delay intended between measurements in milliseconds. */
@@ -63,7 +65,7 @@ struct flow {
  * The unit of @max_process_rate is KB per second.
  */
 void init_flow(struct flow *fw, int block_size, uint64_t total_size,
-	long max_process_rate, int progress,
+	long max_process_rate, progress_cb cb,
 	flow_func_flush_chunk_t func_flush_chunk);
 
 void start_measurement(struct flow *fw);
