@@ -7,19 +7,16 @@
 #include <inttypes.h>
 
 #include "libutils.h"
+#include "libflow.h"
 #include "libprobe.h"
 
-struct write_info {
-	uint64_t cache_pos;
-	uint64_t cache_size_block;
-	uint64_t salt;
-};
-
-static int _write_blocks(struct device *dev, char *buf,
-	uint64_t first_pos, uint64_t last_pos, progress_cb cb)
+static int _write_blocks(struct device *dev, const char *buf,
+	uint64_t first_pos, uint64_t last_pos, struct flow *fw, progress_cb cb)
 {
 	if (dev_write_blocks(dev, buf, first_pos, last_pos) &&
 		dev_write_blocks(dev, buf, first_pos, last_pos)) {
+		if (fw != NULL)
+			clear_progress(fw);
 		cb("I/O ERROR: Write error at blocks [%" PRIu64 ", %" PRIu64 "]!\n",
 			first_pos, last_pos);
 		return true;
@@ -27,45 +24,93 @@ static int _write_blocks(struct device *dev, char *buf,
 	return false;
 }
 
-static int write_blocks(struct device *dev,
-	uint64_t first_pos, uint64_t last_pos, uint64_t salt,
+static int write_block(struct device *dev, uint64_t pos, uint64_t salt,
 	progress_cb cb)
 {
 	const int block_order = dev_get_block_order(dev);
 	const int block_size = dev_get_block_size(dev);
 	/* Aligning these pointers is necessary to directly read and write
-	 * the block device.
-	 * For the file device, this is superfluous.
+	 * the block device. For the file device, this is superfluous.
 	 */
-	char stack[align_head(block_order) + BIG_BLOCK_SIZE_BYTE];
+	char stack[align_head(block_order) + block_size];
 	char *buffer = align_mem(stack, block_order);
-	char *stamp_blk = buffer;
-	char *flush_blk = buffer + BIG_BLOCK_SIZE_BYTE;
-	uint64_t offset = first_pos << block_order;
-	uint64_t pos, write_pos = first_pos;
 
-	for (pos = first_pos; pos <= last_pos; pos++) {
-		fill_buffer_with_block(stamp_blk, block_order, offset, salt);
-		stamp_blk += block_size;
-		offset += block_size;
+	fill_buffer_with_block(buffer, block_order, pos << block_order, salt);
+	return _write_blocks(dev, buffer, pos, pos, NULL, cb);
+}
 
-		if (stamp_blk == flush_blk || pos == last_pos) {
-			if (_write_blocks(dev, buffer, write_pos, pos, cb))
-				return true;
-			stamp_blk = buffer;
-			write_pos = pos + 1;
+struct write_info {
+	uint64_t cache_pos;
+	uint64_t cache_size_block;
+	uint64_t salt;
+
+	struct dynamic_buffer dbuf;
+	struct flow fw;
+};
+
+static int write_blocks(struct device *dev,
+	uint64_t first_block, uint64_t last_block,
+	struct write_info *wi, progress_cb cb)
+{
+	const int block_order = dev_get_block_order(dev);
+	const int block_size = dev_get_block_size(dev);
+	uint64_t offset = first_block << block_order;
+	uint64_t first_pos = first_block;
+
+	if (first_block > last_block)
+		return false;
+
+	inc_total_size(&wi->fw, (last_block - first_block + 1) << block_order);
+
+	start_measurement(&wi->fw);
+	while (first_pos <= last_block) {
+		const uint64_t chunk_bytes = get_rem_chunk_size(&wi->fw);
+		const uint64_t needed_size = align_head(block_order) + chunk_bytes;
+		const uint64_t max_blocks_to_write = last_block - first_pos + 1;
+		uint64_t blocks_to_write;
+		int shift;
+		char *buffer, *stamp_blk;
+		size_t buf_len;
+		uint64_t pos, next_pos;
+
+		buffer = align_mem2(dbuf_get_buf(&wi->dbuf, needed_size), block_order, &shift);
+		buf_len = dbuf_get_len(&wi->dbuf);
+
+		blocks_to_write = buf_len >= needed_size
+			? chunk_bytes >> block_order
+			: (buf_len - shift) >> block_order;
+		if (blocks_to_write > max_blocks_to_write)
+			blocks_to_write = max_blocks_to_write;
+
+		next_pos = first_pos + blocks_to_write - 1;
+
+		stamp_blk = buffer;
+		for (pos = first_pos; pos <= next_pos; pos++) {
+			fill_buffer_with_block(stamp_blk, block_order, offset,
+				wi->salt);
+			stamp_blk += block_size;
+			offset += block_size;
 		}
-	}
 
+		if (_write_blocks(dev, buffer, first_pos, next_pos,
+				&wi->fw, cb))
+			return true;
+
+		/* Since parameter func_flush_chunk of init_flow() is NULL,
+		 * the parameter fd of measure() is ignored.
+		 */
+		measure(0, &wi->fw, blocks_to_write << block_order);
+		first_pos = next_pos + 1;
+	}
+	end_measurement(0, &wi->fw);
 	return false;
 }
 
 static inline int overwhelm_cache(struct device *dev,
-	const struct write_info *wi, progress_cb cb)
+	struct write_info *wi, progress_cb cb)
 {
 	return write_blocks(dev, wi->cache_pos,
-		wi->cache_pos + wi->cache_size_block - 1,
-		wi->salt, cb);
+		wi->cache_pos + wi->cache_size_block - 1, wi, cb);
 }
 
 /* Some fake drives have a "tiny" (e.g. 8KB) cache for random accesses and
@@ -95,8 +140,8 @@ static int read_blocks(struct device *dev, char *buf, uint64_t pos,
 static int is_block_good(struct device *dev, uint64_t pos, int *pis_good,
 	uint64_t salt, progress_cb cb)
 {
-	const int block_size = dev_get_block_size(dev);
 	const int block_order = dev_get_block_order(dev);
+	const int block_size = dev_get_block_size(dev);
 	char stack[align_head(block_order) + block_size];
 	char *probe_blk = align_mem(stack, block_order);
 	uint64_t found_offset;
@@ -198,7 +243,7 @@ static int uint64_cmp(const void *pa, const void *pb)
 
 static int find_a_bad_block(struct device *dev, uint32_t n_samples,
 	uint64_t left_pos, uint64_t *pright_pos, int *found_a_bad_block,
-	const struct write_info *wi, progress_cb cb)
+	struct write_info *wi, progress_cb cb)
 {
 	/* We need to list all sampled blocks because
 	 * we need a sorted array; read the code to find the why.
@@ -230,8 +275,7 @@ static int find_a_bad_block(struct device *dev, uint32_t n_samples,
 			samples[i] = left_pos + 1 + i;
 
 		/* Write @samples. */
-		if (write_blocks(dev, left_pos + 1, *pright_pos - 1,
-				wi->salt, cb))
+		if (write_blocks(dev, left_pos + 1, *pright_pos - 1, wi, cb))
 			return true;
 	} else {
 		for (i = 0; i < n_samples; i++)
@@ -251,8 +295,7 @@ static int find_a_bad_block(struct device *dev, uint32_t n_samples,
 			if (samples[i] == prv_sample)
 				continue;
 			prv_sample = samples[i];
-			if (write_blocks(dev, prv_sample, prv_sample,
-					wi->salt, cb))
+			if (write_block(dev, prv_sample, wi->salt, cb))
 				return true;
 		}
 	}
@@ -298,7 +341,7 @@ not_found:
  */
 static int sampling_probe(struct device *dev,
 	uint64_t left_pos, uint64_t *pright_pos,
-	const struct write_info *wi, progress_cb cb)
+	struct write_info *wi, progress_cb cb)
 {
 	uint32_t n_samples = SAMPLING_MIN;
 	int found_a_bad_block;
@@ -380,7 +423,7 @@ static int find_cache_size(struct device *dev, const uint64_t left_pos,
 		 * the previously written blocks.
 		 */
 		report_cache_size_test(cb, dev, first_pos, end_pos);
-		if (write_blocks(dev, first_pos, last_pos, wi->salt, cb))
+		if (write_blocks(dev, first_pos, last_pos, wi, cb))
 			goto bad;
 
 		if (probabilistic_test(dev, first_pos, end_pos,
@@ -411,7 +454,7 @@ bad:
 
 static int find_wrap(struct device *dev,
 	uint64_t left_pos, uint64_t *pright_pos,
-	const struct write_info *wi, progress_cb cb)
+	struct write_info *wi, progress_cb cb)
 {
 	uint64_t offset, high_bit, pos = left_pos + 1;
 	int is_good, block_order;
@@ -429,7 +472,7 @@ static int find_wrap(struct device *dev,
 	if (pos >= *pright_pos)
 		return false;
 
-	if (write_blocks(dev, pos, pos, wi->salt, cb) ||
+	if (write_block(dev, pos, wi->salt, cb) ||
 			overwhelm_cache(dev, wi, cb) ||
 			is_block_good(dev, pos, &is_good, wi->salt, cb) ||
 			!is_good)
@@ -515,11 +558,18 @@ int probe_device(struct device *dev, uint64_t *preal_size_byte,
 {
 	const uint64_t dev_size_byte = dev_get_size_byte(dev);
 	const int block_order = dev_get_block_order(dev);
+	const int block_size = dev_get_block_size(dev);
 	uint64_t left_pos, right_pos, mid_drive_pos;
 	struct write_info wi;
 	int wrap;
 
 	assert(block_order <= 20);
+
+	dbuf_init(&wi.dbuf);
+	/* We initialize total_size to 0 because write_blocks() updates it
+	 * before writing.
+	 */
+	init_flow(&wi.fw, block_size, 0, 0, cb, NULL);
 
 	/* @left_pos must point to a good block.
 	 * We just point to the last block of the first 1MB of the card
@@ -591,6 +641,7 @@ bad:
 	*pwrap = ceiling_log2(dev_size_byte);
 
 out:
+	dbuf_free(&wi.dbuf);
 	report_probed_size(cb, "=> Usable size:", *preal_size_byte, block_order);
 	*pannounced_size_byte = dev_size_byte;
 	*pcache_size_block = wi.cache_size_block;

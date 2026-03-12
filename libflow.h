@@ -68,6 +68,11 @@ void init_flow(struct flow *fw, int block_size, uint64_t total_size,
 	long max_process_rate, progress_cb cb,
 	flow_func_flush_chunk_t func_flush_chunk);
 
+static inline void inc_total_size(struct flow *fw, uint64_t size)
+{
+	fw->total_size = fw->total_processed + size;
+}
+
 void start_measurement(struct flow *fw);
 int measure(int fd, struct flow *fw, long processed);
 void clear_progress(struct flow *fw);
