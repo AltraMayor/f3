@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <sys/time.h>
+#include <time.h>
 
 #include "libutils.h"
 
@@ -22,8 +22,8 @@ struct flow {
 	progress_cb	cb;
 	/* Block size in bytes. */
 	int		block_size;
-	/* Delay intended between measurements in milliseconds. */
-	unsigned int	delay_ms;
+	/* Delay intended between measurements in nanoseconds. */
+	uint64_t	delay_ns;
 	/* Increment to apply to @blocks_per_delay. */
 	int64_t		step;
 	/* Blocks to process before measurement. */
@@ -33,7 +33,7 @@ struct flow {
 	/* Number of measured blocks. */
 	uint64_t	measured_blocks;
 	/* Measured time. */
-	uint64_t	measured_time_ms;
+	uint64_t	measured_time_ns;
 	/* State. */
 	enum {FW_INC, FW_DEC, FW_SEARCH, FW_STEADY} state;
 	/* Number of characters to erase before printing out progress. */
@@ -52,13 +52,13 @@ struct flow {
 	int64_t		processed_blocks;
 	/*
 	 * Accumulated delay before @processed_blocks reaches @blocks_per_delay
-	 * in microseconds.
+	 * in nanoseconds.
 	 */
-	uint64_t	acc_delay_us;
+	uint64_t	acc_delay_ns;
 	/* Range of blocks_per_delay while in FW_SEARCH state. */
 	int64_t		bpd1, bpd2;
 	/* Time measurements. */
-	struct timeval	t1;
+	struct timespec	t1;
 };
 
 /* If @max_process_rate <= 0, the maximum processing rate is infinity.
@@ -80,7 +80,7 @@ int end_measurement(int fd, struct flow *fw);
 
 static inline int has_enough_measurements(const struct flow *fw)
 {
-	return fw->measured_time_ms > fw->delay_ms;
+	return fw->measured_time_ns > fw->delay_ns;
 }
 
 static inline uint64_t get_rem_chunk_size(const struct flow *fw)

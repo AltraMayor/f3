@@ -1,3 +1,6 @@
+#define _POSIX_C_SOURCE 200112L
+#define _XOPEN_SOURCE 600
+
 #include <stdbool.h>
 #include <assert.h>
 #include <argp.h>

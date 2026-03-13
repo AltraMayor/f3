@@ -18,29 +18,29 @@
 #if (__APPLE__ && __MACH__) || defined(__OpenBSD__)
 
 #include <unistd.h>
-static void msleep(double wait_ms)
+static inline void ussleep(double wait_us)
 {
-	assert(!usleep(wait_ms * 1000));
+	assert(!usleep(wait_us));
 }
 
 #else	/* Everyone else */
 
 #include <time.h> /* For clock_gettime() and clock_nanosleep(). */
-static void msleep(double wait_ms)
+static void ussleep(double wait_us)
 {
 	struct timespec req;
 	int ret;
 
 	assert(!clock_gettime(CLOCK_MONOTONIC, &req));
 
-	/* Add @wait_ms to @req. */
-	if (wait_ms > 1000) {
-		time_t sec = wait_ms / 1000;
-		wait_ms -= sec * 1000;
-		assert(wait_ms > 0);
+	/* Add @wait_us to @req. */
+	if (wait_us > 1000000) {
+		time_t sec = wait_us / 1000000;
+		wait_us -= sec * 1000000;
+		assert(wait_us > 0);
 		req.tv_sec += sec;
 	}
-	req.tv_nsec += wait_ms * 1000000;
+	req.tv_nsec += wait_us * 1000;
 
 	/* Round @req up. */
 	if (req.tv_nsec >= 1000000000) {
@@ -57,7 +57,7 @@ static void msleep(double wait_ms)
 	assert(ret == 0);
 }
 
-#endif	/* msleep() */
+#endif	/* ussleep() */
 
 static inline void move_to_inc_at_start(struct flow *fw)
 {
@@ -74,15 +74,15 @@ void init_flow(struct flow *fw, int block_size, uint64_t total_size,
 	fw->cb			= cb;
 	fw->block_size		= block_size; /* Bytes		*/
 	fw->blocks_per_delay	= 1;	/* block_size B/s	*/
-	fw->delay_ms		= 1000;	/* 1s			*/
+	fw->delay_ns		= 1000000000ULL;	/* 1s	*/
 	fw->max_process_rate	= max_process_rate <= 0
 		? DBL_MAX : max_process_rate * 1024.;
 	fw->measured_blocks	= 0;
-	fw->measured_time_ms	= 0;
+	fw->measured_time_ns	= 0;
 	fw->erase		= 0;
 	fw->func_flush_chunk	= func_flush_chunk;
 	fw->processed_blocks	= 0;
-	fw->acc_delay_us	= 0;
+	fw->acc_delay_ns	= 0;
 	assert(fw->block_size > 0);
 	assert(fw->block_size % SECTOR_SIZE == 0);
 
@@ -166,16 +166,16 @@ static int pr_time(char *buf, const size_t size, double sec)
 }
 
 static inline double get_avg_speed_given_time(const struct flow *fw,
-	uint64_t total_time_ms)
+	uint64_t total_time_ns)
 {
-	return (double)(fw->measured_blocks * fw->block_size * 1000) /
-		total_time_ms;
+	return ((double)(fw->measured_blocks * fw->block_size) * 1000000000.0)
+		/ total_time_ns;
 }
 
 /* Average writing speed in byte/s. */
 static inline double get_avg_speed(const struct flow *fw)
 {
-	return get_avg_speed_given_time(fw, fw->measured_time_ms);
+	return get_avg_speed_given_time(fw, fw->measured_time_ns);
 }
 
 static void report_progress(struct flow *fw, double inst_speed)
@@ -214,7 +214,7 @@ static void report_progress(struct flow *fw, double inst_speed)
 
 static inline void __start_measurement(struct flow *fw)
 {
-	assert(!gettimeofday(&fw->t1, NULL));
+	assert(!clock_gettime(CLOCK_MONOTONIC, &fw->t1));
 }
 
 void start_measurement(struct flow *fw)
@@ -224,7 +224,8 @@ void start_measurement(struct flow *fw)
 	 * multiple files; this happens when a drive is faster than 1GB/s.
 	 */
 	report_progress(fw,
-		fw->blocks_per_delay * fw->block_size * 1000.0 / fw->delay_ms);
+		fw->blocks_per_delay * fw->block_size * 1000000000.0 /
+			fw->delay_ns);
 	__start_measurement(fw);
 }
 
@@ -278,17 +279,17 @@ static inline void move_to_dec(struct flow *fw)
 }
 
 static inline int is_rate_above(const struct flow *fw,
-	uint64_t delay, double inst_speed)
+	uint64_t delay_ns, double inst_speed)
 {
 	/* We use logical or here to enforce the lowest limit. */
-	return delay > fw->delay_ms || inst_speed > fw->max_process_rate;
+	return delay_ns > fw->delay_ns || inst_speed > fw->max_process_rate;
 }
 
 static inline int is_rate_below(const struct flow *fw,
-	uint64_t delay, double inst_speed)
+	uint64_t delay_ns, double inst_speed)
 {
 	/* We use logical and here to enforce both limits. */
-	return delay <= fw->delay_ms && inst_speed < fw->max_process_rate;
+	return delay_ns <= fw->delay_ns && inst_speed < fw->max_process_rate;
 }
 
 static inline int flush_chunk(const struct flow *fw, int fd)
@@ -301,9 +302,9 @@ static inline int flush_chunk(const struct flow *fw, int fd)
 int measure(int fd, struct flow *fw, long processed)
 {
 	ldiv_t result = ldiv(processed, fw->block_size);
-	struct timeval t2;
-	uint64_t delay;
-	double bytes_k, inst_speed;
+	struct timespec t2;
+	uint64_t delay_ns;
+	double bytes_g, inst_speed;
 
 	assert(result.rem == 0);
 	fw->processed_blocks += result.quot;
@@ -316,62 +317,93 @@ int measure(int fd, struct flow *fw, long processed)
 	if (flush_chunk(fw, fd) < 0)
 		return -1; /* Caller can read errno(3). */
 
-	assert(!gettimeofday(&t2, NULL));
-	delay = (diff_timeval_us(&fw->t1, &t2) + fw->acc_delay_us) / 1000;
+	assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
+	delay_ns = diff_timespec_ns(&fw->t1, &t2) + fw->acc_delay_ns;
 
 	/* Instantaneous speed in bytes per second. */
-	bytes_k = fw->blocks_per_delay * fw->block_size * 1000.0;
-	inst_speed = bytes_k / delay;
+	bytes_g = fw->blocks_per_delay * fw->block_size * 1000000000.0;
+	inst_speed = bytes_g / delay_ns;
 
-	if (delay < fw->delay_ms && inst_speed > fw->max_process_rate) {
-		/* Wait until inst_speed == fw->max_process_rate
-		 * (if possible).
+	if (delay_ns < fw->delay_ns && inst_speed > fw->max_process_rate) {
+		/* delay_ns should be such that
+		 * inst_speed <= fw->max_process_rate.
+		 * To accomplish this, the code below adds a wait.
+		 *
+		 * inst_speed <= fw->max_process_rate [=>]
+		 * bytes_g / (delay_ns + wait_ns) <= fw->max_process_rate [=>]
+		 * bytes_g / fw->max_process_rate <= delay_ns + wait_ns [=>]
+		 * wait_ns >= bytes_g / fw->max_process_rate - delay_ns
+		 *
+		 * The step below minimizes rounding errors.
+		 *
+		 * wait_ns >= (bytes_g - delay_ns * fw->max_process_rate) /
+		 *	fw->max_process_rate
+		 *
+		 * Round wait_ns, so it operates as an integer when used in
+		 * nanoseconds.
 		 */
-		double wait_ms = round((bytes_k - delay * fw->max_process_rate)
-			/ fw->max_process_rate);
+		double wait_ns = round(
+			(bytes_g - delay_ns * fw->max_process_rate) /
+			fw->max_process_rate);
 
-		 if (wait_ms < 0) {
-			/* Wait what is possible. */
-			wait_ms = fw->delay_ms - delay;
-		} else if (delay + wait_ms < fw->delay_ms) {
-			/* wait_ms is not the largest possible value, so
-			 * force the flow algorithm to keep increasing it.
-			 * Otherwise, the delay to print progress may be
-			 * too small.
+		/* From the if-test,
+		 * 	inst_speed > fw->max_process_rate [=>]
+		 * 	bytes_g / delay_ns > fw->max_process_rate [=>]
+		 *	bytes_g > delay_ns * fw->max_process_rate
+		 *
+		 * For wait_ns to be negative,
+		 *	wait_ns < 0 [=>]
+		 *	(bytes_g - delay_ns * fw->max_process_rate) /
+		 *		fw->max_process_rate < 0 [=>]
+		 *	bytes_g < delay_ns * fw->max_process_rate
+		 *
+		 * Therefore, wait_ns cannot be negative.
+		 */
+		assert(wait_ns >= 0);
+
+		if (delay_ns + wait_ns < fw->delay_ns) {
+			/* In this case, There is a factor f > 1 that
+			 * satisfies the following equation:
+			 *
+			 * (delay_ns + wait_ns) * f = fw->delay_ns
+			 *
+			 * This means that both delay_ns and wait_ns should be
+			 * increased to make f = 1. To signal that to the flow
+			 * algorithm below, wait to fw->delay_ns.
 			 */
-			wait_ms++;
+			wait_ns = fw->delay_ns - delay_ns;
 		}
 
-		if (wait_ms > 0) {
+		if (wait_ns > 0) {
 			/* Slow down. */
-			msleep(wait_ms);
+			ussleep(wait_ns / 1000.);
 
 			/* Adjust measurements. */
-			delay += wait_ms;
-			inst_speed = bytes_k / delay;
+			delay_ns += wait_ns;
+			inst_speed = bytes_g / delay_ns;
 		}
 	}
 
 	/* Update mean. */
 	fw->measured_blocks += fw->processed_blocks;
-	fw->measured_time_ms += delay;
+	fw->measured_time_ns += delay_ns;
 
 	switch (fw->state) {
 	case FW_INC:
-		if (is_rate_above(fw, delay, inst_speed)) {
+		if (is_rate_above(fw, delay_ns, inst_speed)) {
 			move_to_search(fw,
 				fw->blocks_per_delay - fw->step / 2,
 				fw->blocks_per_delay);
-		} else if (is_rate_below(fw, delay, inst_speed)) {
+		} else if (is_rate_below(fw, delay_ns, inst_speed)) {
 			inc_step(fw);
 		} else
 			move_to_steady(fw);
 		break;
 
 	case FW_DEC:
-		if (is_rate_above(fw, delay, inst_speed)) {
+		if (is_rate_above(fw, delay_ns, inst_speed)) {
 			dec_step(fw);
-		} else if (is_rate_below(fw, delay, inst_speed)) {
+		} else if (is_rate_below(fw, delay_ns, inst_speed)) {
 			move_to_search(fw, fw->blocks_per_delay,
 				fw->blocks_per_delay + fw->step / 2);
 		} else
@@ -384,10 +416,10 @@ int measure(int fd, struct flow *fw, long processed)
 			break;
 		}
 
-		if (is_rate_above(fw, delay, inst_speed)) {
+		if (is_rate_above(fw, delay_ns, inst_speed)) {
 			fw->bpd2 = fw->blocks_per_delay;
 			fw->blocks_per_delay = (fw->bpd1 + fw->bpd2) / 2;
-		} else if (is_rate_below(fw, delay, inst_speed)) {
+		} else if (is_rate_below(fw, delay_ns, inst_speed)) {
 			fw->bpd1 = fw->blocks_per_delay;
 			fw->blocks_per_delay = (fw->bpd1 + fw->bpd2) / 2;
 		} else
@@ -395,7 +427,7 @@ int measure(int fd, struct flow *fw, long processed)
 		break;
 
 	case FW_STEADY: {
-		if (delay <= fw->delay_ms) {
+		if (delay_ns <= fw->delay_ns) {
 			if (inst_speed < fw->max_process_rate) {
 				move_to_inc(fw);
 			} else if (inst_speed > fw->max_process_rate) {
@@ -415,14 +447,14 @@ int measure(int fd, struct flow *fw, long processed)
 
 	/* Reset accumulators. */
 	fw->processed_blocks = 0;
-	fw->acc_delay_us = 0;
+	fw->acc_delay_ns = 0;
 	__start_measurement(fw);
 	return 0;
 }
 
 int end_measurement(int fd, struct flow *fw)
 {
-	struct timeval t2;
+	struct timespec t2;
 	int saved_errno;
 	int ret = 0;
 
@@ -436,8 +468,8 @@ int end_measurement(int fd, struct flow *fw)
 	}
 
 	/* Save time in between closing ongoing file and creating a new file. */
-	assert(!gettimeofday(&t2, NULL));
-	fw->acc_delay_us += diff_timeval_us(&fw->t1, &t2);
+	assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
+	fw->acc_delay_ns += diff_timespec_ns(&fw->t1, &t2);
 
 out:
 	/* Erase progress information. */
@@ -475,7 +507,8 @@ void print_measured_speed(const struct flow *fw, const struct timeval *t1,
 		int64_t total_time_ms = delay_ms(t1, t2);
 		if (total_time_ms > 0) {
 			pr_avg_speed(speed_type,
-				get_avg_speed_given_time(fw, total_time_ms));
+				get_avg_speed_given_time(fw, total_time_ms *
+					1000000ULL));
 		} else {
 			assert(strlen(speed_type) > 0);
 			printf("%c%s speed not available\n",
