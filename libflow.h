@@ -78,11 +78,6 @@ int measure(int fd, struct flow *fw, long processed);
 void clear_progress(struct flow *fw);
 int end_measurement(int fd, struct flow *fw);
 
-static inline int has_enough_measurements(const struct flow *fw)
-{
-	return fw->measured_time_ns > fw->delay_ns;
-}
-
 static inline uint64_t get_rem_chunk_size(const struct flow *fw)
 {
 	assert(fw->blocks_per_delay > fw->processed_blocks);

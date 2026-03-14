@@ -178,6 +178,11 @@ static inline double get_avg_speed(const struct flow *fw)
 	return get_avg_speed_given_time(fw, fw->measured_time_ns);
 }
 
+static inline bool has_enough_measurements(const struct flow *fw)
+{
+	return fw->measured_time_ns > fw->delay_ns;
+}
+
 static void report_progress(struct flow *fw, double inst_speed)
 {
 	const char *unit = adjust_unit(&inst_speed);
