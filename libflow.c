@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200112L
 #define _XOPEN_SOURCE 600
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -81,12 +82,25 @@ void init_flow(struct flow *fw, int block_size, uint64_t total_size,
 	fw->measured_time_ns	= 0;
 	fw->erase		= 0;
 	fw->func_flush_chunk	= func_flush_chunk;
+	fw->has_rem_chunk_size	= false;
+	fw->rem_chunk_size	= 0;
+	fw->rem_chunk_speed	= 0;
 	fw->processed_blocks	= 0;
 	fw->acc_delay_ns	= 0;
 	assert(fw->block_size > 0);
 	assert(fw->block_size % SECTOR_SIZE == 0);
 
 	move_to_inc_at_start(fw);
+}
+
+uint64_t get_rem_chunk_size(const struct flow *fw)
+{
+	const int64_t rem_blocks = fw->blocks_per_delay - fw->processed_blocks;
+	const uint64_t rem_size = rem_blocks * fw->block_size;
+	assert(rem_blocks > 0);
+	return fw->has_rem_chunk_size && rem_size >= fw->rem_chunk_size
+		? fw->rem_chunk_size
+		: rem_size;
 }
 
 static inline unsigned int repeat_ch(char *buf, char ch, int count)
@@ -304,6 +318,15 @@ static inline int flush_chunk(const struct flow *fw, int fd)
 	return 0;
 }
 
+static void update_rem_chunk_size(struct flow *fw, double inst_speed)
+{
+	if (fw->rem_chunk_size != 0 && inst_speed < fw->rem_chunk_speed)
+		return;
+
+	fw->rem_chunk_size = (uint64_t)fw->blocks_per_delay * fw->block_size;
+	fw->rem_chunk_speed = inst_speed;
+}
+
 int measure(int fd, struct flow *fw, long processed)
 {
 	ldiv_t result = ldiv(processed, fw->block_size);
@@ -324,10 +347,12 @@ int measure(int fd, struct flow *fw, long processed)
 
 	assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
 	delay_ns = diff_timespec_ns(&fw->t1, &t2) + fw->acc_delay_ns;
-
-	/* Instantaneous speed in bytes per second. */
 	bytes_g = fw->blocks_per_delay * fw->block_size * 1000000000.0;
+	/* Instantaneous speed in bytes per second. */
 	inst_speed = bytes_g / delay_ns;
+
+	if (!fw->has_rem_chunk_size)
+		update_rem_chunk_size(fw, inst_speed);
 
 	if (delay_ns < fw->delay_ns && inst_speed > fw->max_process_rate) {
 		/* delay_ns should be such that
@@ -396,6 +421,11 @@ int measure(int fd, struct flow *fw, long processed)
 	switch (fw->state) {
 	case FW_INC:
 		if (is_rate_above(fw, delay_ns, inst_speed)) {
+			if (!fw->has_rem_chunk_size) {
+				/* Recommend a chunk size to caller. */
+				assert(fw->rem_chunk_size != 0);
+				fw->has_rem_chunk_size = true;
+			}
 			move_to_search(fw,
 				fw->blocks_per_delay - fw->step / 2,
 				fw->blocks_per_delay);
@@ -432,6 +462,18 @@ int measure(int fd, struct flow *fw, long processed)
 		break;
 
 	case FW_STEADY: {
+		if (!fw->has_rem_chunk_size) {
+			/* Recommend a chunk size to caller.
+			 * Execution reaches here when fw->max_process_rate is
+			 * throttling the flow.
+			 */
+			assert(fw->rem_chunk_size != 0);
+			fw->has_rem_chunk_size = true;
+			/* Since it's in steady state, go for another round
+			 * before making any change.
+			 */
+			break;
+		}
 		if (delay_ns <= fw->delay_ns) {
 			if (inst_speed < fw->max_process_rate) {
 				move_to_inc(fw);

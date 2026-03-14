@@ -48,6 +48,13 @@ struct flow {
 	 * Initialized while measuring
 	 */
 
+	/* Has a recommended chunk size? */
+	bool		has_rem_chunk_size;
+	/* Recommended chunk size. */
+	uint64_t	rem_chunk_size;
+	/* Speed of the recommended chunk size in bytes per second. */
+	double		rem_chunk_speed;
+
 	/* Number of blocks processed since last measurement. */
 	int64_t		processed_blocks;
 	/*
@@ -73,16 +80,12 @@ static inline void inc_total_size(struct flow *fw, uint64_t size)
 	fw->total_size = fw->total_processed + size;
 }
 
+uint64_t get_rem_chunk_size(const struct flow *fw);
+
 void start_measurement(struct flow *fw);
 int measure(int fd, struct flow *fw, long processed);
 void clear_progress(struct flow *fw);
 int end_measurement(int fd, struct flow *fw);
-
-static inline uint64_t get_rem_chunk_size(const struct flow *fw)
-{
-	assert(fw->blocks_per_delay > fw->processed_blocks);
-	return (fw->blocks_per_delay - fw->processed_blocks) * fw->block_size;
-}
 
 void print_measured_speed(const struct flow *fw, const struct timeval *t1,
 	const struct timeval *t2, const char *speed_type);
