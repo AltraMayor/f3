@@ -145,21 +145,32 @@ static int read_blocks(struct device *dev, char *buf, uint64_t pos,
 	return false;
 }
 
-static int is_block_good(struct device *dev, uint64_t pos, int *pis_good,
-	uint64_t salt, progress_cb cb, unsigned int indent)
+static int is_block_good_with_offset(struct device *dev, uint64_t pos,
+	uint64_t expected_offset, enum block_state *pbs, uint64_t salt,
+	progress_cb cb, unsigned int indent)
 {
 	const int block_order = dev_get_block_order(dev);
 	const int block_size = dev_get_block_size(dev);
 	char stack[align_head(block_order) + block_size];
 	char *probe_blk = align_mem(stack, block_order);
 	uint64_t found_offset;
-	enum block_state bs;
 
 	if (read_blocks(dev, probe_blk, pos, cb, indent))
 		return true;
 
-	bs = validate_buffer_with_block(probe_blk, block_order,
-		(pos << block_order), &found_offset, salt);
+	*pbs = validate_buffer_with_block(probe_blk, block_order,
+		expected_offset, &found_offset, salt);
+	return false;
+}
+
+static int is_block_good(struct device *dev, uint64_t pos,
+	int *pis_good, uint64_t salt, progress_cb cb, unsigned int indent)
+{
+	const int block_order = dev_get_block_order(dev);
+	enum block_state bs;
+	if (is_block_good_with_offset(dev, pos, (pos << block_order), &bs,
+			salt, cb, indent))
+		return true;
 	*pis_good = bs == bs_good;
 	if (!*pis_good) {
 		cb(indent, "INFO: Block %" PRIu64 " is %s!\n",
@@ -509,16 +520,14 @@ static int find_wrap(struct device *dev,
 	pos += high_bit;
 
 	while (pos < *pright_pos) {
-		char stack[align_head(block_order) + (1 << block_order)];
-		char *probe_blk = align_mem(stack, block_order);
-		uint64_t found_offset;
-
-		if (read_blocks(dev, probe_blk, pos, cb, indent + 1))
+		enum block_state bs;
+		if (is_block_good_with_offset(dev, pos, offset, &bs,
+				wi->salt, cb, indent + 1))
 			return true;
-
-		if (validate_buffer_with_block(probe_blk, block_order,
-				offset, &found_offset, wi->salt) == bs_good) {
+		if (bs == bs_good) {
 			*pright_pos = high_bit;
+			cb(indent + 1, "INFO: Block %" PRIu64 " overwrites block %" PRIu64 "\n",
+				pos, left_pos + 1);
 			return false;
 		}
 
