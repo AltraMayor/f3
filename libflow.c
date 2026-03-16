@@ -67,12 +67,13 @@ static inline void move_to_inc_at_start(struct flow *fw)
 }
 
 void init_flow(struct flow *fw, int block_size, uint64_t total_size,
-	long max_process_rate, progress_cb cb,
+	long max_process_rate, progress_cb cb, unsigned int indent,
 	flow_func_flush_chunk_t func_flush_chunk)
 {
 	fw->total_size		= total_size;
 	fw->total_processed	= 0;
 	fw->cb			= cb;
+	fw->indent		= indent;
 	fw->block_size		= block_size; /* Bytes		*/
 	fw->blocks_per_delay	= 1;	/* block_size B/s	*/
 	fw->delay_ns		= 1000000000ULL;	/* 1s	*/
@@ -116,10 +117,15 @@ void clear_progress(struct flow *fw)
 {
 	char buf[512], *at_buf = buf;
 
-	if (fw->erase <= 0)
+	if (fw->erase <= 0) {
+		if (fw->indent > 0) {
+			/* Remove indented empty line. */
+			fw->cb(fw->indent, "\b");
+		}
 		goto out;
-	assert((size_t)fw->erase * 3 + 1 <= sizeof(buf));
+	}
 
+	assert((size_t)fw->erase * 3 + 1 <= sizeof(buf));
 	at_buf += repeat_ch(at_buf, '\b', fw->erase);
 	at_buf += repeat_ch(at_buf, ' ', fw->erase);
 	at_buf += repeat_ch(at_buf, '\b', fw->erase);
@@ -128,7 +134,7 @@ void clear_progress(struct flow *fw)
 	/* Pass buf as the format, so the implementation of cb can check that
 	 * the intention is to clear the previously reported progress.
 	 */
-	fw->cb(buf);
+	fw->cb(fw->indent, buf);
 out:
 	fw->erase = 0;
 }
@@ -227,7 +233,7 @@ static void report_progress(struct flow *fw, double inst_speed)
 
 	assert((size_t)len + 1 <= sizeof(buf));
 	clear_progress(fw);
-	fw->cb("%s", buf);
+	fw->cb(fw->indent, "%s", buf);
 	fw->erase = len;
 }
 

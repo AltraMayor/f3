@@ -324,25 +324,49 @@ void print_stats(const struct block_stats *stats, int block_size,
 	print_stat("\t     Overwritten:", stats->overwritten, block_size, unit_name);
 }
 
-void printf_cb(const char *format, ...)
+static void print_indent(unsigned int indent, const char *indent_str)
+{
+	unsigned int i;
+	for (i = 0; i < indent; i++)
+		printf("%s", indent_str);
+}
+
+static void vprintf_cb(unsigned int indent, const char *format, va_list args)
+{
+	const char *indent_str = "        ";
+	const char  *erase_str = "\b\b\b\b\b\b\b\b";
+
+	assert(format != NULL);
+	if (format[0] != '\b') {
+		print_indent(indent, indent_str);
+		vprintf(format, args);
+		return;
+	}
+
+	vprintf(format, args);
+	print_indent(indent, erase_str);
+}
+
+void printf_cb(unsigned int indent, const char *format, ...)
 {
 	va_list args;
 	va_start(args, format);
-	vprintf(format, args);
+	vprintf_cb(indent, format, args);
 	va_end(args);
 }
 
-void printf_flush_cb(const char *format, ...)
+void printf_flush_cb(unsigned int indent, const char *format, ...)
 {
 	va_list args;
 	va_start(args, format);
-	vprintf(format, args);
+	vprintf_cb(indent, format, args);
 	va_end(args);
 	fflush(stdout);
 }
 
-void dummy_cb(const char *format, ...)
+void dummy_cb(unsigned int indent, const char *format, ...)
 {
 	/* Do nothing */
+	UNUSED(indent);
 	UNUSED(format);
 }

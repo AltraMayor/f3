@@ -331,18 +331,18 @@ static int unit_test(const char *filename)
 static inline void report_size(const char *prefix, uint64_t bytes,
 	int block_order)
 {
-	report_probed_size(printf_cb, prefix, bytes, block_order);
+	report_probed_size(0, printf_cb, prefix, bytes, block_order);
 }
 
 static inline void report_order(const char *prefix, int order)
 {
-	report_probed_order(printf_cb, prefix, order);
+	report_probed_order(0, printf_cb, prefix, order);
 }
 
 static inline void report_cache(const char *prefix, uint64_t cache_size_block,
 	int block_order)
 {
-	report_probed_cache(printf_cb, prefix, cache_size_block, block_order);
+	report_probed_cache(0, printf_cb, prefix, cache_size_block, block_order);
 }
 
 static void report_probe_time(const char *prefix, uint64_t usec)

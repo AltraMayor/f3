@@ -11,11 +11,11 @@
 
 #define UNUSED(x)	((void)x)
 
-typedef void (*progress_cb)(const char *format, ...);
+typedef void (*progress_cb)(unsigned int indent, const char *format, ...);
 
-void printf_cb(const char *format, ...);
-void printf_flush_cb(const char *format, ...);
-void dummy_cb(const char *format, ...);
+void printf_cb(unsigned int indent, const char *format, ...);
+void printf_flush_cb(unsigned int indent, const char *format, ...);
+void dummy_cb(unsigned int indent, const char *format, ...);
 
 int ilog2(uint64_t x);
 

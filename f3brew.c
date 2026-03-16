@@ -327,7 +327,7 @@ static void test_write_blocks(struct device *dev,
 	fflush(stdout);
 
 	init_flow(&fw, block_size, total_size, max_write_rate,
-		show_progress ? printf_flush_cb : dummy_cb, NULL);
+		show_progress ? printf_flush_cb : dummy_cb, 0, NULL);
 
 	assert(!gettimeofday(&t1, NULL));
 	write_blocks(dev, &fw, first_block, last_block);
@@ -502,7 +502,7 @@ static void test_read_blocks(struct device *dev,
 		first_block, last_block);
 
 	init_flow(&fw, block_size, total_size, max_read_rate,
-		show_progress ? printf_flush_cb : dummy_cb, NULL);
+		show_progress ? printf_flush_cb : dummy_cb, 0, NULL);
 
 	assert(!gettimeofday(&t1, NULL));
 	read_blocks(dev, &fw, first_block, last_block, &stats);
