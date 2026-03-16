@@ -9,6 +9,7 @@
 #include <assert.h>
 #include <inttypes.h>
 #include <sys/time.h>
+#include <unistd.h>
 
 #include "version.h"
 #include "libprobe.h"
@@ -53,6 +54,8 @@ static struct argp_option options[] = {
 		"Time reads, writes, and resets",		0},
 	{"verbose",		'v',	NULL,		0,
 		"Show detailed progress",		0},
+	{"show-progress",	'p',	"NUM",		0,
+		"Show progress if NUM is not zero",			0},
 	{ 0 }
 };
 
@@ -69,6 +72,7 @@ struct args {
 	bool		min_mem;
 	bool		time_ops;
 	bool		verbose;
+	bool		show_progress;
 
 	/* Geometry. */
 	uint64_t	real_size_byte;
@@ -163,6 +167,10 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 	case 'v':
 		args->verbose = true;
+		break;
+
+	case 'p':
+		args->show_progress = !!arg_to_ll_bytes(state, arg);
 		break;
 
 	case ARGP_KEY_INIT:
@@ -271,7 +279,8 @@ static int unit_test(const char *filename)
 		assert(dev);
 		max_probe_blocks = probe_device_max_blocks(dev);
 		assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
-			&wrap, &cache_size_block, &block_order, dummy_cb));
+			&wrap, &cache_size_block, &block_order, dummy_cb,
+			false));
 		free_device(dev);
 		fake_type = dev_param_to_type(real_size_byte,
 			announced_size_byte, wrap, block_order);
@@ -405,7 +414,8 @@ static int test_device(struct args *args)
 	 */
 	assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
 		&wrap, &cache_size_block, &block_order,
-		args->verbose ? printf_flush_cb : dummy_cb));
+		args->verbose ? printf_flush_cb : dummy_cb,
+		args->show_progress));
 	assert(!gettimeofday(&t2, NULL));
 
 	if (args->verbose) {
@@ -502,6 +512,8 @@ int main(int argc, char **argv)
 		.min_mem	= false,
 		.time_ops	= false,
 		.verbose	= false,
+		/* If stdout isn't a terminal, suppress progress. */
+		.show_progress	= isatty(STDOUT_FILENO),
 		.real_size_byte	= 1ULL << 31,
 		.fake_size_byte	= 1ULL << 34,
 		.wrap		= 31,

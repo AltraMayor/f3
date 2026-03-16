@@ -557,7 +557,7 @@ void report_probed_cache(progress_cb cb, const char *prefix,
 
 int probe_device(struct device *dev, uint64_t *preal_size_byte,
 	uint64_t *pannounced_size_byte, int *pwrap, uint64_t *pcache_size_block,
-	int *pblock_order, progress_cb cb)
+	int *pblock_order, progress_cb cb, int show_progress)
 {
 	const uint64_t dev_size_byte = dev_get_size_byte(dev);
 	const int block_order = dev_get_block_order(dev);
@@ -572,7 +572,8 @@ int probe_device(struct device *dev, uint64_t *preal_size_byte,
 	/* We initialize total_size to 0 because write_blocks() updates it
 	 * before writing.
 	 */
-	init_flow(&wi.fw, block_size, 0, 0, cb, NULL);
+	init_flow(&wi.fw, block_size, 0, 0, show_progress ? cb : dummy_cb,
+		NULL);
 
 	/* @left_pos must point to a good block.
 	 * We just point to the last block of the first 1MB of the card

@@ -19,6 +19,6 @@ void report_probed_cache(progress_cb cb, const char *prefix,
 int probe_device(struct device *dev, uint64_t *preal_size_byte,
 	uint64_t *pannounced_size_byte, int *pwrap,
 	uint64_t *pcache_size_block, int *pblock_order,
-	progress_cb cb);
+	progress_cb cb, int show_progress);
 
 #endif	/* HEADER_LIBPROBE_H */
