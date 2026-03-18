@@ -10,6 +10,7 @@
 #define SECTOR_ORDER (9)
 
 #define UNUSED(x)	((void)x)
+#define DIM(x)		(sizeof(x) / sizeof((x)[0]))
 
 typedef void (*progress_cb)(unsigned int indent, const char *format, ...);
 

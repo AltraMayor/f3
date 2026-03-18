@@ -155,7 +155,7 @@ static int overwhelm_cache(struct device *dev,
  *
  * To circunvent this problem, the probe must only issue random reads.
  */
-static int read_blocks(struct device *dev, char *buf, uint64_t pos,
+static int read_block(struct device *dev, char *buf, uint64_t pos,
 	progress_cb cb, unsigned int indent)
 {
 	if (dev_read_blocks(dev, buf, pos, pos) &&
@@ -176,7 +176,7 @@ static int is_block_good_with_offset(struct device *dev, uint64_t pos,
 	char *probe_blk = align_mem(stack, block_order);
 	uint64_t found_offset;
 
-	if (read_blocks(dev, probe_blk, pos, cb, indent))
+	if (read_block(dev, probe_blk, pos, cb, indent))
 		return true;
 
 	*pbs = validate_buffer_with_block(probe_blk, block_order,
@@ -184,18 +184,93 @@ static int is_block_good_with_offset(struct device *dev, uint64_t pos,
 	return false;
 }
 
-static int is_block_good(struct device *dev, uint64_t pos,
-	int *pis_good, uint64_t salt, progress_cb cb, unsigned int indent)
+static uint64_t bs_to_set(enum block_state bs)
+{
+	switch (bs) {
+	case bs_unknown:
+	case bs_good:
+	case bs_bad:
+	case bs_changed:
+	case bs_overwritten:
+		assert(bs < sizeof(uint64_t) * 8);
+		return 1ULL << bs;
+
+	default:
+		assert(0);
+	}
+}
+
+static uint64_t bss_to_set(const enum block_state bss[], uint32_t n_bs)
+{
+	uint64_t bs_set = 0;
+	uint32_t i;
+
+	for (i = 0; i < n_bs; i++)
+		bs_set |= bs_to_set(bss[i]);
+	return bs_set;
+}
+
+static inline bool in_bs_set(uint64_t bs_set, enum block_state bs)
+{
+	assert(bs < sizeof(bs_set) * 8);
+	return (bs_set >> bs) & 1;
+}
+
+struct def_x_block {
+	uint64_t pos;
+	uint64_t expected_offset;
+};
+
+static int find_first_x_block(struct device *dev,
+	const struct def_x_block x_blocks[], uint32_t n_blocks,
+	uint64_t bs_set, uint32_t *pfirst_x_block_idx,
+	enum block_state *pstate, struct write_info *wi,
+	progress_cb cb, unsigned int indent)
+{
+	uint32_t i;
+
+	for (i = 0; i < n_blocks; i++) {
+		enum block_state bs;
+		if (is_block_good_with_offset(dev, x_blocks[i].pos,
+				x_blocks[i].expected_offset, &bs, wi->salt,
+				cb, indent))
+			return true;
+		if (in_bs_set(bs_set, bs)) {
+			*pfirst_x_block_idx = i;
+			*pstate = bs;
+			return false;
+		}
+	}
+	*pfirst_x_block_idx = n_blocks;
+	return false;
+}
+
+static int find_first_bad_block(struct device *dev, const uint64_t pos[],
+	uint32_t n_pos, bool *pany_bad, uint64_t *pbad_pos,
+	struct write_info *wi, progress_cb cb, unsigned int indent)
 {
 	const int block_order = dev_get_block_order(dev);
+	/* All but bs_good. */
+	const enum block_state bss[] = {bs_unknown, bs_bad, bs_changed,
+		bs_overwritten};
+	struct def_x_block x_blocks[n_pos];
 	enum block_state bs;
-	if (is_block_good_with_offset(dev, pos, (pos << block_order), &bs,
-			salt, cb, indent))
+	uint32_t i;
+
+	for (i = 0; i < n_pos; i++) {
+		x_blocks[i].pos = pos[i];
+		x_blocks[i].expected_offset = pos[i] << block_order;
+	}
+
+	if (find_first_x_block(dev, x_blocks, n_pos,
+			bss_to_set(bss, DIM(bss)),
+			&i, &bs, wi, cb, indent))
 		return true;
-	*pis_good = bs == bs_good;
-	if (!*pis_good) {
+	*pany_bad = i < n_pos;
+	if (*pany_bad) {
+		*pbad_pos = x_blocks[i].pos;
 		cb(indent, "INFO: Block %" PRIu64 " is %s!\n",
-			pos, block_state_to_str(bs));
+			*pbad_pos, block_state_to_str(bs));
 	}
 	return false;
 }
@@ -220,65 +295,6 @@ static uint64_t uint64_rand_range(uint64_t a, uint64_t b)
 	uint64_t r = uint64_rand();
 	assert(a <= b);
 	return a + (r % (b - a + 1));
-}
-
-#define N_BLOCK_SAMPLES	64
-
-static int probabilistic_test(struct device *dev,
-	uint64_t first_pos, uint64_t last_pos, int *pfound_a_bad_block,
-	uint64_t salt, progress_cb cb, unsigned int indent)
-{
-	uint64_t gap;
-	int i, n, is_linear;
-
-	if (first_pos > last_pos)
-		goto not_found;
-
-	/* Let g be the number of good blocks between
-	 *   @first_pos and @last_pos including them.
-	 * Let b be the number of bad and overwritten blocks between
-	 *   @first_pos and @last_pos including them.
-	 *
-	 * The probability Pr_g of sampling a good block at random between
-	 *	@first_pos and @last_pos is Pr_g = g / (g + b), and
-	 *	the probability Pr_1b that among k block samples at least
-	 *	one block is bad is Pr_1b = 1 - Pr_g^k.
-	 *
-	 * Assuming Pr_g <= 95% and k = 64, Pr_1b >= 96.2%.
-	 *	That is, with high probability (i.e. Pr_1b),
-	 *	one can find at least a bad block with k samples
-	 *	when most blocks are good (Pr_g).
-	 */
-
-	/* Test @samples. */
-	gap = last_pos - first_pos + 1;
-	is_linear = gap <= N_BLOCK_SAMPLES;
-	n = is_linear ? gap : N_BLOCK_SAMPLES;
-	for (i = 0; i < n; i++) {
-		uint64_t sample_pos = is_linear
-			? first_pos + i
-			: uint64_rand_range(first_pos, last_pos);
-		int is_good;
-
-		if (is_block_good(dev, sample_pos, &is_good, salt, cb, indent))
-			return true;
-		if (!is_good) {
-			/* Found a bad block. */
-			*pfound_a_bad_block = true;
-			return false;
-		}
-	}
-
-not_found:
-	*pfound_a_bad_block = false;
-	return false;
-}
-
-static int uint64_cmp(const void *pa, const void *pb)
-{
-	const uint64_t *pia = pa;
-	const uint64_t *pib = pb;
-	return *pia - *pib;
 }
 
 /* Since the list size is small, at most SAMPLING_MAX blocks,
@@ -306,50 +322,126 @@ static void fill_with_unique_samples(uint64_t *samples, uint32_t n_samples,
 	}
 }
 
+static int uint64_cmp(const void *pa, const void *pb)
+{
+	const uint64_t *pia = pa;
+	const uint64_t *pib = pb;
+	return *pia - *pib;
+}
+
+/* Fill @samples with @n_samples unique random positions in the range
+ * [@first_pos, @last_pos]. If @sorted is true, sort the entries of
+ * @samples. If @is_linear is true, the entries of @samples are linear
+ * (i.e. @first_pos, @first_pos + 1, ...).
+ */
+static void fill_samples(uint64_t *samples, uint32_t *pn_samples,
+	uint64_t first_pos, uint64_t last_pos, bool sorted, bool *pis_linear)
+{
+	const uint64_t gap = last_pos - first_pos + 1;
+	*pis_linear = gap <= *pn_samples;
+	if (*pis_linear) {
+		uint32_t i;
+		*pn_samples = gap;
+		for (i = 0; i < gap; i++)
+			samples[i] = first_pos + i;
+
+		/* Treat single blocks as random reads instead of
+		 * sequential ones.
+		 */
+		*pis_linear = gap > 1;
+	} else {
+		fill_with_unique_samples(samples, *pn_samples, first_pos,
+			last_pos);
+		if (sorted) {
+			qsort(samples, *pn_samples, sizeof(uint64_t),
+				uint64_cmp);
+		}
+	}
+}
+
+/* Let g be the number of good blocks between
+ *	@first_pos and @last_pos including them.
+ * Let b be the number of bad and overwritten blocks between
+ *	@first_pos and @last_pos including them.
+ *
+ * The probability Pr_g of sampling a good block at random between
+ *	@first_pos and @last_pos is Pr_g = g / (g + b), and
+ *	the probability Pr_1b that among k block samples at least
+ *	one block is bad is Pr_1b = 1 - Pr_g^k.
+ *
+ * Assuming Pr_g <= 95% and k = 64, Pr_1b >= 96.2%.
+ *	That is, with high probability (i.e. Pr_1b),
+ *	one can find at least a bad block with k samples
+ *	when most blocks are good (Pr_g).
+ */
+static int probabilistic_test(struct device *dev,
+	uint64_t first_pos, uint64_t last_pos, int *pfound_a_bad_block,
+	struct write_info *wi, progress_cb cb, unsigned int indent)
+{
+	uint32_t n_samples = 64;
+	uint64_t samples[n_samples];
+	bool is_linear, any_bad;
+	uint64_t bad_pos;
+
+	if (first_pos > last_pos)
+		goto not_found;
+
+	fill_samples(samples, &n_samples, first_pos, last_pos, false,
+		&is_linear);
+	cb(indent, "Sampling %" PRIu32 " blocks from blocks [%" PRIu64 ", %" PRIu64 "]\n",
+		n_samples, first_pos, last_pos);
+	if (find_first_bad_block(dev, samples, n_samples, &any_bad, &bad_pos,
+			wi, cb, indent))
+		return true;
+	if (any_bad) {
+		/* Found a bad block. */
+		*pfound_a_bad_block = true;
+		return false;
+	}
+
+not_found:
+	*pfound_a_bad_block = false;
+	return false;
+}
+
+/* Find a bad block in the range (left_pos, right_pos) using up to
+ * n_samples random samples.
+ *
+ * If a bad block is found, set *pright_pos to the position of the
+ * leftmost bad block.
+ *
+ * The code relies on the same analytical result derived
+ * in probabilistic_test().
+ */
 static int find_a_bad_block(struct device *dev, uint32_t n_samples,
 	uint64_t left_pos, uint64_t *pright_pos, int *found_a_bad_block,
 	struct write_info *wi, progress_cb cb, unsigned int indent)
 {
-	uint64_t samples[n_samples], gap;
-	uint32_t i;
-
-	cb(indent, "## Sampling %" PRIu32 " blocks from blocks (%" PRIu64 ", %" PRIu64 ")\n",
-		n_samples, left_pos, *pright_pos);
+	uint64_t samples[n_samples];
+	bool is_linear, any_bad;
+	uint64_t bad_pos;
 
 	if (n_samples == 0 || *pright_pos <= left_pos + 1) {
 		/* Nothing to sample. */
 		goto not_found;
 	}
 
-	/* The code below relies on the same analytical result derived
-	 * in probabilistic_test().
+	/* Sort entries of samples to minimize reads.
+	 * As soon as one finds a bad block, one can ignore the remaining
+	 * samples because the found bad block is the leftmost bad block.
 	 */
+	fill_samples(samples, &n_samples, left_pos + 1, *pright_pos - 1, true,
+		&is_linear);
+	cb(indent, "## Sampling %" PRIu32 " blocks from blocks (%" PRIu64 ", %" PRIu64 ")\n",
+		n_samples, left_pos, *pright_pos);
 
 	cb(indent + 1, "Writing random blocks\n");
 
-	/* Fill up @samples. */
-	gap = *pright_pos - left_pos - 1;
-	if (gap <= n_samples) {
-		n_samples = gap;
-		for (i = 0; i < n_samples; i++)
-			samples[i] = left_pos + 1 + i;
-
-		/* Write @samples. */
+	if (is_linear) {
 		if (write_blocks(dev, left_pos + 1, *pright_pos - 1, wi, cb,
 				indent + 1))
 			return true;
 	} else {
-		fill_with_unique_samples(samples, n_samples, left_pos + 1,
-			*pright_pos - 1);
-
-		/* Sort entries of samples to minimize reads.
-		 * As soon as one finds a bad block, one can stop and ignore
-		 * the remaining blocks because the found bad block is
-		 * the leftmost bad block.
-		 */
-		qsort(samples, n_samples, sizeof(uint64_t), uint64_cmp);
-
-		/* Write samples. */
 		if (write_random_blocks(dev, samples, n_samples, wi,
 				cb, indent + 1))
 			return true;
@@ -358,21 +450,16 @@ static int find_a_bad_block(struct device *dev, uint32_t n_samples,
 	if (overwhelm_cache(dev, wi, cb, indent + 1))
 		return true;
 
+	/* Test samples. */
 	cb(indent + 1, "Reading written blocks\n");
-
-	/* Test @samples. */
-	for (i = 0; i < n_samples; i++) {
-		int is_good;
-
-		if (is_block_good(dev, samples[i], &is_good, wi->salt, cb,
-				indent + 1))
-			return true;
-		if (!is_good) {
-			/* Found the leftmost bad block. */
-			*pright_pos = samples[i];
-			*found_a_bad_block = true;
-			return false;
-		}
+	if (find_first_bad_block(dev, samples, n_samples, &any_bad, &bad_pos,
+			wi, cb, indent + 1))
+		return true;
+	if (any_bad) {
+		/* Found the leftmost bad block. */
+		*pright_pos = bad_pos;
+		*found_a_bad_block = true;
+		return false;
 	}
 
 not_found:
@@ -433,7 +520,7 @@ static void report_cache_size_test(unsigned int indent, progress_cb cb,
 {
 	double f_size = (last_pos - first_pos + 1) * dev_get_block_size(dev);
 	const char *unit = adjust_unit(&f_size);
-	cb(indent, "Testing cache size: %.2f %s; Blocks [%" PRIu64 ", %" PRIu64 "]\n",
+	cb(indent, "## Testing cache size: %.2f %s; Blocks [%" PRIu64 ", %" PRIu64 "]\n",
 		f_size, unit, first_pos, last_pos);
 }
 
@@ -475,15 +562,18 @@ static int find_cache_size(struct device *dev, const uint64_t left_pos,
 			break;
 		}
 
+		report_cache_size_test(indent + 1, cb, dev, first_pos, end_pos);
+
 		/* Write @write_target blocks before
 		 * the previously written blocks.
 		 */
-		report_cache_size_test(indent + 1, cb, dev, first_pos, end_pos);
-		if (write_blocks(dev, first_pos, last_pos, wi, cb, indent + 1))
+		cb(indent + 2, "Writing blocks [%" PRIu64 ", %" PRIu64 "]\n",
+			first_pos, last_pos);
+		if (write_blocks(dev, first_pos, last_pos, wi, cb, indent + 2))
 			goto bad;
 
 		if (probabilistic_test(dev, first_pos, end_pos,
-				&found_a_bad_block, wi->salt, cb, indent + 1))
+				&found_a_bad_block, wi, cb, indent + 2))
 			goto bad;
 		if (found_a_bad_block) {
 			*pright_pos = first_pos;
@@ -512,8 +602,33 @@ static int find_wrap(struct device *dev,
 	uint64_t left_pos, uint64_t *pright_pos,
 	struct write_info *wi, progress_cb cb, unsigned int indent)
 {
-	uint64_t offset, high_bit, pos = left_pos + 1;
-	int is_good, block_order;
+	const uint64_t good_block = left_pos + 1;
+	/* The smallest integer m such that 2^m > good_block. */
+	const uint32_t m = ceiling_log2(good_block + 1);
+	/* Let k be the *smallest* integer such that
+	 *	2^(m+k) + good_block >= *pright_pos
+	 *
+	 * Since this function has to test the blocks
+	 * 2^m + good_block, 2^(m+1) + good_block, ..., 2^(m+k-1) + good_block,
+	 * k corresponds to the number of samples to test.
+	 *
+	 * 2^(m+k) + good_block >= *pright_pos [=>]
+	 * 2^(m+k) >= *pright_pos - good_block [=>]
+	 * m + k >= log2(*pright_pos - good_block) [=>]
+	 * k >= log2(*pright_pos - good_block) - m [=>]
+	 * k = ceiling_log2(*pright_pos - good_block) - m
+	 */
+	const uint32_t aux = *pright_pos > good_block
+		? ceiling_log2(*pright_pos - good_block)
+		: 0;
+	const uint32_t n_samples = aux > m ? aux - m : 0;
+	struct def_x_block x_blocks[n_samples];
+	bool any_bad;
+	uint64_t bad_pos;
+	int block_order;
+	uint64_t expected_offset, high_bit;
+	uint32_t i;
+	enum block_state bs;
 
 	cb(indent, "# Find module\n");
 
@@ -525,46 +640,54 @@ static int find_wrap(struct device *dev,
 	 * of the drive.
 	 */
 
-	if (pos >= *pright_pos)
+	if (good_block >= *pright_pos)
 		return false;
 
-	cb(indent + 1, "Writing reference block %" PRIu64 "\n", pos);
-	if (write_random_blocks(dev, &pos, 1, wi, cb, indent + 1) ||
+	cb(indent + 1, "Writing reference block %" PRIu64 "\n", good_block);
+	if (write_random_blocks(dev, &good_block, 1, wi, cb, indent + 1) ||
 			overwhelm_cache(dev, wi, cb, indent + 1))
 		return true;
 
 	cb(indent + 1, "Reading reference block\n");
-	if (is_block_good(dev, pos, &is_good, wi->salt, cb, indent + 1) ||
-			!is_good)
+	if (find_first_bad_block(dev, &good_block, 1, &any_bad, &bad_pos,
+			wi, cb, indent + 1) || any_bad)
 		return true;
 
 	/*
 	 *	Inductive step
 	 */
 
+	cb(indent + 1, "Probing module (reading %" PRIu32 " blocks)\n",
+		n_samples);
+
 	block_order = dev_get_block_order(dev);
-	offset = pos << block_order;
-	high_bit = clp2(pos);
-	if (high_bit <= pos)
-		high_bit <<= 1;
-	pos += high_bit;
+	expected_offset = good_block << block_order;
 
-	while (pos < *pright_pos) {
-		enum block_state bs;
-		if (is_block_good_with_offset(dev, pos, offset, &bs,
-				wi->salt, cb, indent + 1))
-			return true;
-		if (bs == bs_good) {
-			*pright_pos = high_bit;
-			cb(indent + 1, "INFO: Block %" PRIu64 " overwrites block %" PRIu64 "\n",
-				pos, left_pos + 1);
-			return false;
-		}
+	/* high_bit starts as the smallest power of 2 greater than
+	 * good_block.
+	 */
+	high_bit = 1ULL << m; /* 2^m */
+	assert(high_bit > good_block);
 
+	/* Fill x_blocks in. */
+	for (i = 0; i < n_samples; i++) {
+		uint64_t pos = high_bit + good_block;
+		assert(pos < *pright_pos);
+		x_blocks[i].pos = pos;
+		x_blocks[i].expected_offset = expected_offset;
 		high_bit <<= 1;
-		pos = high_bit + left_pos + 1;
 	}
+	assert(high_bit + good_block >= *pright_pos);
 
+	if (find_first_x_block(dev, x_blocks, n_samples, bs_to_set(bs_good),
+			&i, &bs, wi, cb, indent + 1))
+		return true;
+	if (i < n_samples) {
+		assert(bs == bs_good);
+		*pright_pos = x_blocks[i].pos - good_block; /* = high_bit */
+		cb(indent + 1, "INFO: Block %" PRIu64 " overwrites block %" PRIu64 "\n",
+			x_blocks[i].pos, good_block);
+	}
 	return false;
 }
 
