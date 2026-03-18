@@ -18,9 +18,8 @@ static int _write_blocks(struct device *dev, const char *buf,
 	progress_cb cb, unsigned int indent)
 {
 	if (dev_write_blocks(dev, buf, first_pos, last_pos) &&
-		dev_write_blocks(dev, buf, first_pos, last_pos)) {
-		if (fw != NULL)
-			clear_progress(fw);
+			dev_write_blocks(dev, buf, first_pos, last_pos)) {
+		clear_progress(fw);
 		cb(indent, "I/O ERROR: Write error at blocks [%" PRIu64 ", %" PRIu64 "]!\n",
 			first_pos, last_pos);
 		return true;
@@ -28,8 +27,19 @@ static int _write_blocks(struct device *dev, const char *buf,
 	return false;
 }
 
-static int write_block(struct device *dev, uint64_t pos, uint64_t salt,
-	progress_cb cb, unsigned int indent)
+struct write_info {
+	uint64_t cache_pos;
+	uint64_t cache_size_block;
+	uint64_t salt;
+
+	struct dynamic_buffer seqw_dbuf;
+	struct flow seqw_fw;
+	struct flow randw_fw;
+};
+
+static int write_random_blocks(struct device *dev, const uint64_t pos[],
+	uint32_t n_pos, struct write_info *wi, progress_cb cb,
+	unsigned int indent)
 {
 	const int block_order = dev_get_block_order(dev);
 	const int block_size = dev_get_block_size(dev);
@@ -38,19 +48,26 @@ static int write_block(struct device *dev, uint64_t pos, uint64_t salt,
 	 */
 	char stack[align_head(block_order) + block_size];
 	char *buffer = align_mem(stack, block_order);
+	uint32_t i;
 
-	fill_buffer_with_block(buffer, block_order, pos << block_order, salt);
-	return _write_blocks(dev, buffer, pos, pos, NULL, cb, indent);
+	if (n_pos == 0)
+		return false;
+
+	inc_total_size(&wi->randw_fw, n_pos << block_order);
+	fw_set_indent(&wi->randw_fw, indent);
+
+	start_measurement(&wi->randw_fw);
+	for (i = 0; i < n_pos; i++) {
+		fill_buffer_with_block(buffer, block_order,
+			pos[i] << block_order, wi->salt);
+		if (_write_blocks(dev, buffer, pos[i], pos[i], &wi->randw_fw,
+				cb, indent))
+			return true;
+		measure(0, &wi->randw_fw, block_size);
+	}
+	end_measurement(0, &wi->randw_fw);
+	return false;
 }
-
-struct write_info {
-	uint64_t cache_pos;
-	uint64_t cache_size_block;
-	uint64_t salt;
-
-	struct dynamic_buffer dbuf;
-	struct flow fw;
-};
 
 static int write_blocks(struct device *dev,
 	uint64_t first_block, uint64_t last_block,
@@ -64,22 +81,26 @@ static int write_blocks(struct device *dev,
 	if (first_block > last_block)
 		return false;
 
-	inc_total_size(&wi->fw, (last_block - first_block + 1) << block_order);
-	fw_set_indent(&wi->fw, indent);
+	inc_total_size(&wi->seqw_fw,
+		(last_block - first_block + 1) << block_order);
+	fw_set_indent(&wi->seqw_fw, indent);
 
-	start_measurement(&wi->fw);
+	start_measurement(&wi->seqw_fw);
 	while (first_pos <= last_block) {
-		const uint64_t chunk_bytes = get_rem_chunk_size(&wi->fw);
-		const uint64_t needed_size = align_head(block_order) + chunk_bytes;
-		const uint64_t max_blocks_to_write = last_block - first_pos + 1;
+		const uint64_t chunk_bytes = get_rem_chunk_size(&wi->seqw_fw);
+		const uint64_t needed_size =
+			align_head(block_order) + chunk_bytes;
+		const uint64_t max_blocks_to_write =
+			last_block - first_pos + 1;
 		uint64_t blocks_to_write;
 		int shift;
 		char *buffer, *stamp_blk;
 		size_t buf_len;
 		uint64_t pos, next_pos;
 
-		buffer = align_mem2(dbuf_get_buf(&wi->dbuf, needed_size), block_order, &shift);
-		buf_len = dbuf_get_len(&wi->dbuf);
+		buffer = align_mem2(dbuf_get_buf(&wi->seqw_dbuf, needed_size),
+			block_order, &shift);
+		buf_len = dbuf_get_len(&wi->seqw_dbuf);
 
 		blocks_to_write = buf_len >= needed_size
 			? chunk_bytes >> block_order
@@ -98,16 +119,16 @@ static int write_blocks(struct device *dev,
 		}
 
 		if (_write_blocks(dev, buffer, first_pos, next_pos,
-				&wi->fw, cb, indent))
+				&wi->seqw_fw, cb, indent))
 			return true;
 
 		/* Since parameter func_flush_chunk of init_flow() is NULL,
 		 * the parameter fd of measure() is ignored.
 		 */
-		measure(0, &wi->fw, blocks_to_write << block_order);
+		measure(0, &wi->seqw_fw, blocks_to_write << block_order);
 		first_pos = next_pos + 1;
 	}
-	end_measurement(0, &wi->fw);
+	end_measurement(0, &wi->seqw_fw);
 	return false;
 }
 
@@ -260,18 +281,36 @@ static int uint64_cmp(const void *pa, const void *pb)
 	return *pia - *pib;
 }
 
+/* Since the list size is small, at most SAMPLING_MAX blocks,
+ * the O(n_samples^2) complexity is not a problem.
+ */
+static void fill_with_unique_samples(uint64_t *samples, uint32_t n_samples,
+	uint64_t first_pos, uint64_t last_pos)
+{
+	uint32_t i, j;
+
+	assert(n_samples < last_pos - first_pos + 1);
+	for (i = 0; i < n_samples; ) {
+		uint64_t r = uint64_rand_range(first_pos, last_pos);
+		bool unique = true;
+		for (j = 0; j < i; j++) {
+			if (samples[j] == r) {
+				unique = false;
+				break;
+			}
+		}
+		if (unique) {
+			samples[i] = r;
+			i++;
+		}
+	}
+}
+
 static int find_a_bad_block(struct device *dev, uint32_t n_samples,
 	uint64_t left_pos, uint64_t *pright_pos, int *found_a_bad_block,
 	struct write_info *wi, progress_cb cb, unsigned int indent)
 {
-	/* We need to list all sampled blocks because
-	 * we need a sorted array; read the code to find the why.
-	 * If the sorted array were not needed, one could save the seed
-	 * of the random sequence and repeat the sequence to read the blocks
-	 * after writing them.
-	 */
-	uint64_t samples[n_samples];
-	uint64_t gap, prv_sample;
+	uint64_t samples[n_samples], gap;
 	uint32_t i;
 
 	cb(indent, "## Sampling %" PRIu32 " blocks from blocks (%" PRIu64 ", %" PRIu64 ")\n",
@@ -300,27 +339,20 @@ static int find_a_bad_block(struct device *dev, uint32_t n_samples,
 				indent + 1))
 			return true;
 	} else {
-		for (i = 0; i < n_samples; i++)
-			samples[i] = uint64_rand_range(left_pos + 1,
-				*pright_pos - 1);
+		fill_with_unique_samples(samples, n_samples, left_pos + 1,
+			*pright_pos - 1);
 
-		/* Sort entries of @samples to minimize reads.
+		/* Sort entries of samples to minimize reads.
 		 * As soon as one finds a bad block, one can stop and ignore
 		 * the remaining blocks because the found bad block is
 		 * the leftmost bad block.
 		 */
 		qsort(samples, n_samples, sizeof(uint64_t), uint64_cmp);
 
-		/* Write @samples. */
-		prv_sample = left_pos;
-		for (i = 0; i < n_samples; i++) {
-			if (samples[i] == prv_sample)
-				continue;
-			prv_sample = samples[i];
-			if (write_block(dev, prv_sample, wi->salt, cb,
-					indent + 1))
-				return true;
-		}
+		/* Write samples. */
+		if (write_random_blocks(dev, samples, n_samples, wi,
+				cb, indent + 1))
+			return true;
 	}
 
 	if (overwhelm_cache(dev, wi, cb, indent + 1))
@@ -329,20 +361,15 @@ static int find_a_bad_block(struct device *dev, uint32_t n_samples,
 	cb(indent + 1, "Reading written blocks\n");
 
 	/* Test @samples. */
-	prv_sample = left_pos;
 	for (i = 0; i < n_samples; i++) {
 		int is_good;
 
-		if (samples[i] == prv_sample)
-			continue;
-
-		prv_sample = samples[i];
-		if (is_block_good(dev, prv_sample, &is_good, wi->salt, cb,
+		if (is_block_good(dev, samples[i], &is_good, wi->salt, cb,
 				indent + 1))
 			return true;
 		if (!is_good) {
 			/* Found the leftmost bad block. */
-			*pright_pos = prv_sample;
+			*pright_pos = samples[i];
 			*found_a_bad_block = true;
 			return false;
 		}
@@ -501,10 +528,13 @@ static int find_wrap(struct device *dev,
 	if (pos >= *pright_pos)
 		return false;
 
-	if (write_block(dev, pos, wi->salt, cb, indent + 1) ||
-			overwhelm_cache(dev, wi, cb, indent + 1) ||
-			is_block_good(dev, pos, &is_good, wi->salt, cb,
-				indent + 1) ||
+	cb(indent + 1, "Writing reference block %" PRIu64 "\n", pos);
+	if (write_random_blocks(dev, &pos, 1, wi, cb, indent + 1) ||
+			overwhelm_cache(dev, wi, cb, indent + 1))
+		return true;
+
+	cb(indent + 1, "Reading reference block\n");
+	if (is_block_good(dev, pos, &is_good, wi->salt, cb, indent + 1) ||
 			!is_good)
 		return true;
 
@@ -587,18 +617,19 @@ int probe_device(struct device *dev, uint64_t *preal_size_byte,
 	const uint64_t dev_size_byte = dev_get_size_byte(dev);
 	const int block_order = dev_get_block_order(dev);
 	const int block_size = dev_get_block_size(dev);
+	const progress_cb fw_cb = show_progress ? cb : dummy_cb;
 	uint64_t left_pos, right_pos, mid_drive_pos;
 	struct write_info wi;
 	int wrap;
 
 	assert(block_order <= 20);
 
-	dbuf_init(&wi.dbuf);
-	/* We initialize total_size to 0 because write_blocks() updates it
-	 * before writing.
+	dbuf_init(&wi.seqw_dbuf);
+	/* We initialize total_size to 0 because inc_total_size() is called
+	 * to update it when new blocks become available.
 	 */
-	init_flow(&wi.fw, block_size, 0, 0, show_progress ? cb : dummy_cb, 0,
-		NULL);
+	init_flow(&wi.seqw_fw, block_size, 0, 0, fw_cb, 0, NULL);
+	init_flow(&wi.randw_fw, block_size, 0, 0, fw_cb, 0, NULL);
 
 	/* @left_pos must point to a good block.
 	 * We just point to the last block of the first 1MB of the card
@@ -669,7 +700,7 @@ bad:
 	*pwrap = ceiling_log2(dev_size_byte);
 
 out:
-	dbuf_free(&wi.dbuf);
+	dbuf_free(&wi.seqw_dbuf);
 	report_probed_size(0, cb, "=> Usable size:",
 		*preal_size_byte, block_order);
 	*pannounced_size_byte = dev_size_byte;
