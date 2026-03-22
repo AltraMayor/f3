@@ -1,14 +1,15 @@
-#define _POSIX_C_SOURCE 200809L
+#define _POSIX_C_SOURCE 200112L
+#define _XOPEN_SOURCE 600
 
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 #include <argp.h>
 #include <stdbool.h>
 #include <assert.h>
 #include <inttypes.h>
 #include <sys/time.h>
+#include <unistd.h>
 
 #include "version.h"
 #include "libprobe.h"
@@ -53,6 +54,8 @@ static struct argp_option options[] = {
 		"Time reads, writes, and resets",		0},
 	{"verbose",		'v',	NULL,		0,
 		"Show detailed progress",		0},
+	{"show-progress",	'p',	"NUM",		0,
+		"Show progress if NUM is not zero",			0},
 	{ 0 }
 };
 
@@ -69,6 +72,7 @@ struct args {
 	bool		min_mem;
 	bool		time_ops;
 	bool		verbose;
+	bool		show_progress;
 
 	/* Geometry. */
 	uint64_t	real_size_byte;
@@ -165,6 +169,10 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		args->verbose = true;
 		break;
 
+	case 'p':
+		args->show_progress = !!arg_to_ll_bytes(state, arg);
+		break;
+
 	case ARGP_KEY_INIT:
 		args->filename = NULL;
 		break;
@@ -195,12 +203,6 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 }
 
 static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
-
-static void dummy_probe_progress(const char *format, ...)
-{
-	/* Do nothing */
-	UNUSED(format);
-}
 
 struct unit_test_item {
 	uint64_t	real_size_byte;
@@ -277,8 +279,8 @@ static int unit_test(const char *filename)
 		assert(dev);
 		max_probe_blocks = probe_device_max_blocks(dev);
 		assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
-			&wrap, &cache_size_block, &block_order,
-			dummy_probe_progress));
+			&wrap, &cache_size_block, &block_order, dummy_cb,
+			false));
 		free_device(dev);
 		fake_type = dev_param_to_type(real_size_byte,
 			announced_size_byte, wrap, block_order);
@@ -329,18 +331,18 @@ static int unit_test(const char *filename)
 static inline void report_size(const char *prefix, uint64_t bytes,
 	int block_order)
 {
-	report_probed_size(printf_cb, prefix, bytes, block_order);
+	report_probed_size(0, printf_cb, prefix, bytes, block_order);
 }
 
 static inline void report_order(const char *prefix, int order)
 {
-	report_probed_order(printf_cb, prefix, order);
+	report_probed_order(0, printf_cb, prefix, order);
 }
 
 static inline void report_cache(const char *prefix, uint64_t cache_size_block,
 	int block_order)
 {
-	report_probed_cache(printf_cb, prefix, cache_size_block, block_order);
+	report_probed_cache(0, printf_cb, prefix, cache_size_block, block_order);
 }
 
 static void report_probe_time(const char *prefix, uint64_t usec)
@@ -356,15 +358,6 @@ static void report_ops(const char *op, uint64_t count, uint64_t time_us)
 	usec_to_str(time_us, str1);
 	usec_to_str(count > 0 ? time_us / count : 0, str2);
 	printf("%10s: %s / %" PRIu64 " = %s\n", op, str1, count, str2);
-}
-
-static void print_probe_progress(const char *format, ...)
-{
-	va_list args;
-	va_start(args, format);
-	vprintf(format, args);
-	va_end(args);
-	fflush(stdout);
 }
 
 static int test_device(struct args *args)
@@ -421,7 +414,8 @@ static int test_device(struct args *args)
 	 */
 	assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
 		&wrap, &cache_size_block, &block_order,
-		args->verbose ? print_probe_progress : dummy_probe_progress));
+		args->verbose ? printf_flush_cb : dummy_cb,
+		args->show_progress));
 	assert(!gettimeofday(&t2, NULL));
 
 	if (args->verbose) {
@@ -518,6 +512,8 @@ int main(int argc, char **argv)
 		.min_mem	= false,
 		.time_ops	= false,
 		.verbose	= false,
+		/* If stdout isn't a terminal, suppress progress. */
+		.show_progress	= isatty(STDOUT_FILENO),
 		.real_size_byte	= 1ULL << 31,
 		.fake_size_byte	= 1ULL << 34,
 		.wrap		= 31,

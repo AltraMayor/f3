@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
-      - run: sudo apt-get install -y libparted-dev libudev-dev
+      - run: sudo apt-get update && sudo apt-get install -y libparted-dev libudev-dev
       - run: make all extra
 
       - if: matrix.volume == 'relative-path'
@@ -70,8 +70,10 @@ jobs:
       - name: Cleanup loop device
         if: always()
         run: |
-          sudo losetup -d ${{ steps.loop.outputs.dev }}
-          rm dummy.img
+          if [ -n "${{ steps.loop.outputs.dev }}" ]; then
+            sudo losetup -d ${{ steps.loop.outputs.dev }}
+          fi
+          rm -f dummy.img
 
   MacOS:
     strategy:

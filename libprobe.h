@@ -3,25 +3,23 @@
 
 #include <stdint.h>
 
+#include "libutils.h"
 #include "libdevs.h"
 
 uint64_t probe_device_max_blocks(const struct device *dev);
 
-typedef void (*probe_progress_cb)(const char *format, ...);
+void report_probed_size(unsigned int indent, progress_cb cb,
+	const char *prefix, uint64_t bytes, int block_order);
 
-void printf_cb(const char *format, ...);
+void report_probed_order(unsigned int indent, progress_cb cb,
+	const char *prefix, int order);
 
-void report_probed_size(probe_progress_cb cb, const char *prefix,
-	uint64_t bytes, int block_order);
-
-void report_probed_order(probe_progress_cb cb, const char *prefix, int order);
-
-void report_probed_cache(probe_progress_cb cb, const char *prefix,
-	uint64_t cache_size_block, int block_order);
+void report_probed_cache(unsigned int indent, progress_cb cb,
+	const char *prefix, uint64_t cache_size_block, int block_order);
 
 int probe_device(struct device *dev, uint64_t *preal_size_byte,
 	uint64_t *pannounced_size_byte, int *pwrap,
 	uint64_t *pcache_size_block, int *pblock_order,
-	probe_progress_cb cb);
+	progress_cb cb, int show_progress);
 
 #endif	/* HEADER_LIBPROBE_H */

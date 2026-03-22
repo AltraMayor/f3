@@ -5,7 +5,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <sys/time.h>
+#include <time.h>
+
+#include "libutils.h"
 
 struct flow;
 
@@ -16,12 +18,14 @@ struct flow {
 	uint64_t	total_size;
 	/* Total number of bytes already processed. */
 	uint64_t	total_processed;
-	/* If true, show progress. */
-	int		progress;
+	/* Callback to show progress. */
+	progress_cb	cb;
+	/* Indentation level for callback. */
+	unsigned int	indent;
 	/* Block size in bytes. */
 	int		block_size;
-	/* Delay intended between measurements in milliseconds. */
-	unsigned int	delay_ms;
+	/* Delay intended between measurements in nanoseconds. */
+	uint64_t	delay_ns;
 	/* Increment to apply to @blocks_per_delay. */
 	int64_t		step;
 	/* Blocks to process before measurement. */
@@ -31,7 +35,7 @@ struct flow {
 	/* Number of measured blocks. */
 	uint64_t	measured_blocks;
 	/* Measured time. */
-	uint64_t	measured_time_ms;
+	uint64_t	measured_time_ns;
 	/* State. */
 	enum {FW_INC, FW_DEC, FW_SEARCH, FW_STEADY} state;
 	/* Number of characters to erase before printing out progress. */
@@ -46,41 +50,49 @@ struct flow {
 	 * Initialized while measuring
 	 */
 
+	/* Has a recommended chunk size? */
+	bool		has_rem_chunk_size;
+	/* Recommended chunk size. */
+	uint64_t	rem_chunk_size;
+	/* Speed of the recommended chunk size in bytes per second. */
+	double		rem_chunk_speed;
+
 	/* Number of blocks processed since last measurement. */
 	int64_t		processed_blocks;
 	/*
 	 * Accumulated delay before @processed_blocks reaches @blocks_per_delay
-	 * in microseconds.
+	 * in nanoseconds.
 	 */
-	uint64_t	acc_delay_us;
+	uint64_t	acc_delay_ns;
 	/* Range of blocks_per_delay while in FW_SEARCH state. */
 	int64_t		bpd1, bpd2;
 	/* Time measurements. */
-	struct timeval	t1;
+	struct timespec	t1;
 };
 
 /* If @max_process_rate <= 0, the maximum processing rate is infinity.
  * The unit of @max_process_rate is KB per second.
  */
 void init_flow(struct flow *fw, int block_size, uint64_t total_size,
-	long max_process_rate, int progress,
+	long max_process_rate, progress_cb cb, unsigned int indent,
 	flow_func_flush_chunk_t func_flush_chunk);
+
+static inline void inc_total_size(struct flow *fw, uint64_t size)
+{
+	fw->total_size = fw->total_processed + size;
+}
+
+static inline void fw_set_indent(struct flow *fw, unsigned int indent)
+{
+	fw->indent = indent;
+}
+
+uint64_t get_rem_chunk_size(const struct flow *fw);
 
 void start_measurement(struct flow *fw);
 int measure(int fd, struct flow *fw, long processed);
 void clear_progress(struct flow *fw);
 int end_measurement(int fd, struct flow *fw);
-
-static inline int has_enough_measurements(const struct flow *fw)
-{
-	return fw->measured_time_ms > fw->delay_ms;
-}
-
-static inline uint64_t get_rem_chunk_size(const struct flow *fw)
-{
-	assert(fw->blocks_per_delay > fw->processed_blocks);
-	return (fw->blocks_per_delay - fw->processed_blocks) * fw->block_size;
-}
 
 void print_measured_speed(const struct flow *fw, const struct timeval *t1,
 	const struct timeval *t2, const char *speed_type);

@@ -327,7 +327,7 @@ static void iterate_files(const char *path, const long *files,
 	UNUSED(end_at);
 
 	init_flow(&fw, get_block_size(path), get_total_size(path, files),
-		max_read_rate, progress, NULL);
+		max_read_rate, progress ? printf_flush_cb : dummy_cb, 0, NULL);
 	printf("                  SECTORS "
 		"     ok/corrupted/changed/overwritten\n");
 

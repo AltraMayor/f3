@@ -56,14 +56,6 @@ const char *dev_get_filename(struct device *dev);
  *	Methods
  */
 
-/* One should use the following constant as the size of the buffer needed to
- * batch writes or reads.
- *
- * It must be a power of 2 greater than, or equal to 2^20.
- * The current value is 1MB.
- */
-#define BIG_BLOCK_SIZE_BYTE (1 << 20)
-
 int dev_read_blocks(struct device *dev, char *buf,
 	uint64_t first_pos, uint64_t last_pos);
 int dev_write_blocks(struct device *dev, const char *buf,

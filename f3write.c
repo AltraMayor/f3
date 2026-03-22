@@ -306,7 +306,7 @@ static int fill_fs(const char *path, long start_at, long end_at,
 	}
 
 	init_flow(&fw, get_block_size(path), free_space, max_write_rate,
-		progress, flush_chunk);
+		progress ? printf_flush_cb : dummy_cb, 0, flush_chunk);
 	assert(!gettimeofday(&t1, NULL));
 	for (i = start_at; i <= end_at; i++)
 		if (create_and_fill_file(path, i, GIGABYTES,
