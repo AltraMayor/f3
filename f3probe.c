@@ -270,14 +270,14 @@ static int unit_test(const char *filename)
 
 		enum fake_type fake_type;
 		uint64_t real_size_byte, announced_size_byte, cache_size_block;
-		int wrap, block_order, max_probe_blocks;
+		int wrap, block_order, max_written_blocks;
 		struct device *dev;
 
 		dev = create_file_device(filename, item->real_size_byte,
 			item->fake_size_byte, item->wrap, item->block_order,
 			item->cache_order, item->strict_cache, false);
 		assert(dev);
-		max_probe_blocks = probe_device_max_blocks(dev);
+		max_written_blocks = probe_max_written_blocks(dev);
 		assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
 			&wrap, &cache_size_block, &block_order, dummy_cb,
 			false));
@@ -301,8 +301,8 @@ static int unit_test(const char *filename)
 			item_cache_byte <= (cache_size_block << block_order) &&
 			block_order == item->block_order) {
 			success++;
-			printf("\t\tPerfect!\tMax # of probed blocks: %i\n\n",
-				max_probe_blocks);
+			printf("\t\tPerfect!\tMax # of written blocks: %i\n\n",
+				max_written_blocks);
 		} else {
 			double ret_f_real = real_size_byte;
 			double ret_f_fake = announced_size_byte;
@@ -392,7 +392,7 @@ static int test_device(struct args *args)
 	sdev = NULL;
 	if (args->save) {
 		sdev = create_safe_device(dev,
-			probe_device_max_blocks(dev), args->min_mem);
+			probe_max_written_blocks(dev), args->min_mem);
 		if (!sdev) {
 			if (!args->min_mem)
 				fprintf(stderr, "Out of memory, try `f3probe --min-memory %s'\n",

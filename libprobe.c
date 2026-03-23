@@ -479,6 +479,9 @@ not_found:
  *
  * min_n_samples: Pr_g <= 50% and k = 8		=> Pr_1b >= 99.6%
  * max_n_samples: Pr_g <= 99% and k = 1024	=> Pr_1b >= 99.9966%
+ *
+ * These parameters must be powers of 2 to satisfy the bounds in
+ * probe_max_written_blocks().
  */
 #define SAMPLING_MIN (8)
 #define SAMPLING_MAX (1024)
@@ -698,20 +701,90 @@ static int find_wrap(struct device *dev,
 	return false;
 }
 
-uint64_t probe_device_max_blocks(const struct device *dev)
+static uint64_t drive_mid_block(const struct device *dev)
+{
+	const uint64_t dev_size_byte = dev_get_size_byte(dev);
+	const int block_order = dev_get_block_order(dev);
+	return clp2((dev_size_byte >> block_order) / 2);
+}
+
+static uint64_t uint64_min(uint64_t a, uint64_t b)
+{
+	return a < b ? a : b;
+}
+
+uint64_t probe_max_written_blocks(const struct device *dev)
 {
 	const int block_order = dev_get_block_order(dev);
 	const uint64_t num_blocks = dev_get_size_byte(dev) >> block_order;
 	const int n = ceiling_log2(num_blocks);
 
 	return
-		/* find_cache_size(): sum all write targets. */
-		(MAX_CACHE_SIZE_BYTE >> block_order) * 2 - 1 +
-		/* find_wrap(): only one block is written. */
+		/* find_cache_size() */
+		uint64_min(
+			/* The maximum number of written blocks. */
+			(MAX_CACHE_SIZE_BYTE >> block_order) * 2 - 1,
+			/* High half of the drive. */
+			num_blocks - drive_mid_block(dev)
+		) +
+		/* find_wrap(): only one block is written.
+		 *
+		 * Note: Both find_wrap() and sampling_probe() call
+		 * overwhelm_cache(), which writes rwi->cache_size_block blocks.
+		 * However, these blocks are written over the exact same
+		 * block range previously written and saved during
+		 * find_cache_size(). Thus, the safe device (sdev) deduplicates
+		 * these cache writes, and they contribute 0 to the maximum
+		 * number of unique written blocks bounded here.
+		 */
 		1 +
-		/* sampling_probe() */
-		(3 * n) * SAMPLING_MAX +	/* Upper bound for phase 1. */
-		n * SAMPLING_MIN;		/* Upper bound for phase 2. */
+		/* sampling_probe():
+		 *
+		 * We assume that Phase 1 has at most n successes (finding a bad
+		 * block). A success reduces the search space by moving the
+		 * right boundary to the leftmost bad block found. Because the
+		 * random samples are uniformly distributed, even if only one
+		 * sample falls into the "bad" region (the portion of the interval
+		 * containing bad blocks), the expected distance to that sample
+		 * halves the size of the bad region. Since each success halves
+		 * the bad region on average, and the initial bad region is at
+		 * most N blocks, n (log2(N)) is a safe probabilistic upper bound
+		 * for the number of successes. Each success writes at most
+		 * SAMPLING_MAX blocks.
+		 *
+		 * Each failure (not finding a bad block) doubles the sample
+		 * size, starting from SAMPLING_MIN up to SAMPLING_MAX. Since
+		 * the sample size only doubles on failures, the number of
+		 * blocks written during failures forms a geometric series:
+		 *
+		 *	SAMPLING_MIN + 2*SAMPLING_MIN + 4*SAMPLING_MIN + ... +
+		 *		SAMPLING_MAX
+		 *	= 2 * SAMPLING_MAX - SAMPLING_MIN
+		 *
+		 * Therefore, the total number of blocks written in Phase 1 is
+		 * bounded by:
+		 *
+		 *	n * SAMPLING_MAX + 2 * SAMPLING_MAX - SAMPLING_MIN
+		 *	= (n + 2) * SAMPLING_MAX - SAMPLING_MIN
+		 *
+		 * Phase 2 is a binary search (halving the range or narrowing
+		 * it) which takes at most n iterations. In Phase 2, the sample
+		 * size is fixed at SAMPLING_MIN. The total number of blocks
+		 * written in Phase 2 is bounded by:
+		 *
+		 *	n * SAMPLING_MIN
+		 *
+		 * Finally, after the loop finishes, there is one last call to
+		 * find_a_bad_block(). In the worst case, this call uses
+		 * SAMPLING_MAX blocks.
+		 *
+		 * Summing Phase 1, Phase 2, and the last call yields:
+		 *
+		 *	(n + 2) * SAMPLING_MAX - SAMPLING_MIN +
+		 *		n * SAMPLING_MIN + SAMPLING_MAX
+		 *	= (n + 3) * SAMPLING_MAX + (n - 1) * SAMPLING_MIN
+		 */
+		(n + 3) * SAMPLING_MAX + (n - 1) * SAMPLING_MIN;
 }
 
 void report_probed_size(unsigned int indent, progress_cb cb,
@@ -787,7 +860,7 @@ int probe_device(struct device *dev, uint64_t *preal_size_byte,
 	/* I, Michel Machado, define that any drive with less than
 	 * this number of blocks is fake.
 	 */
-	mid_drive_pos = clp2(right_pos / 2);
+	mid_drive_pos = drive_mid_block(dev);
 
 	assert(left_pos < mid_drive_pos);
 	assert(mid_drive_pos < right_pos);
