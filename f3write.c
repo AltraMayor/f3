@@ -182,7 +182,7 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 	struct dynamic_buffer dbuf;
 
 	assert(size > 0);
-	assert(size % fw->block_size == 0);
+	assert(size % fw_get_block_size(fw) == 0);
 
 	/* Create the file. */
 	full_fn = full_fn_from_number(&filename, path, number);

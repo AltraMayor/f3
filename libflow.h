@@ -77,6 +77,11 @@ void init_flow(struct flow *fw, int block_size, uint64_t total_size,
 	long max_process_rate, progress_cb cb, unsigned int indent,
 	flow_func_flush_chunk_t func_flush_chunk);
 
+static inline int fw_get_block_size(const struct flow *fw)
+{
+	return fw->block_size;
+}
+
 static inline void inc_total_size(struct flow *fw, uint64_t size)
 {
 	fw->total_size = fw->total_processed + size;
@@ -85,6 +90,13 @@ static inline void inc_total_size(struct flow *fw, uint64_t size)
 static inline void fw_set_indent(struct flow *fw, unsigned int indent)
 {
 	fw->indent = indent;
+}
+
+static inline void fw_get_measurements(const struct flow *fw,
+	uint64_t *blocks, uint64_t *time_ns)
+{
+	*blocks = fw->measured_blocks + fw->processed_blocks;
+	*time_ns = fw->measured_time_ns + fw->acc_delay_ns;
 }
 
 uint64_t get_rem_chunk_size(const struct flow *fw);
