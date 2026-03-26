@@ -439,7 +439,7 @@ static int find_a_bad_block(struct device *dev, uint32_t n_samples,
 	 */
 	fill_samples(samples, &n_samples, left_pos + 1, *pright_pos - 1, true,
 		&is_linear);
-	cb(indent, "## Sampling %" PRIu32 " blocks from blocks (%" PRIu64 ", %" PRIu64 ")\n",
+	cb(indent, "### Sampling %" PRIu32 " blocks from blocks (%" PRIu64 ", %" PRIu64 ")\n",
 		n_samples, left_pos, *pright_pos);
 
 	cb(indent + 1, "Writing random blocks\n");
@@ -498,7 +498,7 @@ static int sampling_probe(struct device *dev,
 	bool phase1 = true;
 
 	assert(SAMPLING_MAX >= SAMPLING_MIN);
-	cb(indent, "# Sampling\n");
+	cb(indent, "## Sampling\n");
 
 	while (*pright_pos > left_pos + n_samples + 1) {
 		if (find_a_bad_block(dev, n_samples, left_pos, pright_pos,
@@ -530,7 +530,7 @@ static void report_cache_size_test(unsigned int indent, progress_cb cb,
 {
 	double f_size = (last_pos - first_pos + 1) * dev_get_block_size(dev);
 	const char *unit = adjust_unit(&f_size);
-	cb(indent, "## Testing cache size: %.2f %s; Blocks [%" PRIu64 ", %" PRIu64 "]\n",
+	cb(indent, "### Testing cache size: %.2f %s; Blocks [%" PRIu64 ", %" PRIu64 "]\n",
 		f_size, unit, first_pos, last_pos);
 }
 
@@ -547,7 +547,7 @@ static int find_cache_size(struct device *dev, const uint64_t left_pos,
 	uint64_t final_write_target = MAX_CACHE_SIZE_BYTE >> block_order;
 	uint64_t first_pos = *pright_pos;
 
-	cb(indent, "# Find cache size\n");
+	cb(indent, "## Find cache size\n");
 
 	assert(write_target > 0);
 	assert(write_target < final_write_target);
@@ -640,7 +640,7 @@ static int find_wrap(struct device *dev,
 	uint32_t i;
 	enum block_state bs;
 
-	cb(indent, "# Find module\n");
+	cb(indent, "## Find module\n");
 
 	/*
 	 *	Basis
