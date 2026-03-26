@@ -829,7 +829,7 @@ static void report_io_speed(unsigned int indent, progress_cb cb,
 
 	speed = (blocks * fw_get_block_size(fw) * 1000000000.0) / time_ns;
 	unit = adjust_unit(&speed);
-	usec_to_str(time_ns / 1000, time_str);
+	nsec_to_str(time_ns, time_str);
 	cb(indent, "%s %.2f %s/s (%" PRIu64 " blocks / %s)\n",
 		prefix, speed, unit, blocks, time_str);
 }

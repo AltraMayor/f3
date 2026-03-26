@@ -348,15 +348,15 @@ static inline void report_cache(const char *prefix, uint64_t cache_size_block,
 static void report_probe_time(const char *prefix, uint64_t usec)
 {
 	char str[TIME_STR_SIZE];
-	usec_to_str(usec, str);
+	nsec_to_str(usec * 1000ULL, str);
 	printf("%s %s\n", prefix, str);
 }
 
 static void report_ops(const char *op, uint64_t count, uint64_t time_us)
 {
 	char str1[TIME_STR_SIZE], str2[TIME_STR_SIZE];
-	usec_to_str(time_us, str1);
-	usec_to_str(count > 0 ? time_us / count : 0, str2);
+	nsec_to_str(time_us * 1000ULL, str1);
+	nsec_to_str(count > 0 ? (time_us * 1000ULL) / count : 0, str2);
 	printf("%10s: %s / %" PRIu64 " = %s\n", op, str1, count, str2);
 }
 
