@@ -278,7 +278,6 @@ static int fill_fs(const char *path, long start_at, long end_at,
 	struct flow fw;
 	long i;
 	int has_suggested_max_write_rate = max_write_rate > 0;
-	struct timeval t1, t2;
 
 	free_space = get_freespace(path);
 	pr_freespace(free_space);
@@ -307,17 +306,15 @@ static int fill_fs(const char *path, long start_at, long end_at,
 
 	init_flow(&fw, get_block_size(path), free_space, max_write_rate,
 		progress ? printf_flush_cb : dummy_cb, 0, flush_chunk);
-	assert(!gettimeofday(&t1, NULL));
 	for (i = start_at; i <= end_at; i++)
 		if (create_and_fill_file(path, i, GIGABYTES,
 			&has_suggested_max_write_rate, &fw))
 			break;
-	assert(!gettimeofday(&t2, NULL));
 
 	/* Final report. */
 	pr_freespace(get_freespace(path));
 	/* Writing speed. */
-	print_measured_speed(&fw, &t1, &t2, "writing");
+	print_avg_seq_speed(&fw, "write", true);
 
 	return 0;
 }

@@ -322,7 +322,6 @@ static void iterate_files(const char *path, const long *files,
 	int or_missing_file = 0;
 	long number = start_at;
 	struct flow fw;
-	struct timeval t1, t2;
 
 	UNUSED(end_at);
 
@@ -331,7 +330,6 @@ static void iterate_files(const char *path, const long *files,
 	printf("                  SECTORS "
 		"     ok/corrupted/changed/overwritten\n");
 
-	assert(!gettimeofday(&t1, NULL));
 	while (*files >= 0) {
 		struct file_stats stats;
 
@@ -355,7 +353,6 @@ static void iterate_files(const char *path, const long *files,
 		and_read_all = and_read_all && stats.read_all;
 		files++;
 	}
-	assert(!gettimeofday(&t2, NULL));
 	assert(tot_size == SECTOR_SIZE *
 		(tot_stats.ok + tot_stats.bad + tot_stats.changed
 			+ tot_stats.overwritten));
@@ -372,7 +369,7 @@ static void iterate_files(const char *path, const long *files,
 		printf("WARNING: Not all data was read due to I/O error(s)\n");
 
 	/* Reading speed. */
-	print_measured_speed(&fw, &t1, &t2, "reading");
+	print_avg_seq_speed(&fw, "read", true);
 }
 
 int main(int argc, char **argv)

@@ -347,10 +347,10 @@ static inline void report_cache(const char *prefix, uint64_t cache_size_block,
 		block_order);
 }
 
-static inline void report_io_speed(const char *prefix, uint64_t blocks,
+static inline void report_speed(const char *prefix, uint64_t blocks,
 	uint64_t time_ns, int block_order)
 {
-	report_probed_io_speed(0, printf_cb, prefix, blocks, time_ns,
+	report_io_speed(0, printf_cb, prefix, blocks, "block", time_ns,
 		block_order);
 }
 
@@ -505,13 +505,13 @@ static int test_device(struct args *args)
 		 * because the safe device disrupts the measurements.
 		 */
 		printf("\nI/O average speeds:\n");
-		report_io_speed("\tSequential write:",
+		report_speed("\tSequential write:",
 			results.seqw_blocks, results.seqw_time_ns,
 			results.block_order);
-		report_io_speed("\t    Random write:",
+		report_speed("\t    Random write:",
 			results.randw_blocks, results.randw_time_ns,
 			results.block_order);
-		report_io_speed("\t     Random read:",
+		report_speed("\t     Random read:",
 			results.randr_blocks, results.randr_time_ns,
 			results.block_order);
 	}

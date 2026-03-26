@@ -349,6 +349,27 @@ void print_stats(const struct block_stats *stats, int block_size,
 	print_stat("\t     Overwritten:", stats->overwritten, block_size, unit_name);
 }
 
+void report_io_speed(unsigned int indent, progress_cb cb, const char *prefix,
+	uint64_t blocks, const char *block_unit, uint64_t time_ns,
+	int block_order)
+{
+	double speed;
+	const char *unit;
+	char time_str[TIME_STR_SIZE];
+
+	if (time_ns == 0) {
+		cb(indent, "%s NO DATA\n", prefix);
+		return;
+	}
+
+	speed = (blocks << block_order) * 1000000000.0 / time_ns;
+	unit = adjust_unit(&speed);
+	nsec_to_str(time_ns, time_str);
+	cb(indent, "%s %.2f %s/s (%" PRIu64 " %s%s / %s)\n",
+		prefix, speed, unit, blocks, block_unit,
+		blocks != 1 ? "s" : "", time_str);
+}
+
 static void print_indent(unsigned int indent, const char *indent_str)
 {
 	unsigned int i;

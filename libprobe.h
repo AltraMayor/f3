@@ -24,10 +24,6 @@ void report_probed_order(unsigned int indent, progress_cb cb,
 void report_probed_cache(unsigned int indent, progress_cb cb,
 	const char *prefix, uint64_t cache_size_block, int block_order);
 
-void report_probed_io_speed(unsigned int indent, progress_cb cb,
-	const char *prefix, uint64_t blocks, uint64_t time_ns,
-	int block_order);
-
 struct probe_results {
 	uint64_t real_size_byte;
 	uint64_t announced_size_byte;

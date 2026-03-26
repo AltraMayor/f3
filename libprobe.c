@@ -813,26 +813,6 @@ void report_probed_cache(unsigned int indent, progress_cb cb,
 		prefix, f, unit, cache_size_block);
 }
 
-void report_probed_io_speed(unsigned int indent, progress_cb cb,
-	const char *prefix, uint64_t blocks, uint64_t time_ns,
-	int block_order)
-{
-	double speed;
-	const char *unit;
-	char time_str[TIME_STR_SIZE];
-
-	if (time_ns == 0) {
-		cb(indent, "%s NO DATA\n", prefix);
-		return;
-	}
-
-	speed = (blocks << block_order) * 1000000000.0 / time_ns;
-	unit = adjust_unit(&speed);
-	nsec_to_str(time_ns, time_str);
-	cb(indent, "%s %.2f %s/s (%" PRIu64 " blocks / %s)\n",
-		prefix, speed, unit, blocks, time_str);
-}
-
 int probe_device(struct device *dev, struct probe_results *results,
 	progress_cb cb, int show_progress)
 {
@@ -933,12 +913,15 @@ out:
 		&results->randw_time_ns);
 	fw_get_measurements(&rwi.randr_fw, &results->randr_blocks,
 		&results->randr_time_ns);
-	report_probed_io_speed(0, cb, "=> Sequential write:",
-		results->seqw_blocks, results->seqw_time_ns, block_order);
-	report_probed_io_speed(0, cb, "=> Random write:",
-		results->randw_blocks, results->randw_time_ns, block_order);
-	report_probed_io_speed(0, cb, "=> Random read:",
-		results->randr_blocks, results->randr_time_ns, block_order);
+	report_io_speed(0, cb, "=> Sequential write:",
+		results->seqw_blocks, "block", results->seqw_time_ns,
+		block_order);
+	report_io_speed(0, cb, "=> Random write:",
+		results->randw_blocks, "block", results->randw_time_ns,
+		block_order);
+	report_io_speed(0, cb, "=> Random read:",
+		results->randr_blocks, "block", results->randr_time_ns,
+		block_order);
 	results->announced_size_byte = dev_size_byte;
 	results->cache_size_block = rwi.cache_size_block;
 	results->block_order = block_order;
