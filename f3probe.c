@@ -343,7 +343,15 @@ static inline void report_order(const char *prefix, int order)
 static inline void report_cache(const char *prefix, uint64_t cache_size_block,
 	int block_order)
 {
-	report_probed_cache(0, printf_cb, prefix, cache_size_block, block_order);
+	report_probed_cache(0, printf_cb, prefix, cache_size_block,
+		block_order);
+}
+
+static inline void report_io_speed(const char *prefix, uint64_t blocks,
+	uint64_t time_ns, int block_order)
+{
+	report_probed_io_speed(0, printf_cb, prefix, blocks, time_ns,
+		block_order);
 }
 
 static void report_probe_time(const char *prefix, uint64_t usec)
@@ -491,6 +499,23 @@ static int test_device(struct args *args)
 	 report_cache("\tApproximate cache size:", results.cache_size_block,
 		results.block_order);
 	 report_order("\t   Physical block size:", results.block_order);
+
+	if (!args->save) {
+		/* Only report I/O speeds when flag --destructive is used
+		 * because the safe device disrupts the measurements.
+		 */
+		printf("\nI/O average speeds:\n");
+		report_io_speed("\tSequential write:",
+			results.seqw_blocks, results.seqw_time_ns,
+			results.block_order);
+		report_io_speed("\t    Random write:",
+			results.randw_blocks, results.randw_time_ns,
+			results.block_order);
+		report_io_speed("\t     Random read:",
+			results.randr_blocks, results.randr_time_ns,
+			results.block_order);
+	}
+
 	report_probe_time("\nProbe time:", diff_timeval_us(&t1, &t2));
 
 	if (args->time_ops) {
