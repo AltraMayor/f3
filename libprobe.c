@@ -834,9 +834,8 @@ static void report_io_speed(unsigned int indent, progress_cb cb,
 		prefix, speed, unit, blocks, time_str);
 }
 
-int probe_device(struct device *dev, uint64_t *preal_size_byte,
-	uint64_t *pannounced_size_byte, int *pwrap, uint64_t *pcache_size_block,
-	int *pblock_order, progress_cb cb, int show_progress)
+int probe_device(struct device *dev, struct probe_results *results,
+	progress_cb cb, int show_progress)
 {
 	const uint64_t dev_size_byte = dev_get_size_byte(dev);
 	const int block_order = dev_get_block_order(dev);
@@ -916,23 +915,23 @@ int probe_device(struct device *dev, uint64_t *preal_size_byte,
 		right_pos = 0;
 	}
 
-	*preal_size_byte = right_pos << block_order;
-	*pwrap = wrap;
+	results->real_size_byte = right_pos << block_order;
+	results->wrap = wrap;
 	goto out;
 
 bad:
-	*preal_size_byte = 0;
-	*pwrap = ceiling_log2(dev_size_byte);
+	results->real_size_byte = 0;
+	results->wrap = ceiling_log2(dev_size_byte);
 
 out:
 	dbuf_free(&rwi.seqw_dbuf);
 	report_probed_size(0, cb, "=> Usable size:",
-		*preal_size_byte, block_order);
+		results->real_size_byte, block_order);
 	report_io_speed(0, cb, "=> Average sequential write speed:", &rwi.seqw_fw);
 	report_io_speed(0, cb, "=> Average random write speed:", &rwi.randw_fw);
 	report_io_speed(0, cb, "=> Average random read speed:", &rwi.randr_fw);
-	*pannounced_size_byte = dev_size_byte;
-	*pcache_size_block = rwi.cache_size_block;
-	*pblock_order = block_order;
+	results->announced_size_byte = dev_size_byte;
+	results->cache_size_block = rwi.cache_size_block;
+	results->block_order = block_order;
 	return false;
 }

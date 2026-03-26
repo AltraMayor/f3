@@ -268,9 +268,9 @@ static int unit_test(const char *filename)
 		const char *unit_fake = adjust_unit(&f_fake);
 		const char *unit_cache = adjust_unit(&f_cache);
 
+		struct probe_results results;
 		enum fake_type fake_type;
-		uint64_t real_size_byte, announced_size_byte, cache_size_block;
-		int wrap, block_order, max_written_blocks;
+		int max_written_blocks;
 		struct device *dev;
 
 		dev = create_file_device(filename, item->real_size_byte,
@@ -278,12 +278,11 @@ static int unit_test(const char *filename)
 			item->cache_order, item->strict_cache, false);
 		assert(dev);
 		max_written_blocks = probe_max_written_blocks(dev);
-		assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
-			&wrap, &cache_size_block, &block_order, dummy_cb,
-			false));
+		assert(!probe_device(dev, &results, dummy_cb, false));
 		free_device(dev);
-		fake_type = dev_param_to_type(real_size_byte,
-			announced_size_byte, wrap, block_order);
+		fake_type = dev_param_to_type(results.real_size_byte,
+			results.announced_size_byte, results.wrap,
+			results.block_order);
 
 		/* Report */
 		printf("Test %i\t\ttype/real size/fake size/module/cache size/block size\n",
@@ -292,30 +291,32 @@ static int unit_test(const char *filename)
 			fake_type_to_name(origin_type),
 			f_real, unit_real, f_fake, unit_fake, item->wrap,
 			f_cache, unit_cache, item->block_order);
-		if (real_size_byte == item->real_size_byte &&
-			announced_size_byte == item->fake_size_byte &&
-			wrap == item->wrap &&
+		if (results.real_size_byte == item->real_size_byte &&
+			results.announced_size_byte == item->fake_size_byte &&
+			results.wrap == item->wrap &&
 			/* probe_device() returns an upper bound of
 			 * the cache size.
 			 */
-			item_cache_byte <= (cache_size_block << block_order) &&
-			block_order == item->block_order) {
+			item_cache_byte <= (results.cache_size_block <<
+				results.block_order) &&
+			results.block_order == item->block_order) {
 			success++;
 			printf("\t\tPerfect!\tMax # of written blocks: %i\n\n",
 				max_written_blocks);
 		} else {
-			double ret_f_real = real_size_byte;
-			double ret_f_fake = announced_size_byte;
-			double ret_f_cache = cache_size_block << block_order;
+			double ret_f_real = results.real_size_byte;
+			double ret_f_fake = results.announced_size_byte;
+			double ret_f_cache = results.cache_size_block <<
+				results.block_order;
 			const char *ret_unit_real = adjust_unit(&ret_f_real);
 			const char *ret_unit_fake = adjust_unit(&ret_f_fake);
 			const char *ret_unit_cache = adjust_unit(&ret_f_cache);
 			printf("\tError\t%s/%.2f %s/%.2f %s/2^%i Byte/%.2f %s/2^%i Byte\n\n",
 				fake_type_to_name(fake_type),
 				ret_f_real, ret_unit_real,
-				ret_f_fake, ret_unit_fake, wrap,
+				ret_f_fake, ret_unit_fake, results.wrap,
 				ret_f_cache, ret_unit_cache,
-				block_order);
+				results.block_order);
 		}
 	}
 
@@ -363,10 +364,9 @@ static void report_ops(const char *op, uint64_t count, uint64_t time_us)
 static int test_device(struct args *args)
 {
 	struct timeval t1, t2;
+	struct probe_results results;
 	struct device *dev, *pdev, *sdev;
 	enum fake_type fake_type;
-	uint64_t real_size_byte, announced_size_byte, cache_size_block;
-	int wrap, block_order;
 	uint64_t read_count, read_time_us;
 	uint64_t write_count, write_time_us;
 	uint64_t reset_count, reset_time_us;
@@ -412,8 +412,7 @@ static int test_device(struct args *args)
 	/* XXX Have a better error handling to recover
 	 * the state of the drive.
 	 */
-	assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
-		&wrap, &cache_size_block, &block_order,
+	assert(!probe_device(dev, &results,
 		args->verbose ? printf_flush_cb : dummy_cb,
 		args->show_progress));
 	assert(!gettimeofday(&t2, NULL));
@@ -433,7 +432,8 @@ static int test_device(struct args *args)
 			&write_count, &write_time_us,
 			&reset_count, &reset_time_us);
 	if (sdev) {
-		uint64_t very_last_pos = real_size_byte >> block_order;
+		uint64_t very_last_pos = results.real_size_byte >>
+			results.block_order;
 		printf("Probe finished, recovering blocks...");
 		fflush(stdout);
 		if (very_last_pos > 0) {
@@ -449,8 +449,9 @@ static int test_device(struct args *args)
 	if (args->save)
 		printf("\n");
 
-	fake_type = dev_param_to_type(real_size_byte, announced_size_byte,
-		wrap, block_order);
+	fake_type = dev_param_to_type(results.real_size_byte,
+		results.announced_size_byte, results.wrap,
+		results.block_order);
 	switch (fake_type) {
 	case FKTY_GOOD:
 		printf("Good news: The device `%s' is the real thing\n",
@@ -465,8 +466,9 @@ static int test_device(struct args *args)
 	case FKTY_LIMBO:
 	case FKTY_WRAPAROUND:
 	case FKTY_CHAIN: {
-		uint64_t last_good_sector = (real_size_byte >> SECTOR_ORDER) - 1;
-		assert(block_order >= SECTOR_ORDER);
+		uint64_t last_good_sector = (results.real_size_byte >>
+			SECTOR_ORDER) - 1;
+		assert(results.block_order >= SECTOR_ORDER);
 		printf("Bad news: The device `%s' is a counterfeit of type %s\n\n"
 			"You can \"fix\" this device using the following command:\n"
 			"f3fix --last-sec=%" PRIu64 " %s\n",
@@ -481,14 +483,14 @@ static int test_device(struct args *args)
 	}
 
 	printf("\nDevice geometry:\n");
-	  report_size("\t         *Usable* size:", real_size_byte,
-		block_order);
-	  report_size("\t        Announced size:", announced_size_byte,
-		block_order);
-	 report_order("\t                Module:", wrap);
-	 report_cache("\tApproximate cache size:", cache_size_block,
-		block_order);
-	 report_order("\t   Physical block size:", block_order);
+	  report_size("\t         *Usable* size:", results.real_size_byte,
+		results.block_order);
+	  report_size("\t        Announced size:", results.announced_size_byte,
+		results.block_order);
+	 report_order("\t                Module:", results.wrap);
+	 report_cache("\tApproximate cache size:", results.cache_size_block,
+		results.block_order);
+	 report_order("\t   Physical block size:", results.block_order);
 	report_probe_time("\nProbe time:", diff_timeval_us(&t1, &t2));
 
 	if (args->time_ops) {
