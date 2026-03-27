@@ -20,8 +20,8 @@ static int _write_blocks(struct device *dev, const char *buf,
 	if (dev_write_blocks(dev, buf, first_pos, last_pos) &&
 			dev_write_blocks(dev, buf, first_pos, last_pos)) {
 		clear_progress(fw);
-		cb(indent, "I/O ERROR: Write error at blocks [%" PRIu64 ", %" PRIu64 "]!\n",
-			first_pos, last_pos);
+		cb(indent, "I/O ERROR: Write error at block%s [%" PRIu64 ", %\" PRIu64 \"]!\n",
+			first_pos != last_pos ? "s" : "", first_pos, last_pos);
 		return true;
 	}
 	return false;
@@ -395,8 +395,9 @@ static int probabilistic_test(struct device *dev,
 
 	fill_samples(samples, &n_samples, first_pos, last_pos, false,
 		&is_linear);
-	cb(indent, "Sampling %" PRIu32 " blocks from blocks [%" PRIu64 ", %" PRIu64 "]\n",
-		n_samples, first_pos, last_pos);
+	cb(indent, "Sampling %" PRIu32 " block%s from block%s [%" PRIu64 ", %" PRIu64 "]\n",
+		n_samples, n_samples != 1 ? "s" : "",
+		first_pos != last_pos ? "s" : "", first_pos, last_pos);
 	if (find_first_bad_block(dev, samples, n_samples, &any_bad, &bad_pos,
 			rwi, cb, indent))
 		return true;
@@ -439,8 +440,9 @@ static int find_a_bad_block(struct device *dev, uint32_t n_samples,
 	 */
 	fill_samples(samples, &n_samples, left_pos + 1, *pright_pos - 1, true,
 		&is_linear);
-	cb(indent, "### Sampling %" PRIu32 " blocks from blocks (%" PRIu64 ", %" PRIu64 ")\n",
-		n_samples, left_pos, *pright_pos);
+	cb(indent, "### Sampling %" PRIu32 " block%s from block%s (%" PRIu64 ", %" PRIu64 ")\n",
+		n_samples, n_samples != 1 ? "s" : "",
+		*pright_pos > left_pos + 1 ? "s" : "", left_pos, *pright_pos);
 
 	cb(indent + 1, "Writing random blocks\n");
 
@@ -530,8 +532,9 @@ static void report_cache_size_test(unsigned int indent, progress_cb cb,
 {
 	double f_size = (last_pos - first_pos + 1) * dev_get_block_size(dev);
 	const char *unit = adjust_unit(&f_size);
-	cb(indent, "### Testing cache size: %.2f %s; Blocks [%" PRIu64 ", %" PRIu64 "]\n",
-		f_size, unit, first_pos, last_pos);
+	cb(indent, "### Testing cache size: %.2f %s; Block%s [%" PRIu64 ", %" PRIu64 "]\n",
+		f_size, unit, first_pos != last_pos ? "s" : "",
+		first_pos, last_pos);
 }
 
 /* This constant needs to be a power of 2 and larger than 2^block_order. */
@@ -577,8 +580,8 @@ static int find_cache_size(struct device *dev, const uint64_t left_pos,
 		/* Write @write_target blocks before
 		 * the previously written blocks.
 		 */
-		cb(indent + 2, "Writing blocks [%" PRIu64 ", %" PRIu64 "]\n",
-			first_pos, last_pos);
+		cb(indent + 2, "Writing block%s [%" PRIu64 ", %" PRIu64 "]\n",
+			first_pos != last_pos ? "s" : "", first_pos, last_pos);
 		if (write_blocks(dev, first_pos, last_pos, rwi, cb, indent + 2))
 			goto bad;
 
@@ -667,8 +670,8 @@ static int find_wrap(struct device *dev,
 	 *	Inductive step
 	 */
 
-	cb(indent + 1, "Probing module (reading %" PRIu32 " blocks)\n",
-		n_samples);
+	cb(indent + 1, "Probing module (reading %" PRIu32 " block%s)\n",
+		n_samples, n_samples != 1 ? "s" : "");
 
 	block_order = dev_get_block_order(dev);
 	expected_offset = good_block << block_order;
@@ -792,8 +795,9 @@ void report_probed_size(unsigned int indent, progress_cb cb,
 {
 	double f = bytes;
 	const char *unit = adjust_unit(&f);
-	cb(indent, "%s %.2f %s (%" PRIu64 " blocks)\n",
-		prefix, f, unit, bytes >> block_order);
+	uint64_t blocks = bytes >> block_order;
+	cb(indent, "%s %.2f %s (%" PRIu64 " block%s)\n",
+		prefix, f, unit, blocks, blocks != 1 ? "s" : "");
 }
 
 void report_probed_order(unsigned int indent, progress_cb cb,
@@ -801,7 +805,8 @@ void report_probed_order(unsigned int indent, progress_cb cb,
 {
 	double f = (1ULL << order);
 	const char *unit = adjust_unit(&f);
-	cb(indent, "%s %.2f %s (2^%i Bytes)\n", prefix, f, unit, order);
+	cb(indent, "%s %.2f %s (2^%i Byte%s)\n", prefix, f, unit, order,
+		order != 0 ? "s" : "");
 }
 
 void report_probed_cache(unsigned int indent, progress_cb cb,
@@ -809,8 +814,9 @@ void report_probed_cache(unsigned int indent, progress_cb cb,
 {
 	double f = (cache_size_block << block_order);
 	const char *unit = adjust_unit(&f);
-	cb(indent, "%s %.2f %s (%" PRIu64 " blocks)\n",
-		prefix, f, unit, cache_size_block);
+	cb(indent, "%s %.2f %s (%" PRIu64 " block%s)\n",
+		prefix, f, unit, cache_size_block,
+		cache_size_block != 1 ? "s" : "");
 }
 
 int probe_device(struct device *dev, struct probe_results *results,

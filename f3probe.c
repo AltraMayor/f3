@@ -287,10 +287,12 @@ static int unit_test(const char *filename)
 		/* Report */
 		printf("Test %i\t\ttype/real size/fake size/module/cache size/block size\n",
 			i + 1);
-		printf("\t\t%s/%.2f %s/%.2f %s/2^%i Byte/%.2f %s/2^%i Byte\n",
+		printf("\t\t%s/%.2f %s/%.2f %s/2^%i Byte%s/%.2f %s/2^%i Byte%s\n",
 			fake_type_to_name(origin_type),
 			f_real, unit_real, f_fake, unit_fake, item->wrap,
-			f_cache, unit_cache, item->block_order);
+			item->wrap != 0 ? "s" : "",
+			f_cache, unit_cache, item->block_order,
+			item->block_order != 0 ? "s" : "");
 		if (results.real_size_byte == item->real_size_byte &&
 			results.announced_size_byte == item->fake_size_byte &&
 			results.wrap == item->wrap &&
@@ -301,7 +303,8 @@ static int unit_test(const char *filename)
 				results.block_order) &&
 			results.block_order == item->block_order) {
 			success++;
-			printf("\t\tPerfect!\tMax # of written blocks: %i\n\n",
+			printf("\t\tPerfect!\tMax # of written block%s: %i\n\n",
+				max_written_blocks != 1 ? "s" : "",
 				max_written_blocks);
 		} else {
 			double ret_f_real = results.real_size_byte;
@@ -311,12 +314,14 @@ static int unit_test(const char *filename)
 			const char *ret_unit_real = adjust_unit(&ret_f_real);
 			const char *ret_unit_fake = adjust_unit(&ret_f_fake);
 			const char *ret_unit_cache = adjust_unit(&ret_f_cache);
-			printf("\tError\t%s/%.2f %s/%.2f %s/2^%i Byte/%.2f %s/2^%i Byte\n\n",
+			printf("\tError\t%s/%.2f %s/%.2f %s/2^%i Byte%s/%.2f %s/2^%i Byte%s\n\n",
 				fake_type_to_name(fake_type),
 				ret_f_real, ret_unit_real,
 				ret_f_fake, ret_unit_fake, results.wrap,
+				results.wrap != 0 ? "s" : "",
 				ret_f_cache, ret_unit_cache,
-				results.block_order);
+				results.block_order,
+				results.block_order != 0 ? "s" : "");
 		}
 	}
 
