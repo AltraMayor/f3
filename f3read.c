@@ -361,7 +361,7 @@ static void iterate_files(const char *path, const long *files,
 	 * in @files is important since @end_at could be very large.
 	 */
 
-	print_stats(&tot_stats, SECTOR_SIZE, "sectors");
+	print_stats(&tot_stats, SECTOR_SIZE, "sector");
 	if (or_missing_file)
 		printf("WARNING: Not all F3 files in the range %li to %li are available\n",
 			start_at + 1, number);

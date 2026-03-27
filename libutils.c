@@ -47,16 +47,18 @@ uint64_t clp2(uint64_t x)
 
 const char *adjust_unit(double *ptr_bytes)
 {
-	const char *units[] = { "Byte", "KB", "MB", "GB", "TB", "PB", "EB" };
-	int i = 0;
+	const char *units[] = {"Bytes", "KB", "MB", "GB", "TB", "PB", "EB"};
+	unsigned int i = 0;
 	double final = *ptr_bytes;
 
-	while (i < 7 && final >= 1024) {
+	while (i < DIM(units) && final >= 1024) {
 		final /= 1024;
 		i++;
 	}
 	*ptr_bytes = final;
-	return units[i];
+	if (i > 0 || final != 1.0)
+		return units[i];
+	return "Byte";
 }
 
 int nsec_to_str(uint64_t nsec, char *str)
@@ -331,10 +333,10 @@ enum block_state validate_block_update_stats(const void *buf, int block_order,
 static void print_stat(const char *prefix, uint64_t count,
 	int block_size, const char *unit_name)
 {
-	double f = (double) count * block_size;
+	double f = (double)count * block_size;
 	const char *unit = adjust_unit(&f);
-	printf("%s %.2f %s (%" PRIu64 " %s)\n",
-		prefix, f, unit, count, unit_name);
+	printf("%s %.2f %s (%" PRIu64 " %s%s)\n",
+		prefix, f, unit, count, unit_name, count != 1 ? "s" : "");
 }
 
 void print_stats(const struct block_stats *stats, int block_size,
