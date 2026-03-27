@@ -820,7 +820,8 @@ void report_probed_cache(unsigned int indent, progress_cb cb,
 }
 
 int probe_device(struct device *dev, struct probe_results *results,
-	progress_cb cb, int show_progress)
+	progress_cb cb, int show_progress,
+	long max_read_rate, long max_write_rate)
 {
 	const uint64_t dev_size_byte = dev_get_size_byte(dev);
 	const int block_order = dev_get_block_order(dev);
@@ -836,9 +837,9 @@ int probe_device(struct device *dev, struct probe_results *results,
 	/* We initialize total_size to 0 because inc_total_size() is called
 	 * to update it when new blocks become available.
 	 */
-	init_flow(&rwi.seqw_fw, block_size, 0, 0, fw_cb, 0, NULL);
-	init_flow(&rwi.randw_fw, block_size, 0, 0, fw_cb, 0, NULL);
-	init_flow(&rwi.randr_fw, block_size, 0, 0, fw_cb, 0, NULL);
+	init_flow(&rwi.seqw_fw, block_size, 0, max_write_rate, fw_cb, 0, NULL);
+	init_flow(&rwi.randw_fw, block_size, 0, max_write_rate, fw_cb, 0, NULL);
+	init_flow(&rwi.randr_fw, block_size, 0, max_read_rate, fw_cb, 0, NULL);
 
 	/* @left_pos must point to a good block.
 	 * We just point to the last block of the first 1MB of the card
