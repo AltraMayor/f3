@@ -56,6 +56,10 @@ static struct argp_option options[] = {
 		"Show detailed progress",		0},
 	{"show-progress",	'p',	"NUM",		0,
 		"Show progress if NUM is not zero",			0},
+	{"max-read-rate",	'r',	"KB/s",		0,
+		"Maximum read rate",					0},
+	{"max-write-rate",	'w',	"KB/s",		0,
+		"Maximum write rate",					0},
 	{ 0 }
 };
 
@@ -73,6 +77,10 @@ struct args {
 	bool		time_ops;
 	bool		verbose;
 	bool		show_progress;
+
+	/* Flow control. */
+	long		max_read_rate;
+	long		max_write_rate;
 
 	/* Geometry. */
 	uint64_t	real_size_byte;
@@ -171,6 +179,22 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 	case 'p':
 		args->show_progress = !!arg_to_ll_bytes(state, arg);
+		break;
+
+	case 'r':
+		ll = arg_to_ll_bytes(state, arg);
+		if (ll <= 0)
+			argp_error(state,
+				"KB/s must be greater than zero");
+		args->max_read_rate = ll;
+		break;
+
+	case 'w':
+		ll = arg_to_ll_bytes(state, arg);
+		if (ll <= 0)
+			argp_error(state,
+				"KB/s must be greater than zero");
+		args->max_write_rate = ll;
 		break;
 
 	case ARGP_KEY_INIT:
@@ -278,7 +302,7 @@ static int unit_test(const char *filename)
 			item->cache_order, item->strict_cache, false);
 		assert(dev);
 		max_written_blocks = probe_max_written_blocks(dev);
-		assert(!probe_device(dev, &results, dummy_cb, false));
+		assert(!probe_device(dev, &results, dummy_cb, false, 0, 0));
 		free_device(dev);
 		fake_type = dev_param_to_type(results.real_size_byte,
 			results.announced_size_byte, results.wrap,
@@ -427,7 +451,8 @@ static int test_device(struct args *args)
 	 */
 	assert(!probe_device(dev, &results,
 		args->verbose ? printf_flush_cb : dummy_cb,
-		args->show_progress));
+		args->show_progress,
+		args->max_read_rate, args->max_write_rate));
 	assert(!gettimeofday(&t2, NULL));
 
 	if (args->verbose) {
@@ -546,6 +571,8 @@ int main(int argc, char **argv)
 		.verbose	= false,
 		/* If stdout isn't a terminal, suppress progress. */
 		.show_progress	= isatty(STDOUT_FILENO),
+		.max_read_rate	= 0,
+		.max_write_rate = 0,
 		.real_size_byte	= 1ULL << 31,
 		.fake_size_byte	= 1ULL << 34,
 		.wrap		= 31,

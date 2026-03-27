@@ -37,6 +37,7 @@ struct probe_results {
 };
 
 int probe_device(struct device *dev, struct probe_results *results,
-	progress_cb cb, int show_progress);
+	progress_cb cb, int show_progress,
+	long max_read_rate, long max_write_rate);
 
 #endif	/* HEADER_LIBPROBE_H */
