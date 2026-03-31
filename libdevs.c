@@ -1180,8 +1180,7 @@ static int sdev_load_blocks(struct safe_device *sdev,
 		uint64_t first_pos, uint64_t last_pos)
 {
 	const int block_order = dev_get_block_order(sdev->shadow_dev);
-	char *block_buf = (char *)align_mem(sdev->saved_blocks, block_order) +
-		(sdev->sb_n << block_order);
+	char *block_buf = sdev->saved_blocks + (sdev->sb_n << block_order);
 	int rc;
 
 	assert(sdev->sb_n + (last_pos - first_pos + 1) < sdev->sb_max);
@@ -1282,7 +1281,7 @@ void sdev_recover(struct device *dev, uint64_t very_last_pos)
 {
 	struct safe_device *sdev = dev_sdev(dev);
 	const int block_order = dev_get_block_order(sdev->shadow_dev);
-	char *first_block = align_mem(sdev->saved_blocks, block_order);
+	char *first_block = sdev->saved_blocks;
 	uint64_t i, first_pos, last_pos;
 	char *start_buf;
 	int has_seq;
@@ -1358,14 +1357,15 @@ struct device *create_safe_device(struct device *dev, uint64_t max_blocks,
 {
 	struct safe_device *sdev;
 	const int block_order = dev_get_block_order(dev);
+	const int block_size = dev_get_block_size(dev);
 	uint64_t length;
 
 	sdev = malloc(sizeof(*sdev));
 	if (!sdev)
 		goto error;
 
-	length = align_head(block_order) + (max_blocks << block_order);
-	sdev->saved_blocks = malloc(length);
+	length = max_blocks << block_order;
+	sdev->saved_blocks = aligned_alloc(block_size, length);
 	if (!sdev->saved_blocks)
 		goto sdev;
 
