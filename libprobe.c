@@ -710,11 +710,6 @@ static uint64_t drive_mid_block(const struct device *dev)
 	return clp2((dev_size_byte >> block_order) / 2);
 }
 
-static uint64_t uint64_min(uint64_t a, uint64_t b)
-{
-	return a < b ? a : b;
-}
-
 uint64_t probe_max_written_blocks(const struct device *dev)
 {
 	const int block_order = dev_get_block_order(dev);
@@ -723,7 +718,7 @@ uint64_t probe_max_written_blocks(const struct device *dev)
 
 	return
 		/* find_cache_size() */
-		uint64_min(
+		MIN(
 			/* The maximum number of written blocks. */
 			(MAX_CACHE_SIZE_BYTE >> block_order) * 2 - 1,
 			/* High half of the drive. */

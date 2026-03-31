@@ -11,6 +11,16 @@
 #define UNUSED(x)	((void)x)
 #define DIM(x)		(sizeof(x) / sizeof((x)[0]))
 
+static inline uint64_t uint64_min(uint64_t a, uint64_t b)
+{
+	return a < b ? a : b;
+}
+
+#define MIN(a, b) _Generic((a),		\
+	uint64_t: uint64_min,		\
+	unsigned long long: uint64_min	\
+	)(a, b)
+
 typedef void (*progress_cb)(unsigned int indent, const char *format, ...);
 
 void printf_cb(unsigned int indent, const char *format, ...);
