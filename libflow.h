@@ -2,6 +2,7 @@
 #define HEADER_LIBFLOW_H
 
 #include <assert.h>
+#include <stdalign.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -118,7 +119,10 @@ struct dynamic_buffer {
 	char   *buf;
 	size_t len;
 	bool   max_buf;
-	char   backup_buf[1 << 21]; /* 2MB */
+	/* Ensure that backup_buf has the same memory alignment as
+	 * it would have, had it been returned by malloc().
+	 */
+	alignas(max_align_t) char backup_buf[1 << 21]; /* 2MB */
 };
 
 static inline void dbuf_init(struct dynamic_buffer *dbuf)
