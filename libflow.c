@@ -18,36 +18,35 @@
 /* Apple Macintosh / OpenBSD */
 #if (__APPLE__ && __MACH__) || defined(__OpenBSD__)
 
-#include <unistd.h>
-static inline void ussleep(double wait_us)
+static void nssleep(uint64_t wait_ns)
 {
-	assert(!usleep(wait_us));
+	const lldiv_t div = lldiv(wait_ns, 1000000000);
+	const struct timespec req = {
+		.tv_sec = div.quot,
+		.tv_nsec = div.rem,
+	};
+	assert(!nanosleep(&req, NULL));
 }
 
 #else	/* Everyone else */
 
-#include <time.h> /* For clock_gettime() and clock_nanosleep(). */
-static void ussleep(double wait_us)
+static void nssleep(uint64_t wait_ns)
 {
 	struct timespec req;
+	lldiv_t div;
 	int ret;
 
 	assert(!clock_gettime(CLOCK_MONOTONIC, &req));
 
-	/* Add @wait_us to @req. */
-	if (wait_us > 1000000) {
-		time_t sec = wait_us / 1000000;
-		wait_us -= sec * 1000000;
-		assert(wait_us > 0);
-		req.tv_sec += sec;
-	}
-	req.tv_nsec += wait_us * 1000;
+	/* Add @wait_ns to @req. */
+	div = lldiv(wait_ns, 1000000000);
+	req.tv_sec += div.quot;
+	req.tv_nsec += div.rem;
 
 	/* Round @req up. */
 	if (req.tv_nsec >= 1000000000) {
-		ldiv_t result = ldiv(req.tv_nsec, 1000000000);
-		req.tv_sec += result.quot;
-		req.tv_nsec = result.rem;
+		req.tv_sec++;
+		req.tv_nsec -= 1000000000;
 	}
 
 	do {
@@ -58,7 +57,7 @@ static void ussleep(double wait_us)
 	assert(ret == 0);
 }
 
-#endif	/* ussleep() */
+#endif	/* nssleep() */
 
 static inline void move_to_inc_at_start(struct flow *fw)
 {
@@ -337,7 +336,7 @@ int measure(int fd, struct flow *fw, long processed)
 		 * Round wait_ns, so it operates as an integer when used in
 		 * nanoseconds.
 		 */
-		double wait_ns = round(
+		uint64_t wait_ns = round(
 			(bytes_g - delay_ns * fw->max_process_rate) /
 			fw->max_process_rate);
 
@@ -354,7 +353,6 @@ int measure(int fd, struct flow *fw, long processed)
 		 *
 		 * Therefore, wait_ns cannot be negative.
 		 */
-		assert(wait_ns >= 0);
 
 		if (delay_ns + wait_ns < fw->delay_ns) {
 			/* In this case, There is a factor f > 1 that
@@ -371,7 +369,7 @@ int measure(int fd, struct flow *fw, long processed)
 
 		if (wait_ns > 0) {
 			/* Slow down. */
-			ussleep(wait_ns / 1000.);
+			nssleep(wait_ns);
 
 			/* Adjust measurements. */
 			delay_ns += wait_ns;
