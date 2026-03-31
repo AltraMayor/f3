@@ -272,13 +272,11 @@ static const struct unit_test_item ftype_to_params[] = {
 	{0,		1ULL << 40,	40,	SECTOR_ORDER,	21,	false},
 };
 
-#define UNIT_TEST_N_CASES \
-	((int)(sizeof(ftype_to_params)/sizeof(struct unit_test_item)))
-
 static int unit_test(const char *filename)
 {
-	int i, success = 0;
-	for (i = 0; i < UNIT_TEST_N_CASES; i++) {
+	const unsigned int n_cases = DIM(ftype_to_params);
+	unsigned int i, success = 0;
+	for (i = 0; i < n_cases; i++) {
 		const struct unit_test_item *item = &ftype_to_params[i];
 		enum fake_type origin_type = dev_param_to_type(
 			item->real_size_byte, item->fake_size_byte,
@@ -294,7 +292,7 @@ static int unit_test(const char *filename)
 
 		struct probe_results results;
 		enum fake_type fake_type;
-		int max_written_blocks;
+		uint64_t max_written_blocks;
 		struct device *dev;
 
 		dev = create_file_device(filename, item->real_size_byte,
@@ -327,7 +325,7 @@ static int unit_test(const char *filename)
 				results.block_order) &&
 			results.block_order == item->block_order) {
 			success++;
-			printf("\t\tPerfect!\tMax # of written block%s: %i\n\n",
+			printf("\t\tPerfect!\tMax # of written block%s: %" PRIu64 "\n\n",
 				max_written_blocks != 1 ? "s" : "",
 				max_written_blocks);
 		} else {
@@ -350,11 +348,11 @@ static int unit_test(const char *filename)
 	}
 
 	printf("SUMMARY: ");
-	if (success == UNIT_TEST_N_CASES)
+	if (success == n_cases)
 		printf("Perfect!\n");
 	else
-		printf("Missed %i tests out of %i\n",
-			UNIT_TEST_N_CASES - success, UNIT_TEST_N_CASES);
+		printf("Missed %u tests out of %u\n",
+			n_cases - success, n_cases);
 	return 0;
 }
 
