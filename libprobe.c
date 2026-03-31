@@ -20,8 +20,8 @@ static int _write_blocks(struct device *dev, const char *buf,
 	if (dev_write_blocks(dev, buf, first_pos, last_pos) &&
 			dev_write_blocks(dev, buf, first_pos, last_pos)) {
 		clear_progress(fw);
-		cb(indent, "I/O ERROR: Write error at blocks [%" PRIu64 ", %" PRIu64 "]!\n",
-			first_pos, last_pos);
+		cb(indent, "I/O ERROR: Write error at block%s [%" PRIu64 ", %\" PRIu64 \"]!\n",
+			first_pos != last_pos ? "s" : "", first_pos, last_pos);
 		return true;
 	}
 	return false;
@@ -395,8 +395,9 @@ static int probabilistic_test(struct device *dev,
 
 	fill_samples(samples, &n_samples, first_pos, last_pos, false,
 		&is_linear);
-	cb(indent, "Sampling %" PRIu32 " blocks from blocks [%" PRIu64 ", %" PRIu64 "]\n",
-		n_samples, first_pos, last_pos);
+	cb(indent, "Sampling %" PRIu32 " block%s from block%s [%" PRIu64 ", %" PRIu64 "]\n",
+		n_samples, n_samples != 1 ? "s" : "",
+		first_pos != last_pos ? "s" : "", first_pos, last_pos);
 	if (find_first_bad_block(dev, samples, n_samples, &any_bad, &bad_pos,
 			rwi, cb, indent))
 		return true;
@@ -439,8 +440,9 @@ static int find_a_bad_block(struct device *dev, uint32_t n_samples,
 	 */
 	fill_samples(samples, &n_samples, left_pos + 1, *pright_pos - 1, true,
 		&is_linear);
-	cb(indent, "## Sampling %" PRIu32 " blocks from blocks (%" PRIu64 ", %" PRIu64 ")\n",
-		n_samples, left_pos, *pright_pos);
+	cb(indent, "### Sampling %" PRIu32 " block%s from block%s (%" PRIu64 ", %" PRIu64 ")\n",
+		n_samples, n_samples != 1 ? "s" : "",
+		*pright_pos != left_pos + 2 ? "s" : "", left_pos, *pright_pos);
 
 	cb(indent + 1, "Writing random blocks\n");
 
@@ -498,7 +500,7 @@ static int sampling_probe(struct device *dev,
 	bool phase1 = true;
 
 	assert(SAMPLING_MAX >= SAMPLING_MIN);
-	cb(indent, "# Sampling\n");
+	cb(indent, "## Sampling\n");
 
 	while (*pright_pos > left_pos + n_samples + 1) {
 		if (find_a_bad_block(dev, n_samples, left_pos, pright_pos,
@@ -530,8 +532,9 @@ static void report_cache_size_test(unsigned int indent, progress_cb cb,
 {
 	double f_size = (last_pos - first_pos + 1) * dev_get_block_size(dev);
 	const char *unit = adjust_unit(&f_size);
-	cb(indent, "## Testing cache size: %.2f %s; Blocks [%" PRIu64 ", %" PRIu64 "]\n",
-		f_size, unit, first_pos, last_pos);
+	cb(indent, "### Testing cache size: %.2f %s; Block%s [%" PRIu64 ", %" PRIu64 "]\n",
+		f_size, unit, first_pos != last_pos ? "s" : "",
+		first_pos, last_pos);
 }
 
 /* This constant needs to be a power of 2 and larger than 2^block_order. */
@@ -547,7 +550,7 @@ static int find_cache_size(struct device *dev, const uint64_t left_pos,
 	uint64_t final_write_target = MAX_CACHE_SIZE_BYTE >> block_order;
 	uint64_t first_pos = *pright_pos;
 
-	cb(indent, "# Find cache size\n");
+	cb(indent, "## Find cache size\n");
 
 	assert(write_target > 0);
 	assert(write_target < final_write_target);
@@ -577,8 +580,8 @@ static int find_cache_size(struct device *dev, const uint64_t left_pos,
 		/* Write @write_target blocks before
 		 * the previously written blocks.
 		 */
-		cb(indent + 2, "Writing blocks [%" PRIu64 ", %" PRIu64 "]\n",
-			first_pos, last_pos);
+		cb(indent + 2, "Writing block%s [%" PRIu64 ", %" PRIu64 "]\n",
+			first_pos != last_pos ? "s" : "", first_pos, last_pos);
 		if (write_blocks(dev, first_pos, last_pos, rwi, cb, indent + 2))
 			goto bad;
 
@@ -640,7 +643,7 @@ static int find_wrap(struct device *dev,
 	uint32_t i;
 	enum block_state bs;
 
-	cb(indent, "# Find module\n");
+	cb(indent, "## Find module\n");
 
 	/*
 	 *	Basis
@@ -667,8 +670,8 @@ static int find_wrap(struct device *dev,
 	 *	Inductive step
 	 */
 
-	cb(indent + 1, "Probing module (reading %" PRIu32 " blocks)\n",
-		n_samples);
+	cb(indent + 1, "Probing module (reading %" PRIu32 " block%s)\n",
+		n_samples, n_samples != 1 ? "s" : "");
 
 	block_order = dev_get_block_order(dev);
 	expected_offset = good_block << block_order;
@@ -792,8 +795,9 @@ void report_probed_size(unsigned int indent, progress_cb cb,
 {
 	double f = bytes;
 	const char *unit = adjust_unit(&f);
-	cb(indent, "%s %.2f %s (%" PRIu64 " blocks)\n",
-		prefix, f, unit, bytes >> block_order);
+	uint64_t blocks = bytes >> block_order;
+	cb(indent, "%s %.2f %s (%" PRIu64 " block%s)\n",
+		prefix, f, unit, blocks, blocks != 1 ? "s" : "");
 }
 
 void report_probed_order(unsigned int indent, progress_cb cb,
@@ -801,7 +805,8 @@ void report_probed_order(unsigned int indent, progress_cb cb,
 {
 	double f = (1ULL << order);
 	const char *unit = adjust_unit(&f);
-	cb(indent, "%s %.2f %s (2^%i Bytes)\n", prefix, f, unit, order);
+	cb(indent, "%s %.2f %s (2^%i Byte%s)\n", prefix, f, unit, order,
+		order != 0 ? "s" : "");
 }
 
 void report_probed_cache(unsigned int indent, progress_cb cb,
@@ -809,13 +814,14 @@ void report_probed_cache(unsigned int indent, progress_cb cb,
 {
 	double f = (cache_size_block << block_order);
 	const char *unit = adjust_unit(&f);
-	cb(indent, "%s %.2f %s (%" PRIu64 " blocks)\n",
-		prefix, f, unit, cache_size_block);
+	cb(indent, "%s %.2f %s (%" PRIu64 " block%s)\n",
+		prefix, f, unit, cache_size_block,
+		cache_size_block != 1 ? "s" : "");
 }
 
-int probe_device(struct device *dev, uint64_t *preal_size_byte,
-	uint64_t *pannounced_size_byte, int *pwrap, uint64_t *pcache_size_block,
-	int *pblock_order, progress_cb cb, int show_progress)
+int probe_device(struct device *dev, struct probe_results *results,
+	progress_cb cb, int show_progress,
+	long max_read_rate, long max_write_rate)
 {
 	const uint64_t dev_size_byte = dev_get_size_byte(dev);
 	const int block_order = dev_get_block_order(dev);
@@ -831,9 +837,9 @@ int probe_device(struct device *dev, uint64_t *preal_size_byte,
 	/* We initialize total_size to 0 because inc_total_size() is called
 	 * to update it when new blocks become available.
 	 */
-	init_flow(&rwi.seqw_fw, block_size, 0, 0, fw_cb, 0, NULL);
-	init_flow(&rwi.randw_fw, block_size, 0, 0, fw_cb, 0, NULL);
-	init_flow(&rwi.randr_fw, block_size, 0, 0, fw_cb, 0, NULL);
+	init_flow(&rwi.seqw_fw, block_size, 0, max_write_rate, fw_cb, 0, NULL);
+	init_flow(&rwi.randw_fw, block_size, 0, max_write_rate, fw_cb, 0, NULL);
+	init_flow(&rwi.randr_fw, block_size, 0, max_read_rate, fw_cb, 0, NULL);
 
 	/* @left_pos must point to a good block.
 	 * We just point to the last block of the first 1MB of the card
@@ -895,20 +901,36 @@ int probe_device(struct device *dev, uint64_t *preal_size_byte,
 		right_pos = 0;
 	}
 
-	*preal_size_byte = right_pos << block_order;
-	*pwrap = wrap;
+	results->real_size_byte = right_pos << block_order;
+	results->wrap = wrap;
 	goto out;
 
 bad:
-	*preal_size_byte = 0;
-	*pwrap = ceiling_log2(dev_size_byte);
+	results->real_size_byte = 0;
+	results->wrap = ceiling_log2(dev_size_byte);
 
 out:
 	dbuf_free(&rwi.seqw_dbuf);
 	report_probed_size(0, cb, "=> Usable size:",
-		*preal_size_byte, block_order);
-	*pannounced_size_byte = dev_size_byte;
-	*pcache_size_block = rwi.cache_size_block;
-	*pblock_order = block_order;
+		results->real_size_byte, block_order);
+	cb(0, "# I/O average speeds\n");
+	fw_get_measurements(&rwi.seqw_fw, &results->seqw_blocks,
+		&results->seqw_time_ns);
+	fw_get_measurements(&rwi.randw_fw, &results->randw_blocks,
+		&results->randw_time_ns);
+	fw_get_measurements(&rwi.randr_fw, &results->randr_blocks,
+		&results->randr_time_ns);
+	report_io_speed(0, cb, "=> Sequential write:",
+		results->seqw_blocks, "block", results->seqw_time_ns,
+		block_order);
+	report_io_speed(0, cb, "=> Random write:",
+		results->randw_blocks, "block", results->randw_time_ns,
+		block_order);
+	report_io_speed(0, cb, "=> Random read:",
+		results->randr_blocks, "block", results->randr_time_ns,
+		block_order);
+	results->announced_size_byte = dev_size_byte;
+	results->cache_size_block = rwi.cache_size_block;
+	results->block_order = block_order;
 	return false;
 }

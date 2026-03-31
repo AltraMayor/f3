@@ -32,7 +32,7 @@ const char *adjust_unit(double *ptr_bytes);
 
 #define TIME_STR_SIZE	128
 
-int usec_to_str(uint64_t usec, char *str);
+int nsec_to_str(uint64_t nsec, char *str);
 
 /*
  * The functions align_head() and align_mem() are used to align pointers.
@@ -109,5 +109,9 @@ static inline uint64_t diff_timespec_ns(const struct timespec *t1,
 
 void print_stats(const struct block_stats *stats, int block_size,
 	const char *unit_name);
+
+void report_io_speed(unsigned int indent, progress_cb cb, const char *prefix,
+	uint64_t blocks, const char *block_unit, uint64_t time_ns,
+	int block_order);
 
 #endif	/* HEADER_LIBUTILS_H */

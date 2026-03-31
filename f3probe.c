@@ -56,6 +56,10 @@ static struct argp_option options[] = {
 		"Show detailed progress",		0},
 	{"show-progress",	'p',	"NUM",		0,
 		"Show progress if NUM is not zero",			0},
+	{"max-read-rate",	'r',	"KB/s",		0,
+		"Maximum read rate",					0},
+	{"max-write-rate",	'w',	"KB/s",		0,
+		"Maximum write rate",					0},
 	{ 0 }
 };
 
@@ -73,6 +77,10 @@ struct args {
 	bool		time_ops;
 	bool		verbose;
 	bool		show_progress;
+
+	/* Flow control. */
+	long		max_read_rate;
+	long		max_write_rate;
 
 	/* Geometry. */
 	uint64_t	real_size_byte;
@@ -173,6 +181,22 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		args->show_progress = !!arg_to_ll_bytes(state, arg);
 		break;
 
+	case 'r':
+		ll = arg_to_ll_bytes(state, arg);
+		if (ll <= 0)
+			argp_error(state,
+				"KB/s must be greater than zero");
+		args->max_read_rate = ll;
+		break;
+
+	case 'w':
+		ll = arg_to_ll_bytes(state, arg);
+		if (ll <= 0)
+			argp_error(state,
+				"KB/s must be greater than zero");
+		args->max_write_rate = ll;
+		break;
+
 	case ARGP_KEY_INIT:
 		args->filename = NULL;
 		break;
@@ -268,9 +292,9 @@ static int unit_test(const char *filename)
 		const char *unit_fake = adjust_unit(&f_fake);
 		const char *unit_cache = adjust_unit(&f_cache);
 
+		struct probe_results results;
 		enum fake_type fake_type;
-		uint64_t real_size_byte, announced_size_byte, cache_size_block;
-		int wrap, block_order, max_written_blocks;
+		int max_written_blocks;
 		struct device *dev;
 
 		dev = create_file_device(filename, item->real_size_byte,
@@ -278,44 +302,50 @@ static int unit_test(const char *filename)
 			item->cache_order, item->strict_cache, false);
 		assert(dev);
 		max_written_blocks = probe_max_written_blocks(dev);
-		assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
-			&wrap, &cache_size_block, &block_order, dummy_cb,
-			false));
+		assert(!probe_device(dev, &results, dummy_cb, false, 0, 0));
 		free_device(dev);
-		fake_type = dev_param_to_type(real_size_byte,
-			announced_size_byte, wrap, block_order);
+		fake_type = dev_param_to_type(results.real_size_byte,
+			results.announced_size_byte, results.wrap,
+			results.block_order);
 
 		/* Report */
 		printf("Test %i\t\ttype/real size/fake size/module/cache size/block size\n",
 			i + 1);
-		printf("\t\t%s/%.2f %s/%.2f %s/2^%i Byte/%.2f %s/2^%i Byte\n",
+		printf("\t\t%s/%.2f %s/%.2f %s/2^%i Byte%s/%.2f %s/2^%i Byte%s\n",
 			fake_type_to_name(origin_type),
 			f_real, unit_real, f_fake, unit_fake, item->wrap,
-			f_cache, unit_cache, item->block_order);
-		if (real_size_byte == item->real_size_byte &&
-			announced_size_byte == item->fake_size_byte &&
-			wrap == item->wrap &&
+			item->wrap != 0 ? "s" : "",
+			f_cache, unit_cache, item->block_order,
+			item->block_order != 0 ? "s" : "");
+		if (results.real_size_byte == item->real_size_byte &&
+			results.announced_size_byte == item->fake_size_byte &&
+			results.wrap == item->wrap &&
 			/* probe_device() returns an upper bound of
 			 * the cache size.
 			 */
-			item_cache_byte <= (cache_size_block << block_order) &&
-			block_order == item->block_order) {
+			item_cache_byte <= (results.cache_size_block <<
+				results.block_order) &&
+			results.block_order == item->block_order) {
 			success++;
-			printf("\t\tPerfect!\tMax # of written blocks: %i\n\n",
+			printf("\t\tPerfect!\tMax # of written block%s: %i\n\n",
+				max_written_blocks != 1 ? "s" : "",
 				max_written_blocks);
 		} else {
-			double ret_f_real = real_size_byte;
-			double ret_f_fake = announced_size_byte;
-			double ret_f_cache = cache_size_block << block_order;
+			double ret_f_real = results.real_size_byte;
+			double ret_f_fake = results.announced_size_byte;
+			double ret_f_cache = results.cache_size_block <<
+				results.block_order;
 			const char *ret_unit_real = adjust_unit(&ret_f_real);
 			const char *ret_unit_fake = adjust_unit(&ret_f_fake);
 			const char *ret_unit_cache = adjust_unit(&ret_f_cache);
-			printf("\tError\t%s/%.2f %s/%.2f %s/2^%i Byte/%.2f %s/2^%i Byte\n\n",
+			printf("\tError\t%s/%.2f %s/%.2f %s/2^%i Byte%s/%.2f %s/2^%i Byte%s\n\n",
 				fake_type_to_name(fake_type),
 				ret_f_real, ret_unit_real,
-				ret_f_fake, ret_unit_fake, wrap,
+				ret_f_fake, ret_unit_fake, results.wrap,
+				results.wrap != 0 ? "s" : "",
 				ret_f_cache, ret_unit_cache,
-				block_order);
+				results.block_order,
+				results.block_order != 0 ? "s" : "");
 		}
 	}
 
@@ -342,31 +372,38 @@ static inline void report_order(const char *prefix, int order)
 static inline void report_cache(const char *prefix, uint64_t cache_size_block,
 	int block_order)
 {
-	report_probed_cache(0, printf_cb, prefix, cache_size_block, block_order);
+	report_probed_cache(0, printf_cb, prefix, cache_size_block,
+		block_order);
+}
+
+static inline void report_speed(const char *prefix, uint64_t blocks,
+	uint64_t time_ns, int block_order)
+{
+	report_io_speed(0, printf_cb, prefix, blocks, "block", time_ns,
+		block_order);
 }
 
 static void report_probe_time(const char *prefix, uint64_t usec)
 {
 	char str[TIME_STR_SIZE];
-	usec_to_str(usec, str);
+	nsec_to_str(usec * 1000ULL, str);
 	printf("%s %s\n", prefix, str);
 }
 
 static void report_ops(const char *op, uint64_t count, uint64_t time_us)
 {
 	char str1[TIME_STR_SIZE], str2[TIME_STR_SIZE];
-	usec_to_str(time_us, str1);
-	usec_to_str(count > 0 ? time_us / count : 0, str2);
+	nsec_to_str(time_us * 1000ULL, str1);
+	nsec_to_str(count > 0 ? (time_us * 1000ULL) / count : 0, str2);
 	printf("%10s: %s / %" PRIu64 " = %s\n", op, str1, count, str2);
 }
 
 static int test_device(struct args *args)
 {
 	struct timeval t1, t2;
+	struct probe_results results;
 	struct device *dev, *pdev, *sdev;
 	enum fake_type fake_type;
-	uint64_t real_size_byte, announced_size_byte, cache_size_block;
-	int wrap, block_order;
 	uint64_t read_count, read_time_us;
 	uint64_t write_count, write_time_us;
 	uint64_t reset_count, reset_time_us;
@@ -412,10 +449,10 @@ static int test_device(struct args *args)
 	/* XXX Have a better error handling to recover
 	 * the state of the drive.
 	 */
-	assert(!probe_device(dev, &real_size_byte, &announced_size_byte,
-		&wrap, &cache_size_block, &block_order,
+	assert(!probe_device(dev, &results,
 		args->verbose ? printf_flush_cb : dummy_cb,
-		args->show_progress));
+		args->show_progress,
+		args->max_read_rate, args->max_write_rate));
 	assert(!gettimeofday(&t2, NULL));
 
 	if (args->verbose) {
@@ -433,7 +470,8 @@ static int test_device(struct args *args)
 			&write_count, &write_time_us,
 			&reset_count, &reset_time_us);
 	if (sdev) {
-		uint64_t very_last_pos = real_size_byte >> block_order;
+		uint64_t very_last_pos = results.real_size_byte >>
+			results.block_order;
 		printf("Probe finished, recovering blocks...");
 		fflush(stdout);
 		if (very_last_pos > 0) {
@@ -449,8 +487,9 @@ static int test_device(struct args *args)
 	if (args->save)
 		printf("\n");
 
-	fake_type = dev_param_to_type(real_size_byte, announced_size_byte,
-		wrap, block_order);
+	fake_type = dev_param_to_type(results.real_size_byte,
+		results.announced_size_byte, results.wrap,
+		results.block_order);
 	switch (fake_type) {
 	case FKTY_GOOD:
 		printf("Good news: The device `%s' is the real thing\n",
@@ -465,8 +504,9 @@ static int test_device(struct args *args)
 	case FKTY_LIMBO:
 	case FKTY_WRAPAROUND:
 	case FKTY_CHAIN: {
-		uint64_t last_good_sector = (real_size_byte >> SECTOR_ORDER) - 1;
-		assert(block_order >= SECTOR_ORDER);
+		uint64_t last_good_sector = (results.real_size_byte >>
+			SECTOR_ORDER) - 1;
+		assert(results.block_order >= SECTOR_ORDER);
 		printf("Bad news: The device `%s' is a counterfeit of type %s\n\n"
 			"You can \"fix\" this device using the following command:\n"
 			"f3fix --last-sec=%" PRIu64 " %s\n",
@@ -481,14 +521,31 @@ static int test_device(struct args *args)
 	}
 
 	printf("\nDevice geometry:\n");
-	  report_size("\t         *Usable* size:", real_size_byte,
-		block_order);
-	  report_size("\t        Announced size:", announced_size_byte,
-		block_order);
-	 report_order("\t                Module:", wrap);
-	 report_cache("\tApproximate cache size:", cache_size_block,
-		block_order);
-	 report_order("\t   Physical block size:", block_order);
+	  report_size("\t         *Usable* size:", results.real_size_byte,
+		results.block_order);
+	  report_size("\t        Announced size:", results.announced_size_byte,
+		results.block_order);
+	 report_order("\t                Module:", results.wrap);
+	 report_cache("\tApproximate cache size:", results.cache_size_block,
+		results.block_order);
+	 report_order("\t   Physical block size:", results.block_order);
+
+	if (!args->save) {
+		/* Only report I/O speeds when flag --destructive is used
+		 * because the safe device disrupts the measurements.
+		 */
+		printf("\nI/O average speeds:\n");
+		report_speed("\tSequential write:",
+			results.seqw_blocks, results.seqw_time_ns,
+			results.block_order);
+		report_speed("\t    Random write:",
+			results.randw_blocks, results.randw_time_ns,
+			results.block_order);
+		report_speed("\t     Random read:",
+			results.randr_blocks, results.randr_time_ns,
+			results.block_order);
+	}
+
 	report_probe_time("\nProbe time:", diff_timeval_us(&t1, &t2));
 
 	if (args->time_ops) {
@@ -514,6 +571,8 @@ int main(int argc, char **argv)
 		.verbose	= false,
 		/* If stdout isn't a terminal, suppress progress. */
 		.show_progress	= isatty(STDOUT_FILENO),
+		.max_read_rate	= 0,
+		.max_write_rate = 0,
 		.real_size_byte	= 1ULL << 31,
 		.fake_size_byte	= 1ULL << 34,
 		.wrap		= 31,

@@ -320,21 +320,18 @@ static void test_write_blocks(struct device *dev,
 	const int block_order = dev_get_block_order(dev);
 	const uint64_t total_size = (last_block - first_block + 1) << block_order;
 	struct flow fw;
-	struct timeval t1, t2;
 
-	printf("Writing blocks from 0x%" PRIx64 " to 0x%" PRIx64 "... ",
-		first_block, last_block);
+	printf("Writing block%s from 0x%" PRIx64 " to 0x%" PRIx64 "... ",
+		first_block != last_block ? "s" : "", first_block, last_block);
 	fflush(stdout);
 
 	init_flow(&fw, block_size, total_size, max_write_rate,
 		show_progress ? printf_flush_cb : dummy_cb, 0, NULL);
 
-	assert(!gettimeofday(&t1, NULL));
 	write_blocks(dev, &fw, first_block, last_block);
-	assert(!gettimeofday(&t2, NULL));
 
 	printf("Done\n");
-	print_measured_speed(&fw, &t1, &t2, "writing");
+	print_avg_seq_speed(&fw, "write", false);
 	printf("\n");
 }
 
@@ -495,21 +492,18 @@ static void test_read_blocks(struct device *dev,
 	const int block_order = dev_get_block_order(dev);
 	const uint64_t total_size = (last_block - first_block + 1) << block_order;
 	struct flow fw;
-	struct timeval t1, t2;
 	struct block_stats stats = { 0, 0, 0, 0 };
 
-	printf("Reading blocks from 0x%" PRIx64 " to 0x%" PRIx64 ":\n",
-		first_block, last_block);
+	printf("Reading block%s from 0x%" PRIx64 " to 0x%" PRIx64 ":\n",
+		first_block != last_block ? "s" : "", first_block, last_block);
 
 	init_flow(&fw, block_size, total_size, max_read_rate,
 		show_progress ? printf_flush_cb : dummy_cb, 0, NULL);
 
-	assert(!gettimeofday(&t1, NULL));
 	read_blocks(dev, &fw, first_block, last_block, &stats);
-	assert(!gettimeofday(&t2, NULL));
 
-	print_stats(&stats, block_size, "blocks");
-	print_measured_speed(&fw, &t1, &t2, "reading");
+	print_stats(&stats, block_size, "block");
+	print_avg_seq_speed(&fw, "read", false);
 	printf("\n");
 }
 
@@ -536,6 +530,7 @@ int main(int argc, char **argv)
 		.show_progress	= isatty(STDOUT_FILENO),
 	};
 	struct device *dev;
+	int block_order;
 	uint64_t very_last_block;
 
 	/* Read parameters. */
@@ -552,10 +547,11 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	printf("Physical block size: 2^%i Bytes\n\n", dev_get_block_order(dev));
+	block_order = dev_get_block_order(dev);
+	printf("Physical block size: 2^%i Byte%s\n\n",
+		block_order, block_order != 0 ? "s" : "");
 
-	very_last_block =
-		(dev_get_size_byte(dev) >> dev_get_block_order(dev)) - 1;
+	very_last_block = (dev_get_size_byte(dev) >> block_order) - 1;
 	if (args.first_block > very_last_block)
 		args.first_block = very_last_block;
 	if (args.last_block > very_last_block)

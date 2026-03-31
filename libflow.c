@@ -1,15 +1,16 @@
 #define _POSIX_C_SOURCE 200112L
 #define _XOPEN_SOURCE 600
 
+#include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <float.h>
 #include <assert.h>
 #include <math.h>
 #include <sys/time.h>
+#include <time.h>
 #include <string.h>
 
 #include "libflow.h"
@@ -535,39 +536,26 @@ out:
 	return ret;
 }
 
-static inline void pr_avg_speed(const char *speed_type, double speed)
+void print_avg_seq_speed(const struct flow *fw, const char *speed_type,
+	bool use_sectors)
 {
-	const char *unit = adjust_unit(&speed);
-	printf("Average %s speed: %.2f %s/s\n", speed_type, speed, unit);
-}
+	int block_order = fw_get_block_order(fw);
+	uint64_t blocks, time_ns;
+	char prefix[128];
+	int ret = snprintf(prefix, sizeof(prefix), "Average sequential %s speed:",
+		speed_type);
+	assert(ret > 0 && (size_t)ret < sizeof(prefix));
 
-static inline int64_t delay_ms(const struct timeval *t1,
-	const struct timeval *t2)
-{
-	return (int64_t)(t2->tv_sec  - t1->tv_sec)  * 1000 +
-			(t2->tv_usec - t1->tv_usec) / 1000;
-}
-
-void print_measured_speed(const struct flow *fw, const struct timeval *t1,
-	const struct timeval *t2, const char *speed_type)
-{
-	if (has_enough_measurements(fw)) {
-		pr_avg_speed(speed_type, get_avg_speed(fw));
-	} else {
-		/* If the drive is too fast for the measurements above,
-		 * try a coarse approximation of the speed.
-		 */
-		int64_t total_time_ms = delay_ms(t1, t2);
-		if (total_time_ms > 0) {
-			pr_avg_speed(speed_type,
-				get_avg_speed_given_time(fw, total_time_ms *
-					1000000ULL));
-		} else {
-			assert(strlen(speed_type) > 0);
-			printf("%c%s speed not available\n",
-				toupper(speed_type[0]), speed_type + 1);
-		}
+	fw_get_measurements(fw, &blocks, &time_ns);
+	if (use_sectors && block_order != SECTOR_ORDER) {
+		assert(block_order > SECTOR_ORDER);
+		blocks <<= block_order - SECTOR_ORDER;
+		block_order = SECTOR_ORDER;
 	}
+
+	report_io_speed(0, printf_cb, prefix, blocks,
+		use_sectors ? "sector" : "block",
+		time_ns, block_order);
 }
 
 static inline void __dbuf_free(struct dynamic_buffer *dbuf)
