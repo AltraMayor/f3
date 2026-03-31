@@ -390,12 +390,12 @@ static void report_probe_time(const char *prefix, uint64_t nsec)
 	printf("%s %s\n", prefix, str);
 }
 
-static void report_ops(const char *op, uint64_t count, uint64_t time_us)
+static void report_ops(const char *op, uint64_t blocks, uint64_t time_ns)
 {
 	char str1[TIME_STR_SIZE], str2[TIME_STR_SIZE];
-	nsec_to_str(time_us * 1000ULL, str1);
-	nsec_to_str(count > 0 ? (time_us * 1000ULL) / count : 0, str2);
-	printf("%10s: %s / %" PRIu64 " = %s\n", op, str1, count, str2);
+	nsec_to_str(time_ns, str1);
+	nsec_to_str(blocks > 0 ? time_ns / blocks : 0, str2);
+	printf("%10s: %s / %" PRIu64 " = %s\n", op, str1, blocks, str2);
 }
 
 static int test_device(struct args *args)
@@ -404,9 +404,9 @@ static int test_device(struct args *args)
 	struct probe_results results;
 	struct device *dev, *pdev, *sdev;
 	enum fake_type fake_type;
-	uint64_t read_count, read_time_us;
-	uint64_t write_count, write_time_us;
-	uint64_t reset_count, reset_time_us;
+	uint64_t read_blocks, read_time_ns;
+	uint64_t write_blocks, write_time_ns;
+	uint64_t reset_count, reset_time_ns;
 
 	dev = args->debug
 		? create_file_device(args->filename, args->real_size_byte,
@@ -466,9 +466,9 @@ static int test_device(struct args *args)
 	 */
 	if (args->time_ops)
 		perf_device_sample(pdev,
-			&read_count, &read_time_us,
-			&write_count, &write_time_us,
-			&reset_count, &reset_time_us);
+			&read_blocks, &read_time_ns,
+			&write_blocks, &write_time_ns,
+			&reset_count, &reset_time_ns);
 	if (sdev) {
 		uint64_t very_last_pos = results.real_size_byte >>
 			results.block_order;
@@ -549,9 +549,9 @@ static int test_device(struct args *args)
 	report_probe_time("\nProbe time:", diff_timespec_ns(&t1, &t2));
 
 	if (args->time_ops) {
-		printf(" Operation: total time / count = avg time\n");
-		report_ops("Read", read_count, read_time_us);
-		report_ops("Write", write_count, write_time_us);
+		printf(" Operation: total time / blocks = avg time\n");
+		report_ops("Read", read_blocks, read_time_ns);
+		report_ops("Write", write_blocks, write_time_ns);
 		assert(reset_count == 0);
 	}
 
