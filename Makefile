@@ -1,5 +1,5 @@
 CC ?= gcc
-CFLAGS += -std=c99 -Wall -Wextra -pedantic -MMD -ggdb
+CFLAGS += -std=c17 -Wall -Wextra -pedantic -MMD -ggdb
 
 TARGETS = f3write f3read
 EXTRA_TARGETS = f3probe f3brew f3fix
