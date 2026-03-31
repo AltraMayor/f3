@@ -8,7 +8,7 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <inttypes.h>
-#include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "version.h"
@@ -383,10 +383,10 @@ static inline void report_speed(const char *prefix, uint64_t blocks,
 		block_order);
 }
 
-static void report_probe_time(const char *prefix, uint64_t usec)
+static void report_probe_time(const char *prefix, uint64_t nsec)
 {
 	char str[TIME_STR_SIZE];
-	nsec_to_str(usec * 1000ULL, str);
+	nsec_to_str(nsec, str);
 	printf("%s %s\n", prefix, str);
 }
 
@@ -400,7 +400,7 @@ static void report_ops(const char *op, uint64_t count, uint64_t time_us)
 
 static int test_device(struct args *args)
 {
-	struct timeval t1, t2;
+	struct timespec t1, t2;
 	struct probe_results results;
 	struct device *dev, *pdev, *sdev;
 	enum fake_type fake_type;
@@ -445,7 +445,7 @@ static int test_device(struct args *args)
 	printf("WARNING: Probing normally takes from a few seconds to 15 minutes, but\n");
 	printf("         it can take longer. Please be patient.\n\n");
 
-	assert(!gettimeofday(&t1, NULL));
+	assert(!clock_gettime(CLOCK_MONOTONIC, &t1));
 	/* XXX Have a better error handling to recover
 	 * the state of the drive.
 	 */
@@ -453,7 +453,7 @@ static int test_device(struct args *args)
 		args->verbose ? printf_flush_cb : dummy_cb,
 		args->show_progress,
 		args->max_read_rate, args->max_write_rate));
-	assert(!gettimeofday(&t2, NULL));
+	assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
 
 	if (args->verbose) {
 		/* Isolate the verbose output. */
@@ -546,7 +546,7 @@ static int test_device(struct args *args)
 			results.block_order);
 	}
 
-	report_probe_time("\nProbe time:", diff_timeval_us(&t1, &t2));
+	report_probe_time("\nProbe time:", diff_timespec_ns(&t1, &t2));
 
 	if (args->time_ops) {
 		printf(" Operation: total time / count = avg time\n");

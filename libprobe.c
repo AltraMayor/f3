@@ -6,7 +6,6 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <time.h>	/* For time().		*/
-#include <sys/time.h>	/* For gettimeofday().	*/
 #include <inttypes.h>
 
 #include "libutils.h"

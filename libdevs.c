@@ -11,7 +11,7 @@
 #include <errno.h>
 #include <err.h>
 #include <sys/ioctl.h>
-#include <sys/time.h>
+#include <time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -996,15 +996,15 @@ static int pdev_read_blocks(struct device *dev, char *buf,
 		uint64_t first_pos, uint64_t last_pos)
 {
 	struct perf_device *pdev = dev_pdev(dev);
-	struct timeval t1, t2;
+	struct timespec t1, t2;
 	int rc;
 
-	assert(!gettimeofday(&t1, NULL));
+	assert(!clock_gettime(CLOCK_MONOTONIC, &t1));
 	rc = pdev->shadow_dev->read_blocks(pdev->shadow_dev, buf,
 		first_pos, last_pos);
-	assert(!gettimeofday(&t2, NULL));
+	assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
 	pdev->read_count += last_pos - first_pos + 1;
-	pdev->read_time_us += diff_timeval_us(&t1, &t2);
+	pdev->read_time_us += diff_timespec_ns(&t1, &t2) / 1000;
 	return rc;
 }
 
@@ -1012,29 +1012,29 @@ static int pdev_write_blocks(struct device *dev, const char *buf,
 		uint64_t first_pos, uint64_t last_pos)
 {
 	struct perf_device *pdev = dev_pdev(dev);
-	struct timeval t1, t2;
+	struct timespec t1, t2;
 	int rc;
 
-	assert(!gettimeofday(&t1, NULL));
+	assert(!clock_gettime(CLOCK_MONOTONIC, &t1));
 	rc = pdev->shadow_dev->write_blocks(pdev->shadow_dev, buf,
 		first_pos, last_pos);
-	assert(!gettimeofday(&t2, NULL));
+	assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
 	pdev->write_count += last_pos - first_pos + 1;
-	pdev->write_time_us += diff_timeval_us(&t1, &t2);
+	pdev->write_time_us += diff_timespec_ns(&t1, &t2) / 1000;
 	return rc;
 }
 
 static int pdev_reset(struct device *dev)
 {
 	struct perf_device *pdev = dev_pdev(dev);
-	struct timeval t1, t2;
+	struct timespec t1, t2;
 	int rc;
 
-	assert(!gettimeofday(&t1, NULL));
+	assert(!clock_gettime(CLOCK_MONOTONIC, &t1));
 	rc = dev_reset(pdev->shadow_dev);
-	assert(!gettimeofday(&t2, NULL));
+	assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
 	pdev->reset_count++;
-	pdev->reset_time_us += diff_timeval_us(&t1, &t2);
+	pdev->reset_time_us += diff_timespec_ns(&t1, &t2) / 1000;
 	return rc;
 }
 

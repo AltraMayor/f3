@@ -4,7 +4,6 @@
 #include <stdint.h>
 #include <argp.h>	/* For struct argp_state.	*/
 #include <time.h>	/* For struct timespec.		*/
-#include <sys/time.h>	/* For struct timeval.		*/
 
 #define SECTOR_SIZE (512)
 #define SECTOR_ORDER (9)
@@ -92,13 +91,6 @@ enum block_state validate_buffer_with_block(const void *buf, int block_order,
 enum block_state validate_block_update_stats(const void *buf, int block_order,
 	uint64_t expected_offset, uint64_t *pfound_offset, uint64_t salt,
 	struct block_stats *stats);
-
-static inline uint64_t diff_timeval_us(const struct timeval *t1,
-	const struct timeval *t2)
-{
-	return (t2->tv_sec - t1->tv_sec) * 1000000ULL +
-		t2->tv_usec - t1->tv_usec;
-}
 
 static inline uint64_t diff_timespec_ns(const struct timespec *t1,
 	const struct timespec *t2)

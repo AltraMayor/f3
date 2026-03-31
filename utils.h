@@ -2,7 +2,6 @@
 #define HEADER_UTILS_H
 
 #include <stdio.h>	/* For type FILE.		*/
-#include <sys/time.h>	/* For struct timeval.		*/
 #include <stdint.h>	/* For type uint64_t.		*/
 #include <argp.h>	/* For struct argp_state.	*/
 

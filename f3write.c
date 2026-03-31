@@ -11,7 +11,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/statvfs.h>
-#include <sys/time.h>
 #include <errno.h>
 #include <unistd.h>
 #include <err.h>
