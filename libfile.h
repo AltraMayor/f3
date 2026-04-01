@@ -1,5 +1,5 @@
-#ifndef HEADER_UTILS_H
-#define HEADER_UTILS_H
+#ifndef HEADER_LIBFILE_H
+#define HEADER_LIBFILE_H
 
 #include <stdio.h>	/* For type FILE.		*/
 #include <stdint.h>	/* For type uint64_t.		*/
@@ -53,4 +53,4 @@ int posix_fadvise(int fd, off_t offset, off_t len, int advice);
 
 #endif	/* OpenBSD */
 
-#endif	/* HEADER_UTILS_H */
+#endif	/* HEADER_LIBFILE_H */
