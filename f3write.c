@@ -112,29 +112,6 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
 
-static uint64_t fill_buffer(void *buf, size_t size, uint64_t offset)
-{
-	const int num_int64 = SECTOR_SIZE >> 3;
-	uint8_t *p, *ptr_end;
-
-	assert(size > 0);
-	assert(size % SECTOR_SIZE == 0);
-
-	p = buf;
-	ptr_end = p + size;
-	while (p < ptr_end) {
-		uint64_t *sector = (uint64_t *)p;
-		int i;
-		sector[0] = offset;
-		for (i = 1; i < num_int64; i++)
-			sector[i] = random_number(sector[i - 1]);
-		p += SECTOR_SIZE;
-		offset += SECTOR_SIZE;
-	}
-
-	return offset;
-}
-
 /* XXX Avoid duplicate this function, which was copied from libdevs.c. */
 static int write_all(int fd, const char *buf, size_t count)
 {
@@ -158,9 +135,15 @@ static int write_chunk(struct dynamic_buffer *dbuf, int fd, size_t chunk_size,
 
 	while (chunk_size > 0) {
 		size_t turn_size = chunk_size <= len ? chunk_size : len;
+		size_t i;
 		int ret;
+
 		chunk_size -= turn_size;
-		*poffset = fill_buffer(buf, turn_size, *poffset);
+		for (i = 0; i < turn_size; i += SECTOR_SIZE) {
+			fill_buffer_with_block(buf + i, SECTOR_ORDER, *poffset, 0);
+			*poffset += SECTOR_SIZE;
+		}
+
 		ret = write_all(fd, buf, turn_size);
 		if (ret)
 			return ret;

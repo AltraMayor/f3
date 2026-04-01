@@ -224,22 +224,23 @@ static inline uint64_t next_random_number(uint64_t random_number)
 void fill_buffer_with_block(void *buf, int block_order, uint64_t offset,
 	uint64_t salt)
 {
+	const unsigned int num_int64 = 1 << (block_order - 3);
 	uint64_t *int64_array = buf;
-	int i, num_int64 = 1 << (block_order - 3);
 	uint64_t random_number = offset ^ salt;
+	unsigned int i;
 
 	assert(block_order >= SECTOR_ORDER);
 
-	/* The offset is known by drives,
-	 * so one doesn't have to encrypt it.
-	 * Please don't add @salt here!
+	/* DO NOT add salt here!
+	 * Drives know the offset, so applying salt to it leaks the salt.
 	 */
 	int64_array[0] = offset;
 
-	/* Thanks to @salt, a drive has to guess the seed. */
-	for (i = 1; i < num_int64; i++)
+	/* Thanks to salt, a drive has to guess the seed. */
+	for (i = 1; i < num_int64; i++) {
 		int64_array[i] = random_number =
 			next_random_number(random_number);
+	}
 }
 
 const char *block_state_to_str(enum block_state state)
