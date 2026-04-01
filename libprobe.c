@@ -195,6 +195,11 @@ static uint64_t bss_to_set(const enum block_state bss[], uint32_t n_bs)
 	return bs_set;
 }
 
+static inline uint64_t neg_bs_set(uint64_t bs_set)
+{
+	return ~bs_set;
+}
+
 static inline bool in_bs_set(uint64_t bs_set, enum block_state bs)
 {
 	assert(bs < sizeof(bs_set) * 8);
@@ -256,9 +261,6 @@ static int find_first_bad_block(struct device *dev, const uint64_t pos[],
 	struct rdwr_info *rwi, progress_cb cb, unsigned int indent)
 {
 	const int block_order = dev_get_block_order(dev);
-	/* All but bs_good. */
-	const enum block_state bss[] = {bs_unknown, bs_bad, bs_changed,
-		bs_overwritten};
 	struct def_x_block x_blocks[n_pos];
 	enum block_state bs;
 	uint32_t i;
@@ -269,7 +271,7 @@ static int find_first_bad_block(struct device *dev, const uint64_t pos[],
 	}
 
 	if (find_first_x_block(dev, x_blocks, n_pos,
-			bss_to_set(bss, DIM(bss)),
+			neg_bs_set(bs_to_set(bs_good)),
 			&i, &bs, rwi, cb, indent))
 		return true;
 	*pany_bad = i < n_pos;
@@ -634,6 +636,7 @@ static int find_wrap(struct device *dev,
 		? ceiling_log2(*pright_pos - good_block)
 		: 0;
 	const uint32_t n_samples = aux > m ? aux - m : 0;
+	const enum block_state bss[] = {bs_good, bs_changed};
 	struct def_x_block x_blocks[n_samples];
 	bool any_bad;
 	uint64_t bad_pos;
@@ -691,14 +694,14 @@ static int find_wrap(struct device *dev,
 	}
 	assert(high_bit + good_block >= *pright_pos);
 
-	if (find_first_x_block(dev, x_blocks, n_samples, bs_to_set(bs_good),
-			&i, &bs, rwi, cb, indent + 1))
+	if (find_first_x_block(dev, x_blocks, n_samples,
+			bss_to_set(bss, DIM(bss)), &i, &bs, rwi,
+			cb, indent + 1))
 		return true;
 	if (i < n_samples) {
-		assert(bs == bs_good);
 		*pright_pos = x_blocks[i].pos - good_block; /* = high_bit */
-		cb(indent + 1, "INFO: Block %" PRIu64 " overwrites block %" PRIu64 "\n",
-			x_blocks[i].pos, good_block);
+		cb(indent + 1, "INFO: Block %" PRIu64 " overwrites %s block %" PRIu64 "\n",
+			x_blocks[i].pos, block_state_to_str(bs), good_block);
 	}
 	return false;
 }
