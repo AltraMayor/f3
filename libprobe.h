@@ -6,12 +6,13 @@
 #include "libutils.h"
 #include "libdevs.h"
 
-/* Provide an upper bound on the number of blocks that will be written when
- * probe_device(dev) is called.
+/* Provide an upper bound on the number of *unique* blocks that will be written
+ * when probe_device(dev) is called.
  *
- * Notice that probe_device() may read more blocks than it writes.
- * For example, the helper function find_wrap() only writes 1 block,
- * but reads multiple blocks.
+ * Notice that probe_device() may read more blocks than it writes, and
+ * it may write the same block multiple times. For example, the helper function
+ * find_wrap() only writes 1 block, but reads multiple blocks. And the helper
+ * function overwhelm_cache() is called multiple times over the same blocks.
  */
 uint64_t probe_max_written_blocks(const struct device *dev);
 
