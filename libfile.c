@@ -21,7 +21,7 @@
 #include <unistd.h>
 #include <sys/statvfs.h>
 
-#include "utils.h"
+#include "libfile.h"
 
 void adjust_dev_path(const char **dev_path)
 {

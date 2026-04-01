@@ -18,7 +18,7 @@
 #include <argp.h>
 
 #include "libutils.h"
-#include "utils.h"
+#include "libfile.h"
 #include "libflow.h"
 #include "version.h"
 
