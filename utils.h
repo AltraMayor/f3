@@ -19,11 +19,6 @@ char *full_fn_from_number(const char **filename, const char *path, long num);
 
 const long *ls_my_files(const char *path, long start_at, long end_at);
 
-static inline uint64_t random_number(uint64_t prv_number)
-{
-	return prv_number * 4294967311ULL + 17;
-}
-
 long arg_to_long(const struct argp_state *state, const char *arg);
 
 #if __APPLE__ && __MACH__
