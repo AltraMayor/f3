@@ -250,7 +250,7 @@ static void validate_file(const char *path, uint64_t number, struct flow *fw,
 
 	dbuf_init(&dbuf);
 	saved_errno = 0;
-	expected_offset = (uint64_t)number * GIGABYTES;
+	expected_offset = number << GIGABYTE_ORDER;
 	start_measurement(fw);
 	while (true) {
 		bytes_read = check_chunk(&dbuf, fd, &expected_offset,

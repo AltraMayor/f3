@@ -5,8 +5,14 @@
 #include <argp.h>	/* For struct argp_state.	*/
 #include <time.h>	/* For struct timespec.		*/
 
-#define SECTOR_SIZE (512)
-#define SECTOR_ORDER (9)
+#define SECTOR_ORDER	(9)
+#define KILOBYTE_ORDER	(10)
+#define MEGABYTE_ORDER	(20)
+#define GIGABYTE_ORDER	(30)
+#define TERABYTE_ORDER	(40)
+
+#define SECTOR_SIZE	(1ULL << SECTOR_ORDER)
+#define GIGABYTE_SIZE	(1ULL << GIGABYTE_ORDER)
 
 #define UNUSED(x)	((void)x)
 #define DIM(x)		(sizeof(x) / sizeof((x)[0]))

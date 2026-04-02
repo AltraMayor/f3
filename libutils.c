@@ -188,25 +188,25 @@ long long arg_to_ll_bytes(const struct argp_state *state,
 
 	case 'k':
 	case 'K': /* KB */
-		ll <<= 10;
+		ll <<= KILOBYTE_ORDER;
 		end++;
 		break;
 
 	case 'm':
 	case 'M': /* MB */
-		ll <<= 20;
+		ll <<= MEGABYTE_ORDER;
 		end++;
 		break;
 
 	case 'g':
 	case 'G': /* GB */
-		ll <<= 30;
+		ll <<= GIGABYTE_ORDER;
 		end++;
 		break;
 
 	case 't':
 	case 'T': /* TB */
-		ll <<= 40;
+		ll <<= TERABYTE_ORDER;
 		end++;
 		break;
 	}
