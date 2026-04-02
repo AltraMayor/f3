@@ -14,6 +14,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
+#include <inttypes.h>
 #include <sys/types.h>
 #include <dirent.h>
 #include <errno.h>
@@ -60,18 +61,18 @@ int is_my_file(const char *filename)
 		(p[3] == 'w') && (p[4] == '\0');
 }
 
-char *full_fn_from_number(const char **filename, const char *path, long num)
+char *full_fn_from_number(const char **filename, const char *path, uint64_t num)
 {
 	char *str;
-	assert(asprintf(&str, "%s/%li.h2w", path, num + 1) > 0);
+	assert(asprintf(&str, "%s/%" PRIu64 ".h2w", path, num + 1) > 0);
 	*filename = str + strlen(path) + 1;
 	return str;
 }
 
-static long number_from_filename(const char *filename)
+static uint64_t number_from_filename(const char *filename)
 {
 	const char *p;
-	long num;
+	uint64_t num;
 
 	assert(is_my_file(filename));
 
@@ -86,7 +87,7 @@ static long number_from_filename(const char *filename)
 }
 
 static inline bool include_this_file(const char *filename,
-	long start_at, long end_at, long *number)
+	uint64_t start_at, uint64_t end_at, uint64_t *number)
 {
 	if (!is_my_file(filename))
 		return false;
@@ -96,11 +97,12 @@ static inline bool include_this_file(const char *filename,
 	return start_at <= *number && *number <= end_at;
 }
 
-static long count_files(const char *path, long start_at, long end_at)
+static uint64_t count_files(const char *path,
+	uint64_t start_at, uint64_t end_at)
 {
 	DIR *dir = opendir(path);
 	struct dirent *entry;
-	long dummy, total = 0;
+	uint64_t dummy, total = 0;
 
 	if (!dir)
 		err(errno, "Can't open path %s at %s()", path, __func__);
@@ -117,15 +119,15 @@ static long count_files(const char *path, long start_at, long end_at)
 }
 
 /* Don't call this function directly, use ls_my_files() instead. */
-static long *__ls_my_files(const char *path, long start_at, long end_at,
-	long *pcount)
+static uint64_t *__ls_my_files(const char *path,
+	uint64_t start_at, uint64_t end_at, uint64_t *pcount)
 {
-	long total_files = count_files(path, start_at, end_at);
+	uint64_t total_files = count_files(path, start_at, end_at);
 	DIR *dir;
 	struct dirent *entry;
-	long *ret, index;
+	uint64_t *ret, index;
 
-	assert(total_files >= 0);
+
 	ret = malloc(sizeof(*ret) * (total_files + 1));
 	assert(ret);
 
@@ -136,7 +138,7 @@ static long *__ls_my_files(const char *path, long start_at, long end_at,
 	entry = readdir(dir);
 	index = 0;
 	while (entry) {
-		long number;
+		uint64_t number;
 		if (include_this_file(entry->d_name, start_at, end_at,
 				&number)) {
 			if (index >= total_files) {
@@ -154,7 +156,7 @@ static long *__ls_my_files(const char *path, long start_at, long end_at,
 	}
 	closedir(dir);
 
-	ret[index] = -1;
+	ret[index] = (uint64_t)-1;
 	*pcount = index;
 	return ret;
 }
@@ -162,12 +164,15 @@ static long *__ls_my_files(const char *path, long start_at, long end_at,
 /* To be used with qsort(3). */
 static int cmpintp(const void *p1, const void *p2)
 {
-	return *(const long *)p1 - *(const long *)p2;
+	if (*(const uint64_t *)p1 < *(const uint64_t *)p2)
+		return -1;
+	return *(const uint64_t *)p1 > *(const uint64_t *)p2;
 }
 
-const long *ls_my_files(const char *path, long start_at, long end_at)
+const uint64_t *ls_my_files(const char *path,
+	uint64_t start_at, uint64_t end_at)
 {
-	long *ret, my_count;
+	uint64_t *ret, my_count;
 
 	do {
 		ret = __ls_my_files(path, start_at, end_at, &my_count);
@@ -175,17 +180,6 @@ const long *ls_my_files(const char *path, long start_at, long end_at)
 
 	qsort(ret, my_count, sizeof(*ret), cmpintp);
 	return ret;
-}
-
-long arg_to_long(const struct argp_state *state, const char *arg)
-{
-	char *end;
-	long l = strtol(arg, &end, 0);
-	if (!arg)
-		argp_error(state, "An integer must be provided");
-	if (!*arg || *end)
-		argp_error(state, "`%s' is not an integer", arg);
-	return l;
 }
 
 #if __APPLE__ && __MACH__

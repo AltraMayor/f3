@@ -16,6 +16,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <argp.h>
+#include <inttypes.h>
 
 #include "libutils.h"
 #include "libfile.h"
@@ -44,9 +45,9 @@ static struct argp_option options[] = {
 };
 
 struct args {
-	long        start_at;
-	long        end_at;
-	long        max_read_rate;
+	uint64_t    start_at;
+	uint64_t    end_at;
+	uint64_t    max_read_rate;
 	int	    show_progress;
 	const char  *dev_path;
 };
@@ -54,35 +55,35 @@ struct args {
 static error_t parse_opt(int key, char *arg, struct argp_state *state)
 {
 	struct args *args = state->input;
-	long l;
+	long long ll;
 
 	switch (key) {
 	case 's':
-		l = arg_to_long(state, arg);
-		if (l <= 0)
+		ll = arg_to_ll_bytes(state, arg);
+		if (ll <= 0)
 			argp_error(state,
 				"NUM must be greater than zero");
-		args->start_at = l - 1;
+		args->start_at = ll - 1;
 		break;
 
 	case 'e':
-		l = arg_to_long(state, arg);
-		if (l <= 0)
+		ll = arg_to_ll_bytes(state, arg);
+		if (ll <= 0)
 			argp_error(state,
 				"NUM must be greater than zero");
-		args->end_at = l - 1;
+		args->end_at = ll - 1;
 		break;
 
 	case 'r':
-		l = arg_to_long(state, arg);
-		if (l <= 0)
+		ll = arg_to_ll_bytes(state, arg);
+		if (ll <= 0)
 			argp_error(state,
 				"KB/s must be greater than zero");
-		args->max_read_rate = l;
+		args->max_read_rate = ll;
 		break;
 
 	case 'p':
-		args->show_progress = !!arg_to_long(state, arg);
+		args->show_progress = !!arg_to_ll_bytes(state, arg);
 		break;
 
 	case ARGP_KEY_INIT:
@@ -202,7 +203,7 @@ static inline void print_status(const struct file_stats *stats)
 		stats->secs.overwritten);
 }
 
-static void validate_file(const char *path, int number, struct flow *fw,
+static void validate_file(const char *path, uint64_t number, struct flow *fw,
 	struct file_stats *stats)
 {
 	char *full_fn;
@@ -287,11 +288,11 @@ static void validate_file(const char *path, int number, struct flow *fw,
 	free(full_fn);
 }
 
-static uint64_t get_total_size(const char *path, const long *files)
+static uint64_t get_total_size(const char *path, const uint64_t *files)
 {
 	uint64_t total_size = 0;
 
-	while (*files >= 0) {
+	while (*files != (uint64_t)-1) {
 		struct stat st;
 		int ret;
 		const char *filename;
@@ -312,14 +313,15 @@ static uint64_t get_total_size(const char *path, const long *files)
 	return total_size;
 }
 
-static void iterate_files(const char *path, const long *files,
-	long start_at, long end_at, long max_read_rate, int progress)
+static void iterate_files(const char *path, const uint64_t *files,
+	uint64_t start_at, uint64_t end_at, uint64_t max_read_rate,
+	int progress)
 {
 	struct block_stats tot_stats = { 0, 0, 0, 0 };
 	uint64_t tot_size = 0;
 	int and_read_all = 1;
 	int or_missing_file = 0;
-	long number = start_at;
+	uint64_t number = start_at;
 	struct flow fw;
 
 	UNUSED(end_at);
@@ -329,7 +331,7 @@ static void iterate_files(const char *path, const long *files,
 	printf("                  SECTORS "
 		"     ok/corrupted/changed/overwritten\n");
 
-	while (*files >= 0) {
+	while (*files != (uint64_t)-1) {
 		struct file_stats stats;
 
 		or_missing_file = or_missing_file || (*files != number);
@@ -362,7 +364,7 @@ static void iterate_files(const char *path, const long *files,
 
 	print_stats(&tot_stats, SECTOR_SIZE, "sector");
 	if (or_missing_file)
-		printf("WARNING: Not all F3 files in the range %li to %li are available\n",
+		printf("WARNING: Not all F3 files in the range %" PRIu64 " to %" PRIu64 " are available\n",
 			start_at + 1, number);
 	if (!and_read_all)
 		printf("WARNING: Not all data was read due to I/O error(s)\n");
@@ -373,7 +375,7 @@ static void iterate_files(const char *path, const long *files,
 
 int main(int argc, char **argv)
 {
-	const long *files;
+	const uint64_t *files;
 
 	struct args args = {
 		/* Defaults. */

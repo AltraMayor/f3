@@ -75,7 +75,7 @@ struct flow {
  * The unit of @max_process_rate is KB per second.
  */
 void init_flow(struct flow *fw, int block_size, uint64_t total_size,
-	long max_process_rate, progress_cb cb, unsigned int indent,
+	uint64_t max_process_rate, progress_cb cb, unsigned int indent,
 	flow_func_flush_chunk_t func_flush_chunk);
 
 static inline int fw_get_block_size(const struct flow *fw)

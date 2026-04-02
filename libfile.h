@@ -1,11 +1,10 @@
 #ifndef HEADER_LIBFILE_H
 #define HEADER_LIBFILE_H
 
-#include <stdio.h>	/* For type FILE.		*/
-#include <stdint.h>	/* For type uint64_t.		*/
-#include <argp.h>	/* For struct argp_state.	*/
+#include <stdint.h>	/* For type uint64_t. */
 
-#define GIGABYTES   (1024 * 1024 * 1024)
+#define GIGABYTES_ORDER	(30)
+#define GIGABYTES	(1ULL << GIGABYTES_ORDER)
 
 void adjust_dev_path(const char **dev_path);
 
@@ -15,11 +14,11 @@ int get_block_size(const char *path);
 int is_my_file(const char *filename);
 
 /* Caller must free(3) the returned pointer. */
-char *full_fn_from_number(const char **filename, const char *path, long num);
+char *full_fn_from_number(const char **filename, const char *path,
+	uint64_t num);
 
-const long *ls_my_files(const char *path, long start_at, long end_at);
-
-long arg_to_long(const struct argp_state *state, const char *arg);
+const uint64_t *ls_my_files(const char *path,
+	uint64_t start_at, uint64_t end_at);
 
 #if __APPLE__ && __MACH__
 

@@ -66,7 +66,7 @@ static inline void move_to_inc_at_start(struct flow *fw)
 }
 
 void init_flow(struct flow *fw, int block_size, uint64_t total_size,
-	long max_process_rate, progress_cb cb, unsigned int indent,
+	uint64_t max_process_rate, progress_cb cb, unsigned int indent,
 	flow_func_flush_chunk_t func_flush_chunk)
 {
 	fw->total_size		= total_size;
@@ -76,7 +76,7 @@ void init_flow(struct flow *fw, int block_size, uint64_t total_size,
 	fw->block_size		= block_size; /* Bytes		*/
 	fw->blocks_per_delay	= 1;	/* block_size B/s	*/
 	fw->delay_ns		= 1000000000ULL;	/* 1s	*/
-	fw->max_process_rate	= max_process_rate <= 0
+	fw->max_process_rate	= max_process_rate == 0
 		? DBL_MAX : max_process_rate * 1024.;
 	fw->measured_blocks	= 0;
 	fw->measured_time_ns	= 0;
