@@ -11,17 +11,6 @@
 #include "libutils.h"
 #include "version.h"
 
-/* Count the number of 1 bits. */
-static int pop(uint64_t x)
-{
-	int n = 0;
-	while (x) {
-		n++;
-		x = x & (x - 1);
-	}
-	return n;
-}
-
 int ilog2(uint64_t x)
 {
 	x = x | (x >>  1);
@@ -30,7 +19,7 @@ int ilog2(uint64_t x)
 	x = x | (x >>  8);
 	x = x | (x >> 16);
 	x = x | (x >> 32);
-	return pop(x) - 1;
+	return __builtin_popcountll(x) - 1;
 }
 
 uint64_t clp2(uint64_t x)
@@ -199,25 +188,25 @@ long long arg_to_ll_bytes(const struct argp_state *state,
 
 	case 'k':
 	case 'K': /* KB */
-		ll <<= 10;
+		ll <<= KILOBYTE_ORDER;
 		end++;
 		break;
 
 	case 'm':
 	case 'M': /* MB */
-		ll <<= 20;
+		ll <<= MEGABYTE_ORDER;
 		end++;
 		break;
 
 	case 'g':
 	case 'G': /* GB */
-		ll <<= 30;
+		ll <<= GIGABYTE_ORDER;
 		end++;
 		break;
 
 	case 't':
 	case 'T': /* TB */
-		ll <<= 40;
+		ll <<= TERABYTE_ORDER;
 		end++;
 		break;
 	}
@@ -235,22 +224,23 @@ static inline uint64_t next_random_number(uint64_t random_number)
 void fill_buffer_with_block(void *buf, int block_order, uint64_t offset,
 	uint64_t salt)
 {
+	const unsigned int num_int64 = 1 << (block_order - 3);
 	uint64_t *int64_array = buf;
-	int i, num_int64 = 1 << (block_order - 3);
 	uint64_t random_number = offset ^ salt;
+	unsigned int i;
 
 	assert(block_order >= SECTOR_ORDER);
 
-	/* The offset is known by drives,
-	 * so one doesn't have to encrypt it.
-	 * Please don't add @salt here!
+	/* DO NOT add salt here!
+	 * Drives know the offset, so applying salt to it leaks the salt.
 	 */
 	int64_array[0] = offset;
 
-	/* Thanks to @salt, a drive has to guess the seed. */
-	for (i = 1; i < num_int64; i++)
+	/* Thanks to salt, a drive has to guess the seed. */
+	for (i = 1; i < num_int64; i++) {
 		int64_array[i] = random_number =
 			next_random_number(random_number);
+	}
 }
 
 const char *block_state_to_str(enum block_state state)
@@ -272,8 +262,8 @@ enum block_state validate_buffer_with_block(const void *buf, int block_order,
 	const uint64_t found_offset = int64_array[0];
 	const int num_int64 = 1 << (block_order - 3);
 	uint64_t random_number = found_offset ^ salt;
-	const int tolerance = 2;
-	int error_count = 0;
+	const unsigned int bit_error_tolerance = 7;
+	unsigned int bit_error_count = 0;
 	int i;
 
 	assert(block_order >= SECTOR_ORDER);
@@ -281,8 +271,9 @@ enum block_state validate_buffer_with_block(const void *buf, int block_order,
 	for (i = 1; i < num_int64; i++) {
 		random_number = next_random_number(random_number);
 		if (int64_array[i] != random_number) {
-			error_count++;
-			if (error_count > tolerance)
+			bit_error_count += __builtin_popcountll(
+				int64_array[i] ^ random_number);
+			if (bit_error_count > bit_error_tolerance)
 				break;
 		}
 	}
@@ -290,14 +281,14 @@ enum block_state validate_buffer_with_block(const void *buf, int block_order,
 	*pfound_offset = found_offset;
 
 	if (expected_offset == found_offset) {
-		if (error_count == 0)
+		if (bit_error_count == 0)
 			return bs_good;
-		if (error_count <= tolerance)
+		if (bit_error_count <= bit_error_tolerance)
 			return bs_changed;
 		return bs_bad;
 	}
 
-	if (error_count <= tolerance)
+	if (bit_error_count <= bit_error_tolerance)
 		return bs_overwritten;
 
 	return bs_bad;

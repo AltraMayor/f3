@@ -4,13 +4,28 @@
 #include <stdint.h>
 #include <argp.h>	/* For struct argp_state.	*/
 #include <time.h>	/* For struct timespec.		*/
-#include <sys/time.h>	/* For struct timeval.		*/
 
-#define SECTOR_SIZE (512)
-#define SECTOR_ORDER (9)
+#define SECTOR_ORDER	(9)
+#define KILOBYTE_ORDER	(10)
+#define MEGABYTE_ORDER	(20)
+#define GIGABYTE_ORDER	(30)
+#define TERABYTE_ORDER	(40)
+
+#define SECTOR_SIZE	(1ULL << SECTOR_ORDER)
+#define GIGABYTE_SIZE	(1ULL << GIGABYTE_ORDER)
 
 #define UNUSED(x)	((void)x)
 #define DIM(x)		(sizeof(x) / sizeof((x)[0]))
+
+static inline uint64_t uint64_min(uint64_t a, uint64_t b)
+{
+	return a < b ? a : b;
+}
+
+#define MIN(a, b) _Generic((a),		\
+	uint64_t: uint64_min,		\
+	unsigned long long: uint64_min	\
+	)(a, b)
 
 typedef void (*progress_cb)(unsigned int indent, const char *format, ...);
 
@@ -92,13 +107,6 @@ enum block_state validate_buffer_with_block(const void *buf, int block_order,
 enum block_state validate_block_update_stats(const void *buf, int block_order,
 	uint64_t expected_offset, uint64_t *pfound_offset, uint64_t salt,
 	struct block_stats *stats);
-
-static inline uint64_t diff_timeval_us(const struct timeval *t1,
-	const struct timeval *t2)
-{
-	return (t2->tv_sec - t1->tv_sec) * 1000000ULL +
-		t2->tv_usec - t1->tv_usec;
-}
 
 static inline uint64_t diff_timespec_ns(const struct timespec *t1,
 	const struct timespec *t2)

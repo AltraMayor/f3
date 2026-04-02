@@ -8,7 +8,7 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <inttypes.h>
-#include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "version.h"
@@ -242,10 +242,10 @@ static const struct unit_test_item ftype_to_params[] = {
 	{1ULL << 21,	1ULL << 21,	21,	SECTOR_ORDER,	-1,	false},
 
 	/* Good, 4KB-block, 1GB drive. */
-	{1ULL << 30,	1ULL << 30,	30,	12,		-1,	false},
+	{GIGABYTE_SIZE,	GIGABYTE_SIZE,	GIGABYTE_ORDER,	12,	-1,	false},
 
 	/* Bad drive. */
-	{0,		1ULL << 30,	30,	SECTOR_ORDER,	-1,	false},
+	{0,		GIGABYTE_SIZE,	GIGABYTE_ORDER,	SECTOR_ORDER,	-1,	false},
 
 	/* Geometry of a real limbo drive. */
 	{1777645568ULL,	32505331712ULL,	35,	SECTOR_ORDER,	-1,	false},
@@ -272,13 +272,11 @@ static const struct unit_test_item ftype_to_params[] = {
 	{0,		1ULL << 40,	40,	SECTOR_ORDER,	21,	false},
 };
 
-#define UNIT_TEST_N_CASES \
-	((int)(sizeof(ftype_to_params)/sizeof(struct unit_test_item)))
-
 static int unit_test(const char *filename)
 {
-	int i, success = 0;
-	for (i = 0; i < UNIT_TEST_N_CASES; i++) {
+	const unsigned int n_cases = DIM(ftype_to_params);
+	unsigned int i, success = 0;
+	for (i = 0; i < n_cases; i++) {
 		const struct unit_test_item *item = &ftype_to_params[i];
 		enum fake_type origin_type = dev_param_to_type(
 			item->real_size_byte, item->fake_size_byte,
@@ -294,7 +292,7 @@ static int unit_test(const char *filename)
 
 		struct probe_results results;
 		enum fake_type fake_type;
-		int max_written_blocks;
+		uint64_t max_written_blocks;
 		struct device *dev;
 
 		dev = create_file_device(filename, item->real_size_byte,
@@ -327,7 +325,7 @@ static int unit_test(const char *filename)
 				results.block_order) &&
 			results.block_order == item->block_order) {
 			success++;
-			printf("\t\tPerfect!\tMax # of written block%s: %i\n\n",
+			printf("\t\tPerfect!\tMax # of written block%s: %" PRIu64 "\n\n",
 				max_written_blocks != 1 ? "s" : "",
 				max_written_blocks);
 		} else {
@@ -350,11 +348,11 @@ static int unit_test(const char *filename)
 	}
 
 	printf("SUMMARY: ");
-	if (success == UNIT_TEST_N_CASES)
+	if (success == n_cases)
 		printf("Perfect!\n");
 	else
-		printf("Missed %i tests out of %i\n",
-			UNIT_TEST_N_CASES - success, UNIT_TEST_N_CASES);
+		printf("Missed %u tests out of %u\n",
+			n_cases - success, n_cases);
 	return 0;
 }
 
@@ -383,30 +381,30 @@ static inline void report_speed(const char *prefix, uint64_t blocks,
 		block_order);
 }
 
-static void report_probe_time(const char *prefix, uint64_t usec)
+static void report_probe_time(const char *prefix, uint64_t nsec)
 {
 	char str[TIME_STR_SIZE];
-	nsec_to_str(usec * 1000ULL, str);
+	nsec_to_str(nsec, str);
 	printf("%s %s\n", prefix, str);
 }
 
-static void report_ops(const char *op, uint64_t count, uint64_t time_us)
+static void report_ops(const char *op, uint64_t blocks, uint64_t time_ns)
 {
 	char str1[TIME_STR_SIZE], str2[TIME_STR_SIZE];
-	nsec_to_str(time_us * 1000ULL, str1);
-	nsec_to_str(count > 0 ? (time_us * 1000ULL) / count : 0, str2);
-	printf("%10s: %s / %" PRIu64 " = %s\n", op, str1, count, str2);
+	nsec_to_str(time_ns, str1);
+	nsec_to_str(blocks > 0 ? time_ns / blocks : 0, str2);
+	printf("%10s: %s / %" PRIu64 " = %s\n", op, str1, blocks, str2);
 }
 
 static int test_device(struct args *args)
 {
-	struct timeval t1, t2;
+	struct timespec t1, t2;
 	struct probe_results results;
 	struct device *dev, *pdev, *sdev;
 	enum fake_type fake_type;
-	uint64_t read_count, read_time_us;
-	uint64_t write_count, write_time_us;
-	uint64_t reset_count, reset_time_us;
+	uint64_t read_blocks, read_time_ns;
+	uint64_t write_blocks, write_time_ns;
+	uint64_t reset_count, reset_time_ns;
 
 	dev = args->debug
 		? create_file_device(args->filename, args->real_size_byte,
@@ -445,7 +443,7 @@ static int test_device(struct args *args)
 	printf("WARNING: Probing normally takes from a few seconds to 15 minutes, but\n");
 	printf("         it can take longer. Please be patient.\n\n");
 
-	assert(!gettimeofday(&t1, NULL));
+	assert(!clock_gettime(CLOCK_MONOTONIC, &t1));
 	/* XXX Have a better error handling to recover
 	 * the state of the drive.
 	 */
@@ -453,7 +451,7 @@ static int test_device(struct args *args)
 		args->verbose ? printf_flush_cb : dummy_cb,
 		args->show_progress,
 		args->max_read_rate, args->max_write_rate));
-	assert(!gettimeofday(&t2, NULL));
+	assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
 
 	if (args->verbose) {
 		/* Isolate the verbose output. */
@@ -466,9 +464,9 @@ static int test_device(struct args *args)
 	 */
 	if (args->time_ops)
 		perf_device_sample(pdev,
-			&read_count, &read_time_us,
-			&write_count, &write_time_us,
-			&reset_count, &reset_time_us);
+			&read_blocks, &read_time_ns,
+			&write_blocks, &write_time_ns,
+			&reset_count, &reset_time_ns);
 	if (sdev) {
 		uint64_t very_last_pos = results.real_size_byte >>
 			results.block_order;
@@ -546,12 +544,12 @@ static int test_device(struct args *args)
 			results.block_order);
 	}
 
-	report_probe_time("\nProbe time:", diff_timeval_us(&t1, &t2));
+	report_probe_time("\nProbe time:", diff_timespec_ns(&t1, &t2));
 
 	if (args->time_ops) {
-		printf(" Operation: total time / count = avg time\n");
-		report_ops("Read", read_count, read_time_us);
-		report_ops("Write", write_count, write_time_us);
+		printf(" Operation: total time / blocks = avg time\n");
+		report_ops("Read", read_blocks, read_time_ns);
+		report_ops("Write", write_blocks, write_time_ns);
 		assert(reset_count == 0);
 	}
 

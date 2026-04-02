@@ -1,8 +1,11 @@
 CC ?= gcc
-CFLAGS += -std=c99 -Wall -Wextra -pedantic -MMD -ggdb
+CFLAGS += -std=c17 -Wall -Wextra -pedantic -MMD -ggdb
 
-TARGETS = f3write f3read
-EXTRA_TARGETS = f3probe f3brew f3fix
+BUILD_DIR = build
+SRC_DIR = src
+
+TARGETS = $(BUILD_DIR)/f3write $(BUILD_DIR)/f3read
+EXTRA_TARGETS = $(BUILD_DIR)/f3probe $(BUILD_DIR)/f3brew $(BUILD_DIR)/f3fix
 
 PREFIX = /usr/local
 INSTALL = install
@@ -33,7 +36,7 @@ install: all
 	$(INSTALL) -d $(DESTDIR)$(PREFIX)/bin
 	$(INSTALL) -m755 $(TARGETS) $(DESTDIR)$(PREFIX)/bin
 	$(INSTALL) -d $(DESTDIR)$(PREFIX)/share/man/man1
-	$(INSTALL) -m644 f3read.1 $(DESTDIR)$(PREFIX)/share/man/man1
+	$(INSTALL) -m644 man/f3read.1 $(DESTDIR)$(PREFIX)/share/man/man1
 	$(LN) -sf f3read.1 $(DESTDIR)$(PREFIX)/share/man/man1/f3write.1
 
 install-extra: extra
@@ -41,34 +44,40 @@ install-extra: extra
 	$(INSTALL) -m755 $(EXTRA_TARGETS) $(DESTDIR)$(PREFIX)/bin
 
 uninstall: uninstall-extra
-	cd $(DESTDIR)$(PREFIX)/bin ; rm $(TARGETS)
+	cd $(DESTDIR)$(PREFIX)/bin ; rm $(notdir $(TARGETS))
 	rm -f $(DESTDIR)$(PREFIX)/share/man/man1/f3read.1
 	$(UNLINK) $(DESTDIR)$(PREFIX)/share/man/man1/f3write.1
 
 uninstall-extra:
-	cd $(DESTDIR)$(PREFIX)/bin ; rm $(EXTRA_TARGETS)
+	cd $(DESTDIR)$(PREFIX)/bin ; rm $(notdir $(EXTRA_TARGETS))
 
-f3write: libutils.o utils.o libflow.o f3write.o
+$(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+$(BUILD_DIR)/f3write: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/libfile.o $(BUILD_DIR)/libflow.o $(BUILD_DIR)/f3write.o
 	$(CC) -o $@ $^ $(LDFLAGS) -lm
 
-f3read: libutils.o utils.o libflow.o f3read.o
+$(BUILD_DIR)/f3read: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/libfile.o $(BUILD_DIR)/libflow.o $(BUILD_DIR)/f3read.o
 	$(CC) -o $@ $^ $(LDFLAGS) -lm
 
-f3probe: libutils.o libflow.o libdevs.o libprobe.o f3probe.o
+$(BUILD_DIR)/f3probe: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/libflow.o $(BUILD_DIR)/libdevs.o $(BUILD_DIR)/libprobe.o $(BUILD_DIR)/f3probe.o
 	$(CC) -o $@ $^ $(LDFLAGS) -lm -ludev
 
-f3brew: libutils.o libflow.o libdevs.o f3brew.o
+$(BUILD_DIR)/f3brew: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/libflow.o $(BUILD_DIR)/libdevs.o $(BUILD_DIR)/f3brew.o
 	$(CC) -o $@ $^ $(LDFLAGS) -lm -ludev
 
-f3fix: libutils.o f3fix.o
+$(BUILD_DIR)/f3fix: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/f3fix.o
 	$(CC) -o $@ $^ $(LDFLAGS) -lparted
 
--include *.d
+-include $(BUILD_DIR)/*.d
 
 .PHONY: cscope clean uninstall uninstall-extra
 
 cscope:
-	cscope -b *.c *.h
+	cscope -b $(SRC_DIR)/*.c $(SRC_DIR)/*.h
 
 clean:
-	rm -f *.o *.d cscope.out $(TARGETS) $(EXTRA_TARGETS)
+	rm -rf $(BUILD_DIR) cscope.out

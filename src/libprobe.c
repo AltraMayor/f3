@@ -6,7 +6,6 @@
 #include <stdbool.h>
 #include <assert.h>
 #include <time.h>	/* For time().		*/
-#include <sys/time.h>	/* For gettimeofday().	*/
 #include <inttypes.h>
 
 #include "libutils.h"
@@ -196,6 +195,11 @@ static uint64_t bss_to_set(const enum block_state bss[], uint32_t n_bs)
 	return bs_set;
 }
 
+static inline uint64_t neg_bs_set(uint64_t bs_set)
+{
+	return ~bs_set;
+}
+
 static inline bool in_bs_set(uint64_t bs_set, enum block_state bs)
 {
 	assert(bs < sizeof(bs_set) * 8);
@@ -257,9 +261,6 @@ static int find_first_bad_block(struct device *dev, const uint64_t pos[],
 	struct rdwr_info *rwi, progress_cb cb, unsigned int indent)
 {
 	const int block_order = dev_get_block_order(dev);
-	/* All but bs_good. */
-	const enum block_state bss[] = {bs_unknown, bs_bad, bs_changed,
-		bs_overwritten};
 	struct def_x_block x_blocks[n_pos];
 	enum block_state bs;
 	uint32_t i;
@@ -270,7 +271,7 @@ static int find_first_bad_block(struct device *dev, const uint64_t pos[],
 	}
 
 	if (find_first_x_block(dev, x_blocks, n_pos,
-			bss_to_set(bss, DIM(bss)),
+			neg_bs_set(bs_to_set(bs_good)),
 			&i, &bs, rwi, cb, indent))
 		return true;
 	*pany_bad = i < n_pos;
@@ -538,7 +539,7 @@ static void report_cache_size_test(unsigned int indent, progress_cb cb,
 }
 
 /* This constant needs to be a power of 2 and larger than 2^block_order. */
-#define MAX_CACHE_SIZE_BYTE	(1ULL << 30)
+#define MAX_CACHE_SIZE_BYTE	GIGABYTE_SIZE
 
 static int find_cache_size(struct device *dev, const uint64_t left_pos,
 	uint64_t *pright_pos, struct rdwr_info *rwi, progress_cb cb,
@@ -635,6 +636,7 @@ static int find_wrap(struct device *dev,
 		? ceiling_log2(*pright_pos - good_block)
 		: 0;
 	const uint32_t n_samples = aux > m ? aux - m : 0;
+	const enum block_state bss[] = {bs_good, bs_changed};
 	struct def_x_block x_blocks[n_samples];
 	bool any_bad;
 	uint64_t bad_pos;
@@ -692,14 +694,14 @@ static int find_wrap(struct device *dev,
 	}
 	assert(high_bit + good_block >= *pright_pos);
 
-	if (find_first_x_block(dev, x_blocks, n_samples, bs_to_set(bs_good),
-			&i, &bs, rwi, cb, indent + 1))
+	if (find_first_x_block(dev, x_blocks, n_samples,
+			bss_to_set(bss, DIM(bss)), &i, &bs, rwi,
+			cb, indent + 1))
 		return true;
 	if (i < n_samples) {
-		assert(bs == bs_good);
 		*pright_pos = x_blocks[i].pos - good_block; /* = high_bit */
-		cb(indent + 1, "INFO: Block %" PRIu64 " overwrites block %" PRIu64 "\n",
-			x_blocks[i].pos, good_block);
+		cb(indent + 1, "INFO: Block %" PRIu64 " overwrites %s block %" PRIu64 "\n",
+			x_blocks[i].pos, block_state_to_str(bs), good_block);
 	}
 	return false;
 }
@@ -711,11 +713,6 @@ static uint64_t drive_mid_block(const struct device *dev)
 	return clp2((dev_size_byte >> block_order) / 2);
 }
 
-static uint64_t uint64_min(uint64_t a, uint64_t b)
-{
-	return a < b ? a : b;
-}
-
 uint64_t probe_max_written_blocks(const struct device *dev)
 {
 	const int block_order = dev_get_block_order(dev);
@@ -724,7 +721,7 @@ uint64_t probe_max_written_blocks(const struct device *dev)
 
 	return
 		/* find_cache_size() */
-		uint64_min(
+		MIN(
 			/* The maximum number of written blocks. */
 			(MAX_CACHE_SIZE_BYTE >> block_order) * 2 - 1,
 			/* High half of the drive. */
