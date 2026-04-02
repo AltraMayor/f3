@@ -20,7 +20,7 @@ available space for data. Below the result on my fake card:
 
 ::
 
-    $ ./f3write /media/michel/5EBD-5C80/
+    $ build/f3write /media/michel/5EBD-5C80/
     Free space: 28.83 GB
     Creating file 1.h2w ... OK!
     Creating file 2.h2w ... OK!
@@ -54,7 +54,7 @@ available space for data. Below the result on my fake card:
     Free space: 0.00 Byte
     Average Writing speed: 2.60 MB/s
 
-    $ ./f3read /media/michel/5EBD-5C80/
+    $ build/f3read /media/michel/5EBD-5C80/
                       SECTORS      ok/corrupted/changed/overwritten
     Validating file 1.h2w ...       0/  2097152/      0/      0
     Validating file 2.h2w ...       0/  2097152/      0/      0
@@ -133,7 +133,7 @@ output running F3 on it:
 
 ::
 
-    $ ./f3write /media/michel/6135-3363/
+    $ build/f3write /media/michel/6135-3363/
     Free space: 29.71 GB
     Creating file 1.h2w ... OK!
     Creating file 2.h2w ... OK!
@@ -168,7 +168,7 @@ output running F3 on it:
     Free space: 0.00 Byte
     Average Writing speed: 4.90 MB/s
 
-    $ ./f3read /media/michel/6135-3363/
+    $ build/f3read /media/michel/6135-3363/
                       SECTORS      ok/corrupted/changed/overwritten
     Validating file 1.h2w ... 2097152/        0/      0/      0
     Validating file 2.h2w ... 2097152/        0/      0/      0
@@ -216,10 +216,10 @@ files are still available.
 
 As a final remark, if you want to run ``f3write`` and ``f3read`` with a
 single command, check out the ``log-f3wr`` shell script
-`here <https://github.com/AltraMayor/f3/blob/master/log-f3wr>`__.
+`here <https://github.com/AltraMayor/f3/blob/master/scripts/log-f3wr>`__.
 This script runs ``f3write`` and ``f3read``, and records their output
 into a log file. Use example:
-``log-f3wr log-filename /media/michel/5EBD-5C80/``
+``scripts/log-f3wr log-filename /media/michel/5EBD-5C80/``
 
 .. raw:: html
 
@@ -255,7 +255,7 @@ capacity is less than 8GB:
 
 ::
 
-    $ ./f3write --end-at=16 /media/michel/DISK_IMG/ && ./f3read /media/michel/DISK_IMG/
+    $ build/f3write --end-at=16 /media/michel/DISK_IMG/ && build/f3read /media/michel/DISK_IMG/
     Free space: 124.97 GB
     Creating file 1.h2w ... OK!
     Creating file 2.h2w ... OK!
@@ -306,7 +306,7 @@ produced the following output:
 
 ::
 
-    $ ./f3read /media/michel/DISK_IMG/
+    $ build/f3read /media/michel/DISK_IMG/
                       SECTORS      ok/corrupted/changed/overwritten
     Validating file 1.h2w ... 2097152/        0/      0/      0
     Validating file 2.h2w ... 2097152/        0/      0/      0
@@ -348,7 +348,7 @@ file system, and obtained puzzling free space at the end of
 
 ::
 
-    % ./f3write /media/Kodi/
+    % build/f3write /media/Kodi/
     Free space: 14.50 GB
     Creating file 1.h2w ... OK!
     Creating file 2.h2w ... OK!
@@ -471,8 +471,8 @@ does exactly that:
 
 
 If you want to exchange files with H2testw users often, check out the
-``f3write.h2w`` shell script
-`here <https://github.com/AltraMayor/f3/blob/master/f3write.h2w>`__.
+``scripts/f3write.h2w`` shell script
+`here <https://github.com/AltraMayor/f3/blob/master/scripts/f3write.h2w>`__.
 This script calls ``truncate`` after ``f3write`` runs successfully.
 
 f3probe - the fastest drive test
@@ -597,7 +597,7 @@ in the example below (please use the correct device!):
 
 ::
 
-    $ sudo ./f3probe --destructive --time-ops /dev/sdb
+    $ sudo build/f3probe --destructive --time-ops /dev/sdb
     [sudo] password for michel:
     F3 probe 9.0
     Copyright (C) 2010 Digirati Internet LTDA.
@@ -672,7 +672,7 @@ outputs:
 
 ::
 
-    $ sudo ./f3probe --time-ops /dev/sdc
+    $ sudo build/f3probe --time-ops /dev/sdc
     [sudo] password for michel:
     F3 probe 9.0
     Copyright (C) 2010 Digirati Internet LTDA.
@@ -733,7 +733,7 @@ The execution of ``f3fix`` on my fake drive went as follows:
 
 ::
 
-    $ sudo ./f3fix --last-sec=16477878 /dev/sdb
+    $ sudo build/f3fix --last-sec=16477878 /dev/sdb
     F3 fix 9.0
     Copyright (C) 2010 Digirati Internet LTDA.
     This is free software; see the source for copying conditions.
@@ -756,7 +756,7 @@ blocks with ``f3write/f3read``. The test of my card went as follows:
 
 ::
 
-    $ ./f3write /media/michel/8A34-CED2/
+    $ build/f3write /media/michel/8A34-CED2/
     Free space: 7.84 GB
     Creating file 1.h2w ... OK!
     Creating file 2.h2w ... OK!
@@ -769,7 +769,7 @@ blocks with ``f3write/f3read``. The test of my card went as follows:
     Free space: 0.00 Byte
     Average writing speed: 4.64 MB/s
 
-    $ ./f3read /media/michel/8A34-CED2/
+    $ build/f3read /media/michel/8A34-CED2/
                       SECTORS      ok/corrupted/changed/overwritten
     Validating file 1.h2w ... 2097152/        0/      0/      0
     Validating file 2.h2w ... 2097152/        0/      0/      0
