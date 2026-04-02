@@ -159,6 +159,51 @@ jobs:
             ./f3read --help
             ${{ matrix.asroot.sudo }}./f3read -s 2 -e 4 -r 50000 ${{ matrix.volume }}
 
+  FreeBSD:
+    strategy:
+      fail-fast: false
+      matrix:
+        volume:
+          - /tmp
+          - .
+          - relative-path
+        asroot:
+          - name: ''
+            sudo: ''
+          - name: ' as root'
+            sudo: 'sudo '
+
+    name: FreeBSD ${{ matrix.volume }}${{ matrix.asroot.name }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test on FreeBSD
+        uses: cross-platform-actions/action@v0.25.0
+        with:
+          operating_system: freebsd
+          version: '14.1'
+          run: |
+            sudo pkg install -y argp-standalone
+            make
+
+            if [ "${{ matrix.volume }}" = "relative-path" ]; then
+              mkdir relative-path
+            fi
+
+            ./f3write -V
+            ./f3write --help
+            ${{ matrix.asroot.sudo }}./f3write -s 2 -e 4 -w 50000 ${{ matrix.volume }}
+
+            stat ${{ matrix.volume }}/2.h2w
+            stat ${{ matrix.volume }}/3.h2w
+            stat ${{ matrix.volume }}/4.h2w
+
+            ./f3read -V
+            ./f3read --help
+            ${{ matrix.asroot.sudo }}./f3read -s 2 -e 4 -r 50000 ${{ matrix.volume }}
+
   Cygwin:
     strategy:
       fail-fast: false
