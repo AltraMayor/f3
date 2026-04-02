@@ -539,7 +539,7 @@ static void report_cache_size_test(unsigned int indent, progress_cb cb,
 }
 
 /* This constant needs to be a power of 2 and larger than 2^block_order. */
-#define MAX_CACHE_SIZE_BYTE	(1ULL << 30)
+#define MAX_CACHE_SIZE_BYTE	GIGABYTE_SIZE
 
 static int find_cache_size(struct device *dev, const uint64_t left_pos,
 	uint64_t *pright_pos, struct rdwr_info *rwi, progress_cb cb,

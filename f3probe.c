@@ -242,10 +242,10 @@ static const struct unit_test_item ftype_to_params[] = {
 	{1ULL << 21,	1ULL << 21,	21,	SECTOR_ORDER,	-1,	false},
 
 	/* Good, 4KB-block, 1GB drive. */
-	{1ULL << 30,	1ULL << 30,	30,	12,		-1,	false},
+	{GIGABYTE_SIZE,	GIGABYTE_SIZE,	GIGABYTE_ORDER,	12,	-1,	false},
 
 	/* Bad drive. */
-	{0,		1ULL << 30,	30,	SECTOR_ORDER,	-1,	false},
+	{0,		GIGABYTE_SIZE,	GIGABYTE_ORDER,	SECTOR_ORDER,	-1,	false},
 
 	/* Geometry of a real limbo drive. */
 	{1777645568ULL,	32505331712ULL,	35,	SECTOR_ORDER,	-1,	false},

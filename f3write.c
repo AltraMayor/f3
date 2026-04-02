@@ -186,7 +186,7 @@ static int create_and_fill_file(const char *path, uint64_t number, size_t size,
 	/* Write content. */
 	dbuf_init(&dbuf);
 	saved_errno = 0;
-	offset = (uint64_t)number * GIGABYTES;
+	offset = number << GIGABYTE_ORDER;
 	remaining = size;
 	start_measurement(fw);
 	while (remaining > 0) {
@@ -271,23 +271,23 @@ static int fill_fs(const char *path, uint64_t start_at, uint64_t end_at,
 
 	assert(start_at <= end_at);
 	i = end_at - start_at + 1;
-	if (i <= (free_space >> GIGABYTES_ORDER)) {
+	if (i <= (free_space >> GIGABYTE_ORDER)) {
 		/* The amount of data to write is less than the space available,
 		 * update free_space to improve estimate of time to finish.
 		 */
-		free_space = i << GIGABYTES_ORDER;
+		free_space = i << GIGABYTE_ORDER;
 	} else {
 		/* There are more data to write than space available.
 		 * Reduce end_at to reduce the number of error messages
 		 * due to multiple write failures.
 		 */
-		end_at = start_at + (free_space >> GIGABYTES_ORDER);
+		end_at = start_at + (free_space >> GIGABYTE_ORDER);
 	}
 
 	init_flow(&fw, get_block_size(path), free_space, max_write_rate,
 		progress ? printf_flush_cb : dummy_cb, 0, flush_chunk);
 	for (i = start_at; i <= end_at; i++)
-		if (create_and_fill_file(path, i, GIGABYTES,
+		if (create_and_fill_file(path, i, GIGABYTE_SIZE,
 			&has_suggested_max_write_rate, &fw))
 			break;
 

@@ -3,9 +3,6 @@
 
 #include <stdint.h>	/* For type uint64_t. */
 
-#define GIGABYTES_ORDER	(30)
-#define GIGABYTES	(1ULL << GIGABYTES_ORDER)
-
 void adjust_dev_path(const char **dev_path);
 
 int get_block_size(const char *path);
