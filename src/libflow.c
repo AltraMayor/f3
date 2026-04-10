@@ -9,7 +9,6 @@
 #include <float.h>
 #include <assert.h>
 #include <math.h>
-#include <sys/time.h>
 #include <time.h>
 #include <string.h>
 
@@ -19,36 +18,35 @@
 /* Apple Macintosh / OpenBSD */
 #if (__APPLE__ && __MACH__) || defined(__OpenBSD__)
 
-#include <unistd.h>
-static inline void ussleep(double wait_us)
+static void nssleep(uint64_t wait_ns)
 {
-	assert(!usleep(wait_us));
+	const lldiv_t div = lldiv(wait_ns, 1000000000);
+	const struct timespec req = {
+		.tv_sec = div.quot,
+		.tv_nsec = div.rem,
+	};
+	assert(!nanosleep(&req, NULL));
 }
 
 #else	/* Everyone else */
 
-#include <time.h> /* For clock_gettime() and clock_nanosleep(). */
-static void ussleep(double wait_us)
+static void nssleep(uint64_t wait_ns)
 {
 	struct timespec req;
+	lldiv_t div;
 	int ret;
 
 	assert(!clock_gettime(CLOCK_MONOTONIC, &req));
 
-	/* Add @wait_us to @req. */
-	if (wait_us > 1000000) {
-		time_t sec = wait_us / 1000000;
-		wait_us -= sec * 1000000;
-		assert(wait_us > 0);
-		req.tv_sec += sec;
-	}
-	req.tv_nsec += wait_us * 1000;
+	/* Add @wait_ns to @req. */
+	div = lldiv(wait_ns, 1000000000);
+	req.tv_sec += div.quot;
+	req.tv_nsec += div.rem;
 
 	/* Round @req up. */
 	if (req.tv_nsec >= 1000000000) {
-		ldiv_t result = ldiv(req.tv_nsec, 1000000000);
-		req.tv_sec += result.quot;
-		req.tv_nsec = result.rem;
+		req.tv_sec++;
+		req.tv_nsec -= 1000000000;
 	}
 
 	do {
@@ -59,7 +57,7 @@ static void ussleep(double wait_us)
 	assert(ret == 0);
 }
 
-#endif	/* ussleep() */
+#endif	/* nssleep() */
 
 static inline void move_to_inc_at_start(struct flow *fw)
 {
@@ -68,7 +66,7 @@ static inline void move_to_inc_at_start(struct flow *fw)
 }
 
 void init_flow(struct flow *fw, int block_size, uint64_t total_size,
-	long max_process_rate, progress_cb cb, unsigned int indent,
+	uint64_t max_process_rate, progress_cb cb, unsigned int indent,
 	flow_func_flush_chunk_t func_flush_chunk)
 {
 	fw->total_size		= total_size;
@@ -78,7 +76,7 @@ void init_flow(struct flow *fw, int block_size, uint64_t total_size,
 	fw->block_size		= block_size; /* Bytes		*/
 	fw->blocks_per_delay	= 1;	/* block_size B/s	*/
 	fw->delay_ns		= 1000000000ULL;	/* 1s	*/
-	fw->max_process_rate	= max_process_rate <= 0
+	fw->max_process_rate	= max_process_rate == 0
 		? DBL_MAX : max_process_rate * 1024.;
 	fw->measured_blocks	= 0;
 	fw->measured_time_ns	= 0;
@@ -140,6 +138,11 @@ out:
 	fw->erase = 0;
 }
 
+static inline bool has_enough_measurements(const struct flow *fw)
+{
+	return fw->measured_time_ns > fw->delay_ns;
+}
+
 #define CHECK_AND_MOVE do {			\
 		assert(c > 0);			\
 		len += c;			\
@@ -148,67 +151,13 @@ out:
 		at_buf += c;			\
 	} while (0)
 
-static int pr_time(char *buf, const size_t size, double sec)
-{
-	char *at_buf = buf;
-	size_t rem_size = size;
-	bool has_h, has_m;
-	int c, len = 0;
-
-	c = snprintf(at_buf, rem_size, " -- ");
-	CHECK_AND_MOVE;
-
-	has_h = sec >= 3600;
-	if (has_h) {
-		double h = floor(sec / 3600);
-		c = snprintf(at_buf, rem_size, "%i:", (int)h);
-		CHECK_AND_MOVE;
-		sec -= h * 3600;
-	}
-
-	has_m = has_h || sec >= 60;
-	if (has_m) {
-		double m = floor(sec / 60);
-		if (has_h)
-			c = snprintf(at_buf, rem_size, "%02i:", (int)m);
-		else
-			c = snprintf(at_buf, rem_size, "%i:", (int)m);
-		CHECK_AND_MOVE;
-		sec -= m * 60;
-	}
-
-	if (has_m)
-		c = snprintf(at_buf, rem_size, "%02i", (int)round(sec));
-	else
-		c = snprintf(at_buf, rem_size, "%is", (int)round(sec));
-	CHECK_AND_MOVE;
-
-	return len;
-}
-
-static inline double get_avg_speed_given_time(const struct flow *fw,
-	uint64_t total_time_ns)
-{
-	return ((double)(fw->measured_blocks * fw->block_size) * 1000000000.0)
-		/ total_time_ns;
-}
-
-/* Average writing speed in byte/s. */
-static inline double get_avg_speed(const struct flow *fw)
-{
-	return get_avg_speed_given_time(fw, fw->measured_time_ns);
-}
-
-static inline bool has_enough_measurements(const struct flow *fw)
-{
-	return fw->measured_time_ns > fw->delay_ns;
-}
-
 static void report_progress(struct flow *fw, double inst_speed)
 {
 	const char *unit = adjust_unit(&inst_speed);
 	double percent;
-	char buf[256];
+	char buf[128 + TIME_STR_SIZE];
+	char *at_buf = buf;
+	size_t rem_size = sizeof(buf);
 	int c, len = 0;
 
 	/* The following shouldn't be necessary, but sometimes
@@ -218,18 +167,26 @@ static void report_progress(struct flow *fw, double inst_speed)
 	if (fw->total_size < fw->total_processed)
 		fw->total_size = fw->total_processed;
 
-	percent = (double)fw->total_processed * 100 / fw->total_size;
-	c = snprintf(buf, sizeof(buf), "%.2f%% -- %.2f %s/s",
+	percent = fw->total_processed * 100.0 / fw->total_size;
+	c = snprintf(at_buf, rem_size, "%.2f%% -- %.2f %s/s",
 		percent, inst_speed, unit);
-	assert(c > 0);
-	len += c;
+	CHECK_AND_MOVE;
 
 	if (has_enough_measurements(fw)) {
-		c = pr_time(buf + len, sizeof(buf) - len,
-			(fw->total_size - fw->total_processed) /
-			get_avg_speed(fw));
-		assert(c > 0);
-		len += c;
+		const double rem_size_byte =
+			fw->total_size - fw->total_processed;
+		const double speed_byte_per_ns =
+			(double)(fw->measured_blocks * fw->block_size) /
+			fw->measured_time_ns;
+		const uint64_t rem_time_ns =
+			round(rem_size_byte / speed_byte_per_ns);
+
+		c = snprintf(at_buf, rem_size, " -- ");
+		CHECK_AND_MOVE;
+
+		assert(rem_size >= TIME_STR_SIZE);
+		c = nsec_to_str(rem_time_ns, at_buf);
+		CHECK_AND_MOVE;
 	}
 
 	assert((size_t)len + 1 <= sizeof(buf));
@@ -379,7 +336,7 @@ int measure(int fd, struct flow *fw, long processed)
 		 * Round wait_ns, so it operates as an integer when used in
 		 * nanoseconds.
 		 */
-		double wait_ns = round(
+		uint64_t wait_ns = round(
 			(bytes_g - delay_ns * fw->max_process_rate) /
 			fw->max_process_rate);
 
@@ -396,7 +353,6 @@ int measure(int fd, struct flow *fw, long processed)
 		 *
 		 * Therefore, wait_ns cannot be negative.
 		 */
-		assert(wait_ns >= 0);
 
 		if (delay_ns + wait_ns < fw->delay_ns) {
 			/* In this case, There is a factor f > 1 that
@@ -413,7 +369,7 @@ int measure(int fd, struct flow *fw, long processed)
 
 		if (wait_ns > 0) {
 			/* Slow down. */
-			ussleep(wait_ns / 1000.);
+			nssleep(wait_ns);
 
 			/* Adjust measurements. */
 			delay_ns += wait_ns;

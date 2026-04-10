@@ -37,24 +37,24 @@ jobs:
       - if: matrix.volume == '/'
         run: sudo chmod a+w /
 
-      - run: ./f3write -V
-      - run: ./f3write --help
-      - run: ${{ matrix.asroot.sudo }}./f3write -s 2 -e 4 -w 50000 ${{ matrix.volume }}
+      - run: build/f3write -V
+      - run: build/f3write --help
+      - run: ${{ matrix.asroot.sudo }}build/f3write -s 2 -e 4 -w 50000 ${{ matrix.volume }}
 
       - run: stat ${{ matrix.volume }}/2.h2w
       - run: stat ${{ matrix.volume }}/3.h2w
       - run: stat ${{ matrix.volume }}/4.h2w
 
-      - run: ./f3read -V
-      - run: ./f3read --help
-      - run: ${{ matrix.asroot.sudo }}./f3read -s 2 -e 4 -r 50000 ${{ matrix.volume }}
+      - run: build/f3read -V
+      - run: build/f3read --help
+      - run: ${{ matrix.asroot.sudo }}build/f3read -s 2 -e 4 -r 50000 ${{ matrix.volume }}
 
-      - run: ./f3probe -V
-      - run: ./f3probe --help
-      - run: ./f3brew -V
-      - run: ./f3brew --help
-      - run: ./f3fix -V
-      - run: ./f3fix --help
+      - run: build/f3probe -V
+      - run: build/f3probe --help
+      - run: build/f3brew -V
+      - run: build/f3brew --help
+      - run: build/f3fix -V
+      - run: build/f3fix --help
 
       - name: Create loop device for f3probe, f3brew, and f3fix tests
         id: loop
@@ -63,9 +63,9 @@ jobs:
           sudo losetup -fP dummy.img
           echo "dev=$(sudo losetup -j dummy.img | cut -d: -f1)" >> $GITHUB_OUTPUT
 
-      - run: sudo ./f3probe ${{ steps.loop.outputs.dev }}
-      - run: sudo ./f3brew --reset-type=2 -h 0 -e 4 ${{ steps.loop.outputs.dev }}
-      - run: sudo ./f3fix --first-sec 1 --last-sec 10 ${{ steps.loop.outputs.dev }}
+      - run: sudo build/f3probe ${{ steps.loop.outputs.dev }}
+      - run: sudo build/f3brew --reset-type=2 -h 0 -e 4 ${{ steps.loop.outputs.dev }}
+      - run: sudo build/f3fix --first-sec 1 --last-sec 10 ${{ steps.loop.outputs.dev }}
 
       - name: Cleanup loop device
         if: always()
@@ -102,17 +102,117 @@ jobs:
       - if: matrix.volume == 'relative-path'
         run: mkdir relative-path
 
-      - run: ./f3write -V
-      - run: ./f3write --help
-      - run: ${{ matrix.asroot.sudo }}./f3write -s 2 -e 4 -w 50000 ${{ matrix.volume }}
+      - run: build/f3write -V
+      - run: build/f3write --help
+      - run: ${{ matrix.asroot.sudo }}build/f3write -s 2 -e 4 -w 50000 ${{ matrix.volume }}
 
       - run: stat ${{ matrix.volume }}/2.h2w
       - run: stat ${{ matrix.volume }}/3.h2w
       - run: stat ${{ matrix.volume }}/4.h2w
 
-      - run: ./f3read -V
-      - run: ./f3read --help
-      - run: ${{ matrix.asroot.sudo }}./f3read -s 2 -e 4 -r 50000 ${{ matrix.volume }}
+      - run: build/f3read -V
+      - run: build/f3read --help
+      - run: ${{ matrix.asroot.sudo }}build/f3read -s 2 -e 4 -r 50000 ${{ matrix.volume }}
+
+  OpenBSD:
+    strategy:
+      fail-fast: false
+      matrix:
+        volume:
+          - /tmp
+          - .
+          - relative-path
+        asroot:
+          - name: ''
+            sudo: ''
+          - name: ' as root'
+            sudo: 'sudo '
+        exclude:
+          - volume: .
+            asroot: { name: ' as root', sudo: 'sudo ' }
+          - volume: relative-path
+            asroot: { name: ' as root', sudo: 'sudo ' }
+
+    name: OpenBSD ${{ matrix.volume }}${{ matrix.asroot.name }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test on OpenBSD
+        uses: cross-platform-actions/action@v0.25.0
+        with:
+          operating_system: openbsd
+          version: '7.5'
+          run: |
+            sudo pkg_add argp-standalone gmake
+            gmake
+
+            if [ "${{ matrix.volume }}" = "relative-path" ]; then
+              mkdir relative-path
+            fi
+
+            build/f3write -V
+            build/f3write --help
+            ${{ matrix.asroot.sudo }}build/f3write -s 2 -e 4 -w 50000 ${{ matrix.volume }}
+
+            stat ${{ matrix.volume }}/2.h2w
+            stat ${{ matrix.volume }}/3.h2w
+            stat ${{ matrix.volume }}/4.h2w
+
+            build/f3read -V
+            build/f3read --help
+            ${{ matrix.asroot.sudo }}build/f3read -s 2 -e 4 -r 50000 ${{ matrix.volume }}
+
+  FreeBSD:
+    strategy:
+      fail-fast: false
+      matrix:
+        volume:
+          - /tmp
+          - .
+          - relative-path
+        asroot:
+          - name: ''
+            sudo: ''
+          - name: ' as root'
+            sudo: 'sudo '
+        exclude:
+          - volume: .
+            asroot: { name: ' as root', sudo: 'sudo ' }
+          - volume: relative-path
+            asroot: { name: ' as root', sudo: 'sudo ' }
+
+    name: FreeBSD ${{ matrix.volume }}${{ matrix.asroot.name }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test on FreeBSD
+        uses: cross-platform-actions/action@v0.25.0
+        with:
+          operating_system: freebsd
+          version: '14.1'
+          run: |
+            sudo pkg install -y argp-standalone gmake
+            gmake
+
+            if [ "${{ matrix.volume }}" = "relative-path" ]; then
+              mkdir relative-path
+            fi
+
+            build/f3write -V
+            build/f3write --help
+            ${{ matrix.asroot.sudo }}build/f3write -s 2 -e 4 -w 50000 ${{ matrix.volume }}
+
+            stat ${{ matrix.volume }}/2.h2w
+            stat ${{ matrix.volume }}/3.h2w
+            stat ${{ matrix.volume }}/4.h2w
+
+            build/f3read -V
+            build/f3read --help
+            ${{ matrix.asroot.sudo }}build/f3read -s 2 -e 4 -r 50000 ${{ matrix.volume }}
 
   Cygwin:
     strategy:
@@ -143,14 +243,14 @@ jobs:
       - if: matrix.volume.windows == 'relative-path'
         run: New-Item -ItemType Directory -Path relative-path
 
-      - run: '& .\f3write.exe -V'
-      - run: '& .\f3write.exe --help'
-      - run: '& .\f3write.exe -s 2 -e 4 -w 50000 ${{ matrix.volume.cygwin }}'
+      - run: '& .\build\f3write.exe -V'
+      - run: '& .\build\f3write.exe --help'
+      - run: '& .\build\f3write.exe -s 2 -e 4 -w 50000 ${{ matrix.volume.cygwin }}'
 
       - run: 'Get-Item ${{ matrix.volume.windows }}\2.h2w'
       - run: 'Get-Item ${{ matrix.volume.windows }}\3.h2w'
       - run: 'Get-Item ${{ matrix.volume.windows }}\4.h2w'
 
-      - run: '& .\f3read.exe -V'
-      - run: '& .\f3read.exe --help'
-      - run: '& .\f3read.exe -s 2 -e 4 -r 50000 ${{ matrix.volume.cygwin }}'
+      - run: '& .\build\f3read.exe -V'
+      - run: '& .\build\f3read.exe --help'
+      - run: '& .\build\f3read.exe -s 2 -e 4 -r 50000 ${{ matrix.volume.cygwin }}'

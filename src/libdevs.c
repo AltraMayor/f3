@@ -11,7 +11,7 @@
 #include <errno.h>
 #include <err.h>
 #include <sys/ioctl.h>
-#include <sys/time.h>
+#include <time.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -979,12 +979,12 @@ struct perf_device {
 
 	struct device		*shadow_dev;
 
-	uint64_t		read_count;
-	uint64_t		read_time_us;
-	uint64_t		write_count;
-	uint64_t		write_time_us;
+	uint64_t		read_blocks;
+	uint64_t		read_time_ns;
+	uint64_t		write_blocks;
+	uint64_t		write_time_ns;
 	uint64_t		reset_count;
-	uint64_t		reset_time_us;
+	uint64_t		reset_time_ns;
 };
 
 static inline struct perf_device *dev_pdev(struct device *dev)
@@ -996,15 +996,15 @@ static int pdev_read_blocks(struct device *dev, char *buf,
 		uint64_t first_pos, uint64_t last_pos)
 {
 	struct perf_device *pdev = dev_pdev(dev);
-	struct timeval t1, t2;
+	struct timespec t1, t2;
 	int rc;
 
-	assert(!gettimeofday(&t1, NULL));
+	assert(!clock_gettime(CLOCK_MONOTONIC, &t1));
 	rc = pdev->shadow_dev->read_blocks(pdev->shadow_dev, buf,
 		first_pos, last_pos);
-	assert(!gettimeofday(&t2, NULL));
-	pdev->read_count += last_pos - first_pos + 1;
-	pdev->read_time_us += diff_timeval_us(&t1, &t2);
+	assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
+	pdev->read_blocks += last_pos - first_pos + 1;
+	pdev->read_time_ns += diff_timespec_ns(&t1, &t2);
 	return rc;
 }
 
@@ -1012,29 +1012,29 @@ static int pdev_write_blocks(struct device *dev, const char *buf,
 		uint64_t first_pos, uint64_t last_pos)
 {
 	struct perf_device *pdev = dev_pdev(dev);
-	struct timeval t1, t2;
+	struct timespec t1, t2;
 	int rc;
 
-	assert(!gettimeofday(&t1, NULL));
+	assert(!clock_gettime(CLOCK_MONOTONIC, &t1));
 	rc = pdev->shadow_dev->write_blocks(pdev->shadow_dev, buf,
 		first_pos, last_pos);
-	assert(!gettimeofday(&t2, NULL));
-	pdev->write_count += last_pos - first_pos + 1;
-	pdev->write_time_us += diff_timeval_us(&t1, &t2);
+	assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
+	pdev->write_blocks += last_pos - first_pos + 1;
+	pdev->write_time_ns += diff_timespec_ns(&t1, &t2);
 	return rc;
 }
 
 static int pdev_reset(struct device *dev)
 {
 	struct perf_device *pdev = dev_pdev(dev);
-	struct timeval t1, t2;
+	struct timespec t1, t2;
 	int rc;
 
-	assert(!gettimeofday(&t1, NULL));
+	assert(!clock_gettime(CLOCK_MONOTONIC, &t1));
 	rc = dev_reset(pdev->shadow_dev);
-	assert(!gettimeofday(&t2, NULL));
+	assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
 	pdev->reset_count++;
-	pdev->reset_time_us += diff_timeval_us(&t1, &t2);
+	pdev->reset_time_ns += diff_timespec_ns(&t1, &t2);
 	return rc;
 }
 
@@ -1068,12 +1068,12 @@ struct device *create_perf_device(struct device *dev)
 		return NULL;
 
 	pdev->shadow_dev = dev;
-	pdev->read_count = 0;
-	pdev->read_time_us = 0;
-	pdev->write_count = 0;
-	pdev->write_time_us = 0;
+	pdev->read_blocks = 0;
+	pdev->read_time_ns = 0;
+	pdev->write_blocks = 0;
+	pdev->write_time_ns = 0;
 	pdev->reset_count = 0;
-	pdev->reset_time_us = 0;
+	pdev->reset_time_ns = 0;
 
 	pdev->dev.size_byte = dev->size_byte;
 	pdev->dev.block_order = dev->block_order;
@@ -1087,26 +1087,26 @@ struct device *create_perf_device(struct device *dev)
 }
 
 void perf_device_sample(struct device *dev,
-	uint64_t *pread_count, uint64_t *pread_time_us,
-	uint64_t *pwrite_count, uint64_t *pwrite_time_us,
-	uint64_t *preset_count, uint64_t *preset_time_us)
+	uint64_t *pread_blocks, uint64_t *pread_time_ns,
+	uint64_t *pwrite_blocks, uint64_t *pwrite_time_ns,
+	uint64_t *preset_count, uint64_t *preset_time_ns)
 {
 	struct perf_device *pdev = dev_pdev(dev);
 
-	if (pread_count)
-		*pread_count = pdev->read_count;
-	if (pread_time_us)
-		*pread_time_us = pdev->read_time_us;
+	if (pread_blocks)
+		*pread_blocks = pdev->read_blocks;
+	if (pread_time_ns)
+		*pread_time_ns = pdev->read_time_ns;
 
-	if (pwrite_count)
-		*pwrite_count = pdev->write_count;
-	if (pwrite_time_us)
-		*pwrite_time_us = pdev->write_time_us;
+	if (pwrite_blocks)
+		*pwrite_blocks = pdev->write_blocks;
+	if (pwrite_time_ns)
+		*pwrite_time_ns = pdev->write_time_ns;
 
 	if (preset_count)
 		*preset_count = pdev->reset_count;
-	if (preset_time_us)
-		*preset_time_us = pdev->reset_time_us;
+	if (preset_time_ns)
+		*preset_time_ns = pdev->reset_time_ns;
 }
 
 #define SDEV_BITMAP_WORD		long
@@ -1180,8 +1180,7 @@ static int sdev_load_blocks(struct safe_device *sdev,
 		uint64_t first_pos, uint64_t last_pos)
 {
 	const int block_order = dev_get_block_order(sdev->shadow_dev);
-	char *block_buf = (char *)align_mem(sdev->saved_blocks, block_order) +
-		(sdev->sb_n << block_order);
+	char *block_buf = sdev->saved_blocks + (sdev->sb_n << block_order);
 	int rc;
 
 	assert(sdev->sb_n + (last_pos - first_pos + 1) < sdev->sb_max);
@@ -1282,7 +1281,7 @@ void sdev_recover(struct device *dev, uint64_t very_last_pos)
 {
 	struct safe_device *sdev = dev_sdev(dev);
 	const int block_order = dev_get_block_order(sdev->shadow_dev);
-	char *first_block = align_mem(sdev->saved_blocks, block_order);
+	char *first_block = sdev->saved_blocks;
 	uint64_t i, first_pos, last_pos;
 	char *start_buf;
 	int has_seq;
@@ -1358,14 +1357,15 @@ struct device *create_safe_device(struct device *dev, uint64_t max_blocks,
 {
 	struct safe_device *sdev;
 	const int block_order = dev_get_block_order(dev);
+	const int block_size = dev_get_block_size(dev);
 	uint64_t length;
 
 	sdev = malloc(sizeof(*sdev));
 	if (!sdev)
 		goto error;
 
-	length = align_head(block_order) + (max_blocks << block_order);
-	sdev->saved_blocks = malloc(length);
+	length = max_blocks << block_order;
+	sdev->saved_blocks = aligned_alloc(block_size, length);
 	if (!sdev->saved_blocks)
 		goto sdev;
 

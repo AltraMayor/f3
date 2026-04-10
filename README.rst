@@ -31,8 +31,8 @@ Use these two programs in this order. f3write will write large files to
 your mounted disk and f3read will check if the flash disk contains
 exactly the written files::
 
-    $ ./f3write /media/michel/5EBD-5C80/
-    $ ./f3read /media/michel/5EBD-5C80/
+    $ build/f3write /media/michel/5EBD-5C80/
+    $ build/f3read /media/michel/5EBD-5C80/
 
 Please replace "/media/michel/5EBD-5C80/" with the appropriate path. USB
 devices are mounted in "/Volumes" on Macs.
@@ -48,7 +48,7 @@ it only writes what's necessary to test the drive. It operates directly
 on the (unmounted) block device and needs to be run as a privileged
 user::
 
-    # ./f3probe --destructive --time-ops /dev/sdX
+    # build/f3probe --destructive --time-ops /dev/sdX
 
 .. warning:: This will destroy any previously stored data on your disk!
 
@@ -58,7 +58,7 @@ Correcting capacity to actual size with f3fix
 f3fix creates a partition that fits the actual size of the fake drive.
 Use f3probe's output to determine the parameters for f3fix::
 
-    # ./f3fix --last-sec=16477878 /dev/sdX
+    # build/f3fix --last-sec=16477878 /dev/sdX
 
 Installation
 ============
@@ -348,16 +348,16 @@ Files
 -----
 
 - ``changelog`` - Change log for package maintainers
-- ``f3read.1`` - Man page for f3read and f3write
+- ``man/f3read.1`` - Man page for f3read and f3write
 
-  In order to read this manual page, run ``man ./f3read.1``.
+  In order to read this manual page, run ``man build/f3read.1``.
   To install the page, run
-  ``install --owner=root --group=root --mode=644 f3read.1 /usr/share/man/man1``.
+  ``install --owner=root --group=root --mode=644 man/f3read.1 /usr/share/man/man1``.
 
 - ``LICENSE`` - License (GPLv3)
 - ``Makefile`` - make(1) file
 - ``README`` - This file
-- ``*.h`` and ``*.c`` - C code of F3
+- ``src/*.h`` and ``src/*.c`` - C code of F3
 - ``flake.nix`` - nix package manager configuration allowing automatic building and or installation of repository contents.
 - ``flake.lock`` - specifies build dependency package versions so the nix package manager can build f3
 
@@ -368,14 +368,14 @@ Although the simple scripts listed in this section are ready for use,
 they are really meant to help you to write your own scripts. So you can
 personalize F3 to your specific needs:
 
-- ``f3write.h2w`` - Script to create files exactly like H2testw.
+- ``scripts/f3write.h2w`` - Script to create files exactly like H2testw.
 
-  Use example: ``f3write.h2w /media/michel/5EBD-5C80/``.
+  Use example: ``scripts/f3write.h2w /media/michel/5EBD-5C80/``.
 
-- ``log-f3wr`` - Script that runs f3write and f3read, and records
+- ``scripts/log-f3wr`` - Script that runs f3write and f3read, and records
   their output into a log file.
 
-  Use example: ``log-f3wr log-filename /media/michel/5EBD-5C80/``.
+  Use example: ``scripts/log-f3wr log-filename /media/michel/5EBD-5C80/``.
 
 Please notice that all scripts and use examples above assume that
 f3write, f3read, and the scripts are in the same folder.

@@ -54,18 +54,6 @@ struct args {
 	PedSector		last_sec;
 };
 
-static long long arg_to_long_long(const struct argp_state *state,
-	const char *arg)
-{
-	char *end;
-	long long ll = strtoll(arg, &end, 0);
-	if (!arg)
-		argp_error(state, "An integer must be provided");
-	if (!*arg || *end)
-		argp_error(state, "`%s' is not an integer", arg);
-	return ll;
-}
-
 static error_t parse_opt(int key, char *arg, struct argp_state *state)
 {
 	struct args *args = state->input;
@@ -97,7 +85,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		break;
 
 	case 'a':
-		ll = arg_to_long_long(state, arg);
+		ll = arg_to_ll_bytes(state, arg);
 		if (ll < 0)
 			argp_error(state,
 				"First sector must be greater or equal to 0");
@@ -105,7 +93,7 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 		break;
 
 	case 'l':
-		ll = arg_to_long_long(state, arg);
+		ll = arg_to_ll_bytes(state, arg);
 		if (ll < 0)
 			argp_error(state,
 				"Last sector must be greater or equal to 0");

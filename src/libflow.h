@@ -2,6 +2,7 @@
 #define HEADER_LIBFLOW_H
 
 #include <assert.h>
+#include <stdalign.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -74,7 +75,7 @@ struct flow {
  * The unit of @max_process_rate is KB per second.
  */
 void init_flow(struct flow *fw, int block_size, uint64_t total_size,
-	long max_process_rate, progress_cb cb, unsigned int indent,
+	uint64_t max_process_rate, progress_cb cb, unsigned int indent,
 	flow_func_flush_chunk_t func_flush_chunk);
 
 static inline int fw_get_block_size(const struct flow *fw)
@@ -118,7 +119,10 @@ struct dynamic_buffer {
 	char   *buf;
 	size_t len;
 	bool   max_buf;
-	char   backup_buf[1 << 21]; /* 2MB */
+	/* Ensure that backup_buf has the same memory alignment as
+	 * it would have, had it been returned by malloc().
+	 */
+	alignas(max_align_t) char backup_buf[1 << 21]; /* 2MB */
 };
 
 static inline void dbuf_init(struct dynamic_buffer *dbuf)

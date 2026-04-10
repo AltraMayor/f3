@@ -11,14 +11,14 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/statvfs.h>
-#include <sys/time.h>
 #include <errno.h>
 #include <unistd.h>
 #include <err.h>
 #include <argp.h>
+#include <inttypes.h>
 
 #include "libutils.h"
-#include "utils.h"
+#include "libfile.h"
 #include "libflow.h"
 #include "version.h"
 
@@ -44,9 +44,9 @@ static struct argp_option options[] = {
 };
 
 struct args {
-	long		start_at;
-	long		end_at;
-	long		max_write_rate;
+	uint64_t	start_at;
+	uint64_t	end_at;
+	uint64_t	max_write_rate;
 	int		show_progress;
 	const char	*dev_path;
 };
@@ -54,35 +54,35 @@ struct args {
 static error_t parse_opt(int key, char *arg, struct argp_state *state)
 {
 	struct args *args = state->input;
-	long l;
+	long long ll;
 
 	switch (key) {
 	case 's':
-		l = arg_to_long(state, arg);
-		if (l <= 0)
+		ll = arg_to_ll_bytes(state, arg);
+		if (ll <= 0)
 			argp_error(state,
 				"NUM must be greater than zero");
-		args->start_at = l - 1;
+		args->start_at = ll - 1;
 		break;
 
 	case 'e':
-		l = arg_to_long(state, arg);
-		if (l <= 0)
+		ll = arg_to_ll_bytes(state, arg);
+		if (ll <= 0)
 			argp_error(state,
 				"NUM must be greater than zero");
-		args->end_at = l - 1;
+		args->end_at = ll - 1;
 		break;
 
 	case 'w':
-		l = arg_to_long(state, arg);
-		if (l <= 0)
+		ll = arg_to_ll_bytes(state, arg);
+		if (ll <= 0)
 			argp_error(state,
 				"KB/s must be greater than zero");
-		args->max_write_rate = l;
+		args->max_write_rate = ll;
 		break;
 
 	case 'p':
-		args->show_progress = !!arg_to_long(state, arg);
+		args->show_progress = !!arg_to_ll_bytes(state, arg);
 		break;
 
 	case ARGP_KEY_INIT:
@@ -113,29 +113,6 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
 
-static uint64_t fill_buffer(void *buf, size_t size, uint64_t offset)
-{
-	const int num_int64 = SECTOR_SIZE >> 3;
-	uint8_t *p, *ptr_end;
-
-	assert(size > 0);
-	assert(size % SECTOR_SIZE == 0);
-
-	p = buf;
-	ptr_end = p + size;
-	while (p < ptr_end) {
-		uint64_t *sector = (uint64_t *)p;
-		int i;
-		sector[0] = offset;
-		for (i = 1; i < num_int64; i++)
-			sector[i] = random_number(sector[i - 1]);
-		p += SECTOR_SIZE;
-		offset += SECTOR_SIZE;
-	}
-
-	return offset;
-}
-
 /* XXX Avoid duplicate this function, which was copied from libdevs.c. */
 static int write_all(int fd, const char *buf, size_t count)
 {
@@ -159,9 +136,15 @@ static int write_chunk(struct dynamic_buffer *dbuf, int fd, size_t chunk_size,
 
 	while (chunk_size > 0) {
 		size_t turn_size = chunk_size <= len ? chunk_size : len;
+		size_t i;
 		int ret;
+
 		chunk_size -= turn_size;
-		*poffset = fill_buffer(buf, turn_size, *poffset);
+		for (i = 0; i < turn_size; i += SECTOR_SIZE) {
+			fill_buffer_with_block(buf + i, SECTOR_ORDER, *poffset, 0);
+			*poffset += SECTOR_SIZE;
+		}
+
 		ret = write_all(fd, buf, turn_size);
 		if (ret)
 			return ret;
@@ -171,7 +154,7 @@ static int write_chunk(struct dynamic_buffer *dbuf, int fd, size_t chunk_size,
 }
 
 /* Return true when disk is full. */
-static int create_and_fill_file(const char *path, long number, size_t size,
+static int create_and_fill_file(const char *path, uint64_t number, size_t size,
 	int *phas_suggested_max_write_rate, struct flow *fw)
 {
 	char *full_fn;
@@ -203,7 +186,7 @@ static int create_and_fill_file(const char *path, long number, size_t size,
 	/* Write content. */
 	dbuf_init(&dbuf);
 	saved_errno = 0;
-	offset = (uint64_t)number * GIGABYTES;
+	offset = number << GIGABYTE_ORDER;
 	remaining = size;
 	start_measurement(fw);
 	while (remaining > 0) {
@@ -271,12 +254,12 @@ static int flush_chunk(const struct flow *fw, int fd)
 	return 0;
 }
 
-static int fill_fs(const char *path, long start_at, long end_at,
-	long max_write_rate, int progress)
+static int fill_fs(const char *path, uint64_t start_at, uint64_t end_at,
+	uint64_t max_write_rate, int progress)
 {
 	uint64_t free_space;
 	struct flow fw;
-	long i;
+	uint64_t i;
 	int has_suggested_max_write_rate = max_write_rate > 0;
 
 	free_space = get_freespace(path);
@@ -286,44 +269,41 @@ static int fill_fs(const char *path, long start_at, long end_at,
 		return 1;
 	}
 
+	assert(start_at <= end_at);
 	i = end_at - start_at + 1;
-	if (i > 0 && (uint64_t)i <= (free_space >> 30)) {
+	if (i <= (free_space >> GIGABYTE_ORDER)) {
 		/* The amount of data to write is less than the space available,
-		 * update @free_space to improve estimate of time to finish.
+		 * update free_space to improve estimate of time to finish.
 		 */
-		free_space = (uint64_t)i << 30;
+		free_space = i << GIGABYTE_ORDER;
 	} else {
 		/* There are more data to write than space available.
-		 * Reduce @end_at to reduce the number of error messages
-		 * when multiple write failures happens.
-		 *
-		 * One should not subtract the value below of one because
-		 * the expression (free_space >> 30) is an integer division,
-		 * that is, it ignores the remainder.
+		 * Reduce end_at to reduce the number of error messages
+		 * due to multiple write failures.
 		 */
-		end_at = start_at + (free_space >> 30);
+		end_at = start_at + (free_space >> GIGABYTE_ORDER);
 	}
 
 	init_flow(&fw, get_block_size(path), free_space, max_write_rate,
 		progress ? printf_flush_cb : dummy_cb, 0, flush_chunk);
 	for (i = start_at; i <= end_at; i++)
-		if (create_and_fill_file(path, i, GIGABYTES,
+		if (create_and_fill_file(path, i, GIGABYTE_SIZE,
 			&has_suggested_max_write_rate, &fw))
 			break;
 
 	/* Final report. */
 	pr_freespace(get_freespace(path));
-	/* Writing speed. */
 	print_avg_seq_speed(&fw, "write", true);
 
 	return 0;
 }
 
-static void unlink_old_files(const char *path, long start_at, long end_at)
+static void unlink_old_files(const char *path,
+	uint64_t start_at, uint64_t end_at)
 {
-	const long *files = ls_my_files(path, start_at, end_at);
-	const long *number = files;
-	while (*number >= 0) {
+	const uint64_t *files = ls_my_files(path, start_at, end_at);
+	const uint64_t *number = files;
+	while (*number != (uint64_t)-1) {
 		char *full_fn;
 		const char *filename;
 		full_fn = full_fn_from_number(&filename, path, *number);

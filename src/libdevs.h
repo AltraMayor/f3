@@ -84,9 +84,9 @@ struct device *create_block_device(const char *filename, enum reset_type rt);
 
 struct device *create_perf_device(struct device *dev);
 void perf_device_sample(struct device *dev,
-	uint64_t *pread_count, uint64_t *pread_time_us,
-	uint64_t *pwrite_count, uint64_t *pwrite_time_us,
-	uint64_t *preset_count, uint64_t *preset_time_us);
+	uint64_t *pread_blocks, uint64_t *pread_time_ns,
+	uint64_t *pwrite_blocks, uint64_t *pwrite_time_ns,
+	uint64_t *preset_count, uint64_t *preset_time_ns);
 /* Detach the shadow device of @pdev, free @pdev, and return
  * the shadow device.
  */

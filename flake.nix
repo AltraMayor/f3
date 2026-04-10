@@ -13,7 +13,7 @@
     {
       	f3 = pkgs.stdenv.mkDerivation {
         pname = "f3";
-        version = builtins.head (builtins.match ''.*#define[[:space:]]+F3_STR_VERSION[[:space:]]+"([0-9.]+)".*'' (builtins.readFile (self + "/version.h")));
+        version = builtins.head (builtins.match ''.*#define[[:space:]]+F3_STR_VERSION[[:space:]]+"([0-9.]+)".*'' (builtins.readFile (self + "/src/version.h")));
         src = ./.;
         nativeBuildInputs = [ pkgs.clang ];
         buildInputs = pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
