@@ -497,30 +497,58 @@ void dbuf_free(struct dynamic_buffer *dbuf)
 	dbuf->max_buf = true;
 }
 
-char *dbuf_get_buf(struct dynamic_buffer *dbuf, size_t size)
+char *dbuf_get_buf(struct dynamic_buffer *dbuf, int align_order,
+	size_t *psize)
 {
-	/* If enough buffer, or it's already the largest buffer, return it. */
-	if (size <= dbuf->len || dbuf->max_buf)
-		return dbuf->buf;
+	const int max_align_order = ilog2(alignof(max_align_t));
+	const size_t original_size = *psize;
+	size_t size = original_size;
+	size_t alignment, threshold;
+	int shift;
+	char *ret;
+
+	if (align_order < max_align_order)
+		align_order = max_align_order;
+	alignment = 1ULL << align_order;
+
+	/* If enough buffer and aligned, return it. */
+	if (size <= dbuf->len && is_aligned(dbuf->buf, alignment)) {
+		assert(*psize == original_size);
+		ret = dbuf->buf;
+		goto out;
+	}
+
+	if (dbuf->max_buf) {
+		/* It's already the largest buffer. */
+		goto align;
+	}
 
 	/*
 	 * Allocate a new buffer.
 	 */
-
 	__dbuf_free(dbuf);
+	threshold = sizeof(dbuf->backup_buf) - align_head(align_order);
 	do {
-		dbuf->buf = malloc(size);
+		dbuf->buf = aligned_alloc(alignment, size);
 		if (dbuf->buf != NULL) {
 			dbuf->len = size;
-			return dbuf->buf;
+			*psize = size;
+			ret = dbuf->buf;
+			goto out;
 		} else {
 			dbuf->max_buf = true;
 		}
 		size /= 2;
-	} while (size > sizeof(dbuf->backup_buf));
+	} while (size > threshold);
 
 	/* A larger buffer is not available; failsafe. */
 	dbuf->buf = dbuf->backup_buf;
 	dbuf->len = sizeof(dbuf->backup_buf);
-	return dbuf->buf;
+
+align:
+	ret = align_mem2(dbuf->buf, align_order, &shift);
+	*psize = MIN(*psize, dbuf->len - shift);
+out:
+	assert(*psize <= original_size);
+	return ret;
 }

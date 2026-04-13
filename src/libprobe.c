@@ -102,42 +102,32 @@ static int write_blocks(struct device *dev,
 	start_measurement(&rwi->seqw_fw);
 	while (first_pos <= last_block) {
 		const uint64_t chunk_bytes = get_rem_chunk_size(&rwi->seqw_fw);
-		const uint64_t needed_size =
-			align_head(block_order) + chunk_bytes;
 		const uint64_t max_blocks_to_write =
 			last_block - first_pos + 1;
+		size_t buf_len = chunk_bytes;
 		uint64_t blocks_to_write;
-		int shift;
 		char *buffer, *stamp_blk;
-		size_t buf_len;
 		uint64_t pos, next_pos;
 
-		buffer = align_mem2(dbuf_get_buf(&rwi->seqw_dbuf, needed_size),
-			block_order, &shift);
-		buf_len = dbuf_get_len(&rwi->seqw_dbuf);
-
-		blocks_to_write = buf_len >= needed_size
-			? chunk_bytes >> block_order
-			: (buf_len - shift) >> block_order;
-		if (blocks_to_write > max_blocks_to_write)
-			blocks_to_write = max_blocks_to_write;
-
-		next_pos = first_pos + blocks_to_write - 1;
+		buffer = dbuf_get_buf(&rwi->seqw_dbuf, block_order, &buf_len);
+		blocks_to_write =
+			MIN(buf_len >> block_order, max_blocks_to_write);
+		next_pos = first_pos + blocks_to_write;
 
 		stamp_blk = buffer;
-		for (pos = first_pos; pos <= next_pos; pos++) {
+		for (pos = first_pos; pos < next_pos; pos++) {
 			fill_buffer_with_block(stamp_blk, block_order, offset,
 				rwi->salt);
 			stamp_blk += block_size;
 			offset += block_size;
 		}
 
-		if (_write_blocks(dev, buffer, first_pos, next_pos,
+		if (_write_blocks(dev, buffer, first_pos, next_pos - 1,
 				&rwi->seqw_fw, cb, indent))
 			return true;
 
 		measure(&rwi->seqw_fw, blocks_to_write << block_order);
-		first_pos = next_pos + 1;
+		first_pos = next_pos;
 	}
 	end_measurement(&rwi->seqw_fw);
 	return false;

@@ -131,8 +131,8 @@ static int write_all(int fd, const char *buf, size_t count)
 static int write_chunk(struct dynamic_buffer *dbuf, int fd, size_t chunk_size,
 	uint64_t *poffset)
 {
-	char *buf = dbuf_get_buf(dbuf, chunk_size);
-	size_t len = dbuf_get_len(dbuf);
+	size_t len = chunk_size;
+	char *buf = dbuf_get_buf(dbuf, 0, &len);
 
 	while (chunk_size > 0) {
 		size_t turn_size = chunk_size <= len ? chunk_size : len;

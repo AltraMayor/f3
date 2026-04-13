@@ -127,14 +127,11 @@ static inline void dbuf_init(struct dynamic_buffer *dbuf)
 void dbuf_free(struct dynamic_buffer *dbuf);
 
 /*
- * Although the returned buffer may be smaller than @size,
- * this function never returns NULL.
+ * Although the returned buffer may be smaller than
+ * the input value of *psize in bytes, this function never returns NULL.
+ * The input value of *psize is the maximum size of the returned buffer.
  */
-char *dbuf_get_buf(struct dynamic_buffer *dbuf, size_t size);
-
-static inline size_t dbuf_get_len(const struct dynamic_buffer *dbuf)
-{
-	return dbuf->len;
-}
+char *dbuf_get_buf(struct dynamic_buffer *dbuf, int align_order,
+	size_t *psize);
 
 #endif	/* HEADER_LIBFLOW_H */

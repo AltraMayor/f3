@@ -170,8 +170,8 @@ static ssize_t check_chunk(struct dynamic_buffer *dbuf, int fd,
 	uint64_t *p_expected_offset, uint64_t chunk_size,
 	struct file_stats *stats)
 {
-	char *buf = dbuf_get_buf(dbuf, chunk_size);
-	size_t len = dbuf_get_len(dbuf);
+	size_t len = chunk_size;
+	char *buf = dbuf_get_buf(dbuf, 0, &len);
 	ssize_t tot_bytes_read = 0;
 
 	while (chunk_size > 0) {

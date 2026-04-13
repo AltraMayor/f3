@@ -79,6 +79,14 @@ static inline void *align_mem(void *p, int order)
 	return align_mem2(p, order, &shift);
 }
 
+/* Return true if @ptr is aligned to @alignment.
+ * @alignment must be a power of 2.
+ */
+static inline bool is_aligned(const void *ptr, size_t alignment)
+{
+	return ((uintptr_t)ptr & (alignment - 1)) == 0;
+}
+
 void print_header(FILE *f, const char *name);
 
 long long arg_to_ll_bytes(const struct argp_state *state, const char *arg);
