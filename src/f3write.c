@@ -197,6 +197,14 @@ static int create_and_fill_file(const char *path, uint64_t number, size_t size,
 		if (saved_errno)
 			break;
 		remaining -= write_size;
+
+		/* Push data to drive and tip the kernel. */
+		if (fdatasync(fd) < 0) {
+			saved_errno = errno;
+			break;
+		}
+		assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
+
 		if (measure(fd, fw, write_size) < 0) {
 			saved_errno = errno;
 			break;
@@ -242,18 +250,6 @@ static inline void pr_freespace(uint64_t fs)
 	printf("Free space: %.2f %s\n", f, unit);
 }
 
-static int flush_chunk(const struct flow *fw, int fd)
-{
-	UNUSED(fw);
-
-	if (fdatasync(fd) < 0)
-		return -1; /* Caller can read errno(3). */
-
-	/* Help the kernel to help us. */
-	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
-	return 0;
-}
-
 static int fill_fs(const char *path, uint64_t start_at, uint64_t end_at,
 	uint64_t max_write_rate, int progress)
 {
@@ -285,7 +281,7 @@ static int fill_fs(const char *path, uint64_t start_at, uint64_t end_at,
 	}
 
 	init_flow(&fw, get_block_size(path), free_space, max_write_rate,
-		progress ? printf_flush_cb : dummy_cb, 0, flush_chunk);
+		progress ? printf_flush_cb : dummy_cb, 0, NULL);
 	for (i = start_at; i <= end_at; i++)
 		if (create_and_fill_file(path, i, GIGABYTE_SIZE,
 			&has_suggested_max_write_rate, &fw))
