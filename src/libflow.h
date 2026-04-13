@@ -71,7 +71,7 @@ struct flow {
 	struct timespec	t1;
 };
 
-/* If @max_process_rate <= 0, the maximum processing rate is infinity.
+/* If @max_process_rate == 0, the maximum processing rate is infinity.
  * The unit of @max_process_rate is KB per second.
  */
 void init_flow(struct flow *fw, int block_size, uint64_t total_size,
