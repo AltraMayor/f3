@@ -261,16 +261,12 @@ static void validate_file(const char *path, uint64_t number, struct flow *fw,
 			saved_errno = - bytes_read;
 			break;
 		}
-		if (measure(fd, fw, bytes_read) < 0) {
+		if (measure(fw, bytes_read) < 0) {
 			saved_errno = errno;
 			break;
 		}
 	}
-	if (end_measurement(fd, fw) < 0) {
-		/* If a write failure has happened before, preserve it. */
-		if (!saved_errno)
-			saved_errno = errno;
-	}
+	end_measurement(fw);
 
 	print_status(stats);
 	stats->read_all = bytes_read == 0;
@@ -327,7 +323,7 @@ static void iterate_files(const char *path, const uint64_t *files,
 	UNUSED(end_at);
 
 	init_flow(&fw, get_block_size(path), get_total_size(path, files),
-		max_read_rate, progress ? printf_flush_cb : dummy_cb, 0, NULL);
+		max_read_rate, progress ? printf_flush_cb : dummy_cb, 0);
 	printf("                  SECTORS "
 		"     ok/corrupted/changed/overwritten\n");
 

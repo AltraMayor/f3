@@ -12,8 +12,6 @@
 
 struct flow;
 
-typedef int (*flow_func_flush_chunk_t)(const struct flow *fw, int fd);
-
 struct flow {
 	/* Total number of bytes to be processed. */
 	uint64_t	total_size;
@@ -43,11 +41,6 @@ struct flow {
 	int		erase;
 
 	/*
-	 * Methods
-	 */
-	flow_func_flush_chunk_t func_flush_chunk;
-
-	/*
 	 * Initialized while measuring
 	 */
 
@@ -75,8 +68,7 @@ struct flow {
  * The unit of @max_process_rate is KB per second.
  */
 void init_flow(struct flow *fw, int block_size, uint64_t total_size,
-	uint64_t max_process_rate, progress_cb cb, unsigned int indent,
-	flow_func_flush_chunk_t func_flush_chunk);
+	uint64_t max_process_rate, progress_cb cb, unsigned int indent);
 
 static inline int fw_get_block_size(const struct flow *fw)
 {
@@ -108,9 +100,9 @@ static inline void fw_get_measurements(const struct flow *fw,
 uint64_t get_rem_chunk_size(const struct flow *fw);
 
 void start_measurement(struct flow *fw);
-int measure(int fd, struct flow *fw, long processed);
+int measure(struct flow *fw, long processed);
 void clear_progress(struct flow *fw);
-int end_measurement(int fd, struct flow *fw);
+void end_measurement(struct flow *fw);
 
 void print_avg_seq_speed(const struct flow *fw, const char *speed_type,
 	bool use_sectors);

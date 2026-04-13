@@ -301,13 +301,10 @@ static void write_blocks(struct device *dev, struct flow *fw,
 				" to 0x%" PRIx64, first_pos, next_pos);
 		}
 
-		/* Since parameter func_flush_chunk of init_flow() is NULL,
-		 * the parameter fd of measure() is ignored.
-		 */
-		measure(0, fw, blocks_to_write << block_order);
+		measure(fw, blocks_to_write << block_order);
 		first_pos = next_pos + 1;
 	}
-	end_measurement(0, fw);
+	end_measurement(fw);
 	dbuf_free(&dbuf);
 }
 
@@ -326,7 +323,7 @@ static void test_write_blocks(struct device *dev,
 	fflush(stdout);
 
 	init_flow(&fw, block_size, total_size, max_write_rate,
-		show_progress ? printf_flush_cb : dummy_cb, 0, NULL);
+		show_progress ? printf_flush_cb : dummy_cb, 0);
 
 	write_blocks(dev, &fw, first_block, last_block);
 
@@ -468,13 +465,10 @@ static void read_blocks(struct device *dev, struct flow *fw,
 			probe_blk += block_size;
 		}
 
-		/* Since parameter func_flush_chunk of init_flow() is NULL,
-		 * the parameter fd of measure() is ignored.
-		 */
-		measure(0, fw, blocks_to_read << block_order);
+		measure(fw, blocks_to_read << block_order);
 		first_pos = next_pos + 1;
 	}
-	end_measurement(0, fw);
+	end_measurement(fw);
 	dbuf_free(&dbuf);
 
 	if (range.state != bs_unknown)
@@ -498,7 +492,7 @@ static void test_read_blocks(struct device *dev,
 		first_block != last_block ? "s" : "", first_block, last_block);
 
 	init_flow(&fw, block_size, total_size, max_read_rate,
-		show_progress ? printf_flush_cb : dummy_cb, 0, NULL);
+		show_progress ? printf_flush_cb : dummy_cb, 0);
 
 	read_blocks(dev, &fw, first_block, last_block, &stats);
 

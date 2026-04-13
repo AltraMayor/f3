@@ -205,16 +205,12 @@ static int create_and_fill_file(const char *path, uint64_t number, size_t size,
 		}
 		assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
 
-		if (measure(fd, fw, write_size) < 0) {
+		if (measure(fw, write_size) < 0) {
 			saved_errno = errno;
 			break;
 		}
 	}
-	if (end_measurement(fd, fw) < 0) {
-		/* If a write failure has happened before, preserve it. */
-		if (!saved_errno)
-			saved_errno = errno;
-	}
+	end_measurement(fw);
 	dbuf_free(&dbuf);
 	close(fd);
 	free(full_fn);
@@ -281,7 +277,7 @@ static int fill_fs(const char *path, uint64_t start_at, uint64_t end_at,
 	}
 
 	init_flow(&fw, get_block_size(path), free_space, max_write_rate,
-		progress ? printf_flush_cb : dummy_cb, 0, NULL);
+		progress ? printf_flush_cb : dummy_cb, 0);
 	for (i = start_at; i <= end_at; i++)
 		if (create_and_fill_file(path, i, GIGABYTE_SIZE,
 			&has_suggested_max_write_rate, &fw))

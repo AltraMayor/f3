@@ -66,8 +66,7 @@ static inline void move_to_inc_at_start(struct flow *fw)
 }
 
 void init_flow(struct flow *fw, int block_size, uint64_t total_size,
-	uint64_t max_process_rate, progress_cb cb, unsigned int indent,
-	flow_func_flush_chunk_t func_flush_chunk)
+	uint64_t max_process_rate, progress_cb cb, unsigned int indent)
 {
 	fw->total_size		= total_size;
 	fw->total_processed	= 0;
@@ -81,7 +80,6 @@ void init_flow(struct flow *fw, int block_size, uint64_t total_size,
 	fw->measured_blocks	= 0;
 	fw->measured_time_ns	= 0;
 	fw->erase		= 0;
-	fw->func_flush_chunk	= func_flush_chunk;
 	fw->has_rem_chunk_size	= false;
 	fw->rem_chunk_size	= 0;
 	fw->rem_chunk_speed	= 0;
@@ -275,13 +273,6 @@ static inline int is_rate_below(const struct flow *fw,
 	return delay_ns <= fw->delay_ns && inst_speed < fw->max_process_rate;
 }
 
-static inline int flush_chunk(const struct flow *fw, int fd)
-{
-	if (fw->func_flush_chunk)
-		return fw->func_flush_chunk(fw, fd);
-	return 0;
-}
-
 static void update_rem_chunk_size(struct flow *fw, double inst_speed)
 {
 	if (fw->rem_chunk_size != 0 && inst_speed < fw->rem_chunk_speed)
@@ -291,7 +282,7 @@ static void update_rem_chunk_size(struct flow *fw, double inst_speed)
 	fw->rem_chunk_speed = inst_speed;
 }
 
-int measure(int fd, struct flow *fw, long processed)
+int measure(struct flow *fw, long processed)
 {
 	ldiv_t result = ldiv(processed, fw->block_size);
 	struct timespec t2;
@@ -305,9 +296,6 @@ int measure(int fd, struct flow *fw, long processed)
 	if (fw->processed_blocks < fw->blocks_per_delay)
 		return 0;
 	assert(fw->processed_blocks == fw->blocks_per_delay);
-
-	if (flush_chunk(fw, fd) < 0)
-		return -1; /* Caller can read errno(3). */
 
 	assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
 	delay_ns = diff_timespec_ns(&fw->t1, &t2) + fw->acc_delay_ns;
@@ -462,34 +450,15 @@ int measure(int fd, struct flow *fw, long processed)
 	return 0;
 }
 
-int end_measurement(int fd, struct flow *fw)
+void end_measurement(struct flow *fw)
 {
-	struct timespec t2;
-	int saved_errno;
-	int ret = 0;
-
-	if (fw->processed_blocks <= 0)
-		goto out;
-
-	if (flush_chunk(fw, fd) < 0) {
-		saved_errno = errno;
-		ret = -1;
-		goto out;
+	if (fw->processed_blocks > 0) {
+		/* Track progress in between files. */
+		struct timespec t2;
+		assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
+		fw->acc_delay_ns += diff_timespec_ns(&fw->t1, &t2);
 	}
-
-	/* Save time in between closing ongoing file and creating a new file. */
-	assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
-	fw->acc_delay_ns += diff_timespec_ns(&fw->t1, &t2);
-
-out:
-	/* Erase progress information. */
-	clear_progress(fw);
-
-	if (ret < 0) {
-		/* Propagate errno(3) to caller. */
-		errno = saved_errno;
-	}
-	return ret;
+	clear_progress(fw); /* Erase progress information. */
 }
 
 void print_avg_seq_speed(const struct flow *fw, const char *speed_type,

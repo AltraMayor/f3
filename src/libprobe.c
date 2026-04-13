@@ -77,9 +77,9 @@ static int write_random_blocks(struct device *dev, const uint64_t pos[],
 		if (_write_blocks(dev, buffer, pos[i], pos[i], &rwi->randw_fw,
 				cb, indent))
 			return true;
-		measure(0, &rwi->randw_fw, block_size);
+		measure(&rwi->randw_fw, block_size);
 	}
-	end_measurement(0, &rwi->randw_fw);
+	end_measurement(&rwi->randw_fw);
 	return false;
 }
 
@@ -136,13 +136,10 @@ static int write_blocks(struct device *dev,
 				&rwi->seqw_fw, cb, indent))
 			return true;
 
-		/* Since parameter func_flush_chunk of init_flow() is NULL,
-		 * the parameter fd of measure() is ignored.
-		 */
-		measure(0, &rwi->seqw_fw, blocks_to_write << block_order);
+		measure(&rwi->seqw_fw, blocks_to_write << block_order);
 		first_pos = next_pos + 1;
 	}
-	end_measurement(0, &rwi->seqw_fw);
+	end_measurement(&rwi->seqw_fw);
 	return false;
 }
 
@@ -239,17 +236,17 @@ static int find_first_x_block(struct device *dev,
 			return true;
 		bs = validate_buffer_with_block(probe_blk, block_order,
 			x_blocks[i].expected_offset, &found_offset, rwi->salt);
-		measure(0, &rwi->randr_fw, block_size);
+		measure(&rwi->randr_fw, block_size);
 
 		if (in_bs_set(bs_set, bs)) {
 			/* Found the first x_block. */
 			*pfirst_x_block_idx = i;
 			*pstate = bs;
-			end_measurement(0, &rwi->randr_fw);
+			end_measurement(&rwi->randr_fw);
 			return false;
 		}
 	}
-	end_measurement(0, &rwi->randr_fw);
+	end_measurement(&rwi->randr_fw);
 
 not_found:
 	*pfirst_x_block_idx = n_blocks;
@@ -834,9 +831,9 @@ int probe_device(struct device *dev, struct probe_results *results,
 	/* We initialize total_size to 0 because inc_total_size() is called
 	 * to update it when new blocks become available.
 	 */
-	init_flow(&rwi.seqw_fw, block_size, 0, max_write_rate, fw_cb, 0, NULL);
-	init_flow(&rwi.randw_fw, block_size, 0, max_write_rate, fw_cb, 0, NULL);
-	init_flow(&rwi.randr_fw, block_size, 0, max_read_rate, fw_cb, 0, NULL);
+	init_flow(&rwi.seqw_fw, block_size, 0, max_write_rate, fw_cb, 0);
+	init_flow(&rwi.randw_fw, block_size, 0, max_write_rate, fw_cb, 0);
+	init_flow(&rwi.randr_fw, block_size, 0, max_read_rate, fw_cb, 0);
 
 	/* @left_pos must point to a good block.
 	 * We just point to the last block of the first 1MB of the card
