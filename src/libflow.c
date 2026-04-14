@@ -92,9 +92,9 @@ void init_flow(struct flow *fw, int block_size, uint64_t total_size,
 
 uint64_t get_rem_chunk_size(const struct flow *fw)
 {
-	const int64_t rem_blocks = fw->blocks_per_delay - fw->processed_blocks;
+	const uint64_t rem_blocks = fw->blocks_per_delay - fw->processed_blocks;
 	const uint64_t rem_size = rem_blocks * fw->block_size;
-	assert(rem_blocks > 0);
+	assert(fw->blocks_per_delay > fw->processed_blocks);
 	return fw->has_rem_chunk_size && rem_size >= fw->rem_chunk_size
 		? fw->rem_chunk_size
 		: rem_size;
@@ -113,7 +113,7 @@ void clear_progress(struct flow *fw)
 {
 	char buf[512], *at_buf = buf;
 
-	if (fw->erase <= 0) {
+	if (fw->erase == 0) {
 		if (fw->indent > 0) {
 			/* Remove indented empty line. */
 			fw->cb(fw->indent, "\b");
@@ -121,7 +121,7 @@ void clear_progress(struct flow *fw)
 		goto out;
 	}
 
-	assert((size_t)fw->erase * 3 + 1 <= sizeof(buf));
+	assert(fw->erase * 3 + 1 <= sizeof(buf));
 	at_buf += repeat_ch(at_buf, '\b', fw->erase);
 	at_buf += repeat_ch(at_buf, ' ', fw->erase);
 	at_buf += repeat_ch(at_buf, '\b', fw->erase);
@@ -214,7 +214,7 @@ static inline void move_to_steady(struct flow *fw)
 	fw->state = FW_STEADY;
 }
 
-static void move_to_search(struct flow *fw, int64_t bpd1, int64_t bpd2)
+static void move_to_search(struct flow *fw, uint64_t bpd1, uint64_t bpd2)
 {
 	assert(bpd1 > 0);
 	assert(bpd2 >= bpd1);
@@ -232,7 +232,7 @@ static void move_to_search(struct flow *fw, int64_t bpd1, int64_t bpd2)
 
 static inline void dec_step(struct flow *fw)
 {
-	if (fw->blocks_per_delay - fw->step > 0) {
+	if (fw->blocks_per_delay > fw->step) {
 		fw->blocks_per_delay -= fw->step;
 		fw->step *= 2;
 	} else

@@ -20,13 +20,13 @@ struct flow {
 	/* Indentation level for callback. */
 	unsigned int	indent;
 	/* Block size in bytes. */
-	int		block_size;
+	unsigned int	block_size;
 	/* Delay intended between measurements in nanoseconds. */
 	uint64_t	delay_ns;
 	/* Increment to apply to @blocks_per_delay. */
-	int64_t		step;
+	uint64_t	step;
 	/* Blocks to process before measurement. */
-	int64_t		blocks_per_delay;
+	uint64_t	blocks_per_delay;
 	/* Maximum processing rate in bytes per second. */
 	double		max_process_rate;
 	/* Number of measured blocks. */
@@ -36,7 +36,7 @@ struct flow {
 	/* State. */
 	enum {FW_INC, FW_DEC, FW_SEARCH, FW_STEADY} state;
 	/* Number of characters to erase before printing out progress. */
-	int		erase;
+	unsigned int	erase;
 
 	/*
 	 * Initialized while measuring
@@ -50,14 +50,14 @@ struct flow {
 	double		rem_chunk_speed;
 
 	/* Number of blocks processed since last measurement. */
-	int64_t		processed_blocks;
+	uint64_t	processed_blocks;
 	/*
 	 * Accumulated delay before @processed_blocks reaches @blocks_per_delay
 	 * in nanoseconds.
 	 */
 	uint64_t	acc_delay_ns;
 	/* Range of blocks_per_delay while in FW_SEARCH state. */
-	int64_t		bpd1, bpd2;
+	uint64_t	bpd1, bpd2;
 	/* Time measurements. */
 	struct timespec	t1;
 };
@@ -71,8 +71,7 @@ void init_flow(struct flow *fw, int block_size, uint64_t total_size,
 /* Total number of bytes already processed. */
 static inline uint64_t fw_get_total_processed(const struct flow *fw)
 {
-	return (uint64_t)(fw->measured_blocks + fw->processed_blocks) *
-		fw->block_size;
+	return (fw->measured_blocks + fw->processed_blocks) * fw->block_size;
 }
 
 static inline int fw_get_block_size(const struct flow *fw)
