@@ -15,8 +15,6 @@ struct flow;
 struct flow {
 	/* Total number of bytes to be processed. */
 	uint64_t	total_size;
-	/* Total number of bytes already processed. */
-	uint64_t	total_processed;
 	/* Callback to show progress. */
 	progress_cb	cb;
 	/* Indentation level for callback. */
@@ -70,6 +68,13 @@ struct flow {
 void init_flow(struct flow *fw, int block_size, uint64_t total_size,
 	uint64_t max_process_rate, progress_cb cb, unsigned int indent);
 
+/* Total number of bytes already processed. */
+static inline uint64_t fw_get_total_processed(const struct flow *fw)
+{
+	return (uint64_t)(fw->measured_blocks + fw->processed_blocks) *
+		fw->block_size;
+}
+
 static inline int fw_get_block_size(const struct flow *fw)
 {
 	return fw->block_size;
@@ -82,7 +87,7 @@ static inline int fw_get_block_order(const struct flow *fw)
 
 static inline void inc_total_size(struct flow *fw, uint64_t size)
 {
-	fw->total_size = fw->total_processed + size;
+	fw->total_size = fw_get_total_processed(fw) + size;
 }
 
 static inline void fw_set_indent(struct flow *fw, unsigned int indent)
