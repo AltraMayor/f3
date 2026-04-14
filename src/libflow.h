@@ -13,8 +13,8 @@
 struct flow;
 
 struct flow {
-	/* Total number of bytes to be processed. */
-	uint64_t	total_size;
+	/* Total number of blocks to be processed. */
+	uint64_t	total_blocks;
 	/* Callback to show progress. */
 	progress_cb	cb;
 	/* Indentation level for callback. */
@@ -65,13 +65,13 @@ struct flow {
 /* If @max_process_rate == 0, the maximum processing rate is infinity.
  * The unit of @max_process_rate is KB per second.
  */
-void init_flow(struct flow *fw, int block_size, uint64_t total_size,
+void init_flow(struct flow *fw, int block_size, uint64_t total_blocks,
 	uint64_t max_process_rate, progress_cb cb, unsigned int indent);
 
-/* Total number of bytes already processed. */
-static inline uint64_t fw_get_total_processed(const struct flow *fw)
+/* Total number of blocks already processed. */
+static inline uint64_t fw_get_total_processed_blocks(const struct flow *fw)
 {
-	return (fw->measured_blocks + fw->processed_blocks) * fw->block_size;
+	return fw->measured_blocks + fw->processed_blocks;
 }
 
 static inline int fw_get_block_size(const struct flow *fw)
@@ -84,9 +84,9 @@ static inline int fw_get_block_order(const struct flow *fw)
 	return ilog2(fw->block_size);
 }
 
-static inline void inc_total_size(struct flow *fw, uint64_t size)
+static inline void inc_total_blocks(struct flow *fw, uint64_t n_blocks)
 {
-	fw->total_size = fw_get_total_processed(fw) + size;
+	fw->total_blocks = fw_get_total_processed_blocks(fw) + n_blocks;
 }
 
 static inline void fw_set_indent(struct flow *fw, unsigned int indent)
@@ -97,7 +97,7 @@ static inline void fw_set_indent(struct flow *fw, unsigned int indent)
 static inline void fw_get_measurements(const struct flow *fw,
 	uint64_t *blocks, uint64_t *time_ns)
 {
-	*blocks = fw->measured_blocks + fw->processed_blocks;
+	*blocks = fw_get_total_processed_blocks(fw);
 	*time_ns = fw->measured_time_ns + fw->acc_delay_ns;
 }
 

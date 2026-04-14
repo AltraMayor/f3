@@ -67,7 +67,7 @@ static int write_random_blocks(struct device *dev, const uint64_t pos[],
 	if (n_pos == 0)
 		return false;
 
-	inc_total_size(&rwi->randw_fw, n_pos << block_order);
+	inc_total_blocks(&rwi->randw_fw, n_pos);
 	fw_set_indent(&rwi->randw_fw, indent);
 
 	start_measurement(&rwi->randw_fw);
@@ -95,8 +95,7 @@ static int write_blocks(struct device *dev,
 	if (first_block > last_block)
 		return false;
 
-	inc_total_size(&rwi->seqw_fw,
-		(last_block - first_block + 1) << block_order);
+	inc_total_blocks(&rwi->seqw_fw, last_block - first_block + 1);
 	fw_set_indent(&rwi->seqw_fw, indent);
 
 	start_measurement(&rwi->seqw_fw);
@@ -213,7 +212,7 @@ static int find_first_x_block(struct device *dev,
 	if (n_blocks == 0)
 		goto not_found;
 
-	inc_total_size(&rwi->randr_fw, n_blocks << block_order);
+	inc_total_blocks(&rwi->randr_fw, n_blocks);
 	fw_set_indent(&rwi->randr_fw, indent);
 
 	start_measurement(&rwi->randr_fw);
@@ -818,7 +817,7 @@ int probe_device(struct device *dev, struct probe_results *results,
 	assert(block_order <= 20);
 
 	dbuf_init(&rwi.seqw_dbuf);
-	/* We initialize total_size to 0 because inc_total_size() is called
+	/* We initialize total_blocks to 0 because inc_total_blocks() is called
 	 * to update it when new blocks become available.
 	 */
 	init_flow(&rwi.seqw_fw, block_size, 0, max_write_rate, fw_cb, 0);

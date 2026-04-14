@@ -232,13 +232,6 @@ static int create_and_fill_file(const char *path, uint64_t number, size_t size,
 	return false;
 }
 
-static inline uint64_t get_freespace(const char *path)
-{
-	struct statvfs fs;
-	assert(!statvfs(path, &fs));
-	return (uint64_t)fs.f_frsize * (uint64_t)fs.f_bfree;
-}
-
 static inline void pr_freespace(uint64_t fs)
 {
 	double f = (double)fs;
@@ -249,34 +242,35 @@ static inline void pr_freespace(uint64_t fs)
 static int fill_fs(const char *path, uint64_t start_at, uint64_t end_at,
 	uint64_t max_write_rate, int progress)
 {
-	uint64_t free_space;
+	const int block_size = get_block_size(path);
+	uint64_t free_blocks = get_free_blocks(path);
 	struct flow fw;
 	uint64_t i;
 	int has_suggested_max_write_rate = max_write_rate > 0;
 
-	free_space = get_freespace(path);
-	pr_freespace(free_space);
-	if (free_space <= 0) {
+	pr_freespace(free_blocks * block_size);
+	if (free_blocks == 0) {
 		printf("No space!\n");
 		return 1;
 	}
 
 	assert(start_at <= end_at);
 	i = end_at - start_at + 1;
-	if (i <= (free_space >> GIGABYTE_ORDER)) {
+	if (i <= (free_blocks * block_size >> GIGABYTE_ORDER)) {
 		/* The amount of data to write is less than the space available,
-		 * update free_space to improve estimate of time to finish.
+		 * update free_blocks to improve estimate of time to finish.
 		 */
-		free_space = i << GIGABYTE_ORDER;
+		free_blocks = (i << GIGABYTE_ORDER) / block_size;
 	} else {
 		/* There are more data to write than space available.
 		 * Reduce end_at to reduce the number of error messages
 		 * due to multiple write failures.
 		 */
-		end_at = start_at + (free_space >> GIGABYTE_ORDER);
+		end_at = start_at +
+			(free_blocks * block_size >> GIGABYTE_ORDER);
 	}
 
-	init_flow(&fw, get_block_size(path), free_space, max_write_rate,
+	init_flow(&fw, block_size, free_blocks, max_write_rate,
 		progress ? printf_flush_cb : dummy_cb, 0);
 	for (i = start_at; i <= end_at; i++)
 		if (create_and_fill_file(path, i, GIGABYTE_SIZE,
@@ -284,7 +278,7 @@ static int fill_fs(const char *path, uint64_t start_at, uint64_t end_at,
 			break;
 
 	/* Final report. */
-	pr_freespace(get_freespace(path));
+	pr_freespace(get_free_blocks(path) * block_size);
 	print_avg_seq_speed(&fw, "write", true);
 
 	return 0;

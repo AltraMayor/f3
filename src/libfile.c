@@ -45,6 +45,13 @@ int get_block_size(const char *path)
 	return fs.f_frsize;
 }
 
+uint64_t get_free_blocks(const char *path)
+{
+	struct statvfs fs;
+	assert(!statvfs(path, &fs));
+	return fs.f_bfree;
+}
+
 int is_my_file(const char *filename)
 {
 	const char *p = filename;

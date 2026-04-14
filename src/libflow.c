@@ -65,10 +65,10 @@ static inline void move_to_inc_at_start(struct flow *fw)
 	fw->state = FW_INC;
 }
 
-void init_flow(struct flow *fw, int block_size, uint64_t total_size,
+void init_flow(struct flow *fw, int block_size, uint64_t total_blocks,
 	uint64_t max_process_rate, progress_cb cb, unsigned int indent)
 {
-	fw->total_size		= total_size;
+	fw->total_blocks	= total_blocks;
 	fw->cb			= cb;
 	fw->indent		= indent;
 	fw->block_size		= block_size; /* Bytes		*/
@@ -150,7 +150,8 @@ static inline bool has_enough_measurements(const struct flow *fw)
 
 static void report_progress(struct flow *fw, double inst_speed)
 {
-	const uint64_t total_processed = fw_get_total_processed(fw);
+	const uint64_t total_processed_blocks =
+		fw_get_total_processed_blocks(fw);
 	const char *unit = adjust_unit(&inst_speed);
 	double percent;
 	char buf[128 + TIME_STR_SIZE];
@@ -162,21 +163,21 @@ static void report_progress(struct flow *fw, double inst_speed)
 	 * the initial free space isn't exactly reported
 	 * by the kernel; this issue has been seen on Macs.
 	 */
-	if (fw->total_size < total_processed)
-		fw->total_size = total_processed;
+	if (fw->total_blocks < total_processed_blocks)
+		fw->total_blocks = total_processed_blocks;
 
-	percent = total_processed * 100.0 / fw->total_size;
+	percent = total_processed_blocks * 100.0 / fw->total_blocks;
 	c = snprintf(at_buf, rem_size, "%.2f%% -- %.2f %s/s",
 		percent, inst_speed, unit);
 	CHECK_AND_MOVE;
 
 	if (has_enough_measurements(fw)) {
-		const double rem_size_byte = fw->total_size - total_processed;
-		const double speed_byte_per_ns =
-			(double)(fw->measured_blocks * fw->block_size) /
-			fw->measured_time_ns;
+		const double rem_blocks =
+			fw->total_blocks - total_processed_blocks;
+		const double speed_blocks_per_ns =
+			(double)fw->measured_blocks / fw->measured_time_ns;
 		const uint64_t rem_time_ns =
-			round(rem_size_byte / speed_byte_per_ns);
+			round(rem_blocks / speed_blocks_per_ns);
 
 		c = snprintf(at_buf, rem_size, " -- ");
 		CHECK_AND_MOVE;

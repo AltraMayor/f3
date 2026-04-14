@@ -284,9 +284,11 @@ static void validate_file(const char *path, uint64_t number, struct flow *fw,
 	free(full_fn);
 }
 
-static uint64_t get_total_size(const char *path, const uint64_t *files)
+static uint64_t get_total_blocks(const char *path, const uint64_t *files,
+	int block_size)
 {
-	uint64_t total_size = 0;
+	const int block_order = ilog2(block_size);
+	uint64_t total_blocks = 0;
 
 	while (*files != (uint64_t)-1) {
 		struct stat st;
@@ -300,20 +302,22 @@ static uint64_t get_total_size(const char *path, const uint64_t *files)
 			err(errno, "Can't stat file %s", full_fn);
 		if ((st.st_mode & S_IFMT) != S_IFREG)
 			err(EINVAL, "File %s is not a regular file", full_fn);
-		assert(st.st_size >= 0);
-		total_size += st.st_size;
+
+		assert((st.st_size & (block_size - 1)) == 0);
+		total_blocks += st.st_size >> block_order;
 
 		free(full_fn);
 		files++;
 	}
-	return total_size;
+	return total_blocks;
 }
 
 static void iterate_files(const char *path, const uint64_t *files,
 	uint64_t start_at, uint64_t end_at, uint64_t max_read_rate,
 	int progress)
 {
-	struct block_stats tot_stats = { 0, 0, 0, 0 };
+	const int block_size = get_block_size(path);
+	struct block_stats tot_stats = {0, 0, 0, 0};
 	uint64_t tot_size = 0;
 	int and_read_all = 1;
 	int or_missing_file = 0;
@@ -322,7 +326,7 @@ static void iterate_files(const char *path, const uint64_t *files,
 
 	UNUSED(end_at);
 
-	init_flow(&fw, get_block_size(path), get_total_size(path, files),
+	init_flow(&fw, block_size, get_total_blocks(path, files, block_size),
 		max_read_rate, progress ? printf_flush_cb : dummy_cb, 0);
 	printf("                  SECTORS "
 		"     ok/corrupted/changed/overwritten\n");
