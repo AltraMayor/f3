@@ -198,13 +198,17 @@ static inline void __start_measurement(struct flow *fw)
 
 void start_measurement(struct flow *fw)
 {
+	uint64_t blocks, time_ns;
+
 	/*
 	 * The report below is especially useful when a single measurement spans
 	 * multiple files; this happens when a drive is faster than 1GB/s.
 	 */
-	report_progress(fw,
-		(fw->blocks_per_delay << fw->block_order) * 1000000000.0 /
-			fw->delay_ns);
+	fw_get_measurements(fw, &blocks, &time_ns);
+	if (time_ns > 0) {
+		report_progress(fw,
+			(blocks << fw->block_order) * 1000000000.0 / time_ns);
+	}
 	__start_measurement(fw);
 }
 
