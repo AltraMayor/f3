@@ -814,8 +814,6 @@ int probe_device(struct device *dev, struct probe_results *results,
 	struct rdwr_info rwi;
 	int wrap;
 
-	assert(block_order <= 20);
-
 	dbuf_init(&rwi.seqw_dbuf);
 	/* We initialize total_blocks to 0 because inc_total_blocks() is called
 	 * to update it when new blocks become available.
@@ -831,7 +829,8 @@ int probe_device(struct device *dev, struct probe_results *results,
 	 * Given that all writing is confined to the interval
 	 * (@left_pos, @right_pos), we avoid losing the partition table.
 	 */
-	left_pos = (1ULL << (20 - block_order)) - 1;
+	assert(block_order <= MEGABYTE_ORDER);
+	left_pos = (1ULL << (MEGABYTE_ORDER - block_order)) - 1;
 
 	/* @right_pos must point to a bad block.
 	 * We just point to the block after the very last block.
