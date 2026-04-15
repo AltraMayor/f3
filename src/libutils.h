@@ -37,6 +37,11 @@ void printf_cb(unsigned int indent, const char *format, ...);
 void printf_flush_cb(unsigned int indent, const char *format, ...);
 void dummy_cb(unsigned int indent, const char *format, ...);
 
+static inline bool is_power_of_2(uint64_t x)
+{
+	return x && !(x & (x - 1));
+}
+
 int ilog2(uint64_t x);
 
 /* Least power of 2 greater than or equal to x. */
@@ -66,14 +71,14 @@ int nsec_to_str(uint64_t nsec, char *str);
  *	probe_blk = stamp_blk + block_size;
  */
 
-static inline int align_head(int order)
+static inline unsigned int align_head(unsigned int order)
 {
-	return (1 << order) - 1;
+	return (1U << order) - 1;
 }
 
-void *align_mem2(void *p, int order, int *shift);
+void *align_mem2(void *p, unsigned int order, int *shift);
 
-static inline void *align_mem(void *p, int order)
+static inline void *align_mem(void *p, unsigned int order)
 {
 	int shift;
 	return align_mem2(p, order, &shift);
@@ -92,8 +97,8 @@ void print_header(FILE *f, const char *name);
 long long arg_to_ll_bytes(const struct argp_state *state, const char *arg);
 
 /* Dependent on the byte order of the processor (i.e. endianness). */
-void fill_buffer_with_block(void *buf, int block_order, uint64_t offset,
-	uint64_t salt);
+void fill_buffer_with_block(void *buf, unsigned int block_order,
+	uint64_t offset, uint64_t salt);
 
 enum block_state {
 	bs_unknown,
@@ -113,12 +118,13 @@ struct block_stats {
 };
 
 /* Dependent on the byte order of the processor (i.e. endianness). */
-enum block_state validate_buffer_with_block(const void *buf, int block_order,
-	uint64_t expected_offset, uint64_t *pfound_offset, uint64_t salt);
+enum block_state validate_buffer_with_block(const void *buf,
+	unsigned int block_order, uint64_t expected_offset,
+	uint64_t *pfound_offset, uint64_t salt);
 
-enum block_state validate_block_update_stats(const void *buf, int block_order,
-	uint64_t expected_offset, uint64_t *pfound_offset, uint64_t salt,
-	struct block_stats *stats);
+enum block_state validate_block_update_stats(const void *buf,
+	unsigned int block_order, uint64_t expected_offset,
+	uint64_t *pfound_offset, uint64_t salt, struct block_stats *stats);
 
 static inline uint64_t diff_timespec_ns(const struct timespec *t1,
 	const struct timespec *t2)
@@ -127,11 +133,11 @@ static inline uint64_t diff_timespec_ns(const struct timespec *t1,
 		t2->tv_nsec - t1->tv_nsec;
 }
 
-void print_stats(const struct block_stats *stats, int block_size,
+void print_stats(const struct block_stats *stats, unsigned int block_size,
 	const char *unit_name);
 
 void report_io_speed(unsigned int indent, progress_cb cb, const char *prefix,
 	uint64_t blocks, const char *block_unit, uint64_t time_ns,
-	int block_order);
+	unsigned int block_order);
 
 #endif	/* HEADER_LIBUTILS_H */

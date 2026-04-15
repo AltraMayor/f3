@@ -84,7 +84,7 @@ struct args {
 	uint64_t	real_size_byte;
 	uint64_t	fake_size_byte;
 	int		wrap;
-	int		block_order;
+	unsigned int	block_order;
 	int		cache_order;
 	int		strict_cache;
 
@@ -258,8 +258,8 @@ static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
 static void write_blocks(struct device *dev, struct flow *fw,
 	uint64_t first_block, uint64_t last_block)
 {
-	const int block_size = dev_get_block_size(dev);
-	const int block_order = dev_get_block_order(dev);
+	const unsigned int block_size = dev_get_block_size(dev);
+	const unsigned int block_order = dev_get_block_order(dev);
 	uint64_t offset = first_block << block_order;
 	uint64_t first_pos = first_block;
 	struct dynamic_buffer dbuf;
@@ -305,7 +305,7 @@ static void test_write_blocks(struct device *dev,
 	uint64_t first_block, uint64_t last_block,
 	long max_write_rate, int show_progress)
 {
-	const int block_size = dev_get_block_size(dev);
+	const unsigned int block_size = dev_get_block_size(dev);
 	const uint64_t total_blocks = last_block - first_block + 1;
 	struct flow fw;
 
@@ -325,7 +325,7 @@ static void test_write_blocks(struct device *dev,
 
 struct block_range {
 	enum block_state	state;
-	int			block_order;
+	unsigned int		block_order;
 	uint64_t		start_sector_offset;
 	uint64_t		end_sector_offset;
 
@@ -333,12 +333,12 @@ struct block_range {
 	uint64_t		found_sector_offset;
 };
 
-static int is_block(uint64_t offset, int block_order)
+static int is_block(uint64_t offset, unsigned int block_order)
 {
 	return !(((1ULL << block_order) - 1) & offset);
 }
 
-static void print_offset(uint64_t offset, int block_order)
+static void print_offset(uint64_t offset, unsigned int block_order)
 {
 	assert(is_block(offset, block_order));
 	printf("block 0x%" PRIx64, offset >> block_order);
@@ -370,8 +370,8 @@ static void print_block_range(const struct block_range *range)
 }
 
 static void validate_block(struct flow *fw, uint64_t expected_sector_offset,
-	const char *probe_blk, int block_order, struct block_range *range,
-	struct block_stats *stats)
+	const char *probe_blk, unsigned int block_order,
+	struct block_range *range, struct block_stats *stats)
 {
 	uint64_t found_sector_offset;
 	enum block_state state = validate_block_update_stats(probe_blk, block_order,
@@ -406,8 +406,8 @@ static void validate_block(struct flow *fw, uint64_t expected_sector_offset,
 static void read_blocks(struct device *dev, struct flow *fw,
 	uint64_t first_block, uint64_t last_block, struct block_stats *stats)
 {
-	const int block_size = dev_get_block_size(dev);
-	const int block_order = dev_get_block_order(dev);
+	const unsigned int block_size = dev_get_block_size(dev);
+	const unsigned int block_order = dev_get_block_order(dev);
 	uint64_t expected_sector_offset = first_block << block_order;
 	uint64_t first_pos = first_block;
 	struct block_range range = {
@@ -466,7 +466,7 @@ static void test_read_blocks(struct device *dev,
 	uint64_t first_block, uint64_t last_block,
 	long max_read_rate, int show_progress)
 {
-	const int block_size = dev_get_block_size(dev);
+	const unsigned int block_size = dev_get_block_size(dev);
 	const uint64_t total_blocks = last_block - first_block + 1;
 	struct flow fw;
 	struct block_stats stats = { 0, 0, 0, 0 };
@@ -507,7 +507,7 @@ int main(int argc, char **argv)
 		.show_progress	= isatty(STDOUT_FILENO),
 	};
 	struct device *dev;
-	int block_order;
+	unsigned int block_order;
 	uint64_t very_last_block;
 
 	/* Read parameters. */

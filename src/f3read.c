@@ -211,8 +211,8 @@ static inline void print_status(const struct file_stats *stats)
 static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 	const char *path, uint64_t number, struct file_stats *stats)
 {
-	const int block_size = fw_get_block_size(fw);
-	const int block_order = fw_get_block_order(fw);
+	const unsigned int block_size = fw_get_block_size(fw);
+	const unsigned int block_order = fw_get_block_order(fw);
 	char *full_fn;
 	const char *filename;
 	int fd, saved_errno;
@@ -288,9 +288,9 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 }
 
 static uint64_t get_total_blocks(const char *path, const uint64_t *files,
-	int block_size)
+	unsigned int block_size)
 {
-	const int block_order = ilog2(block_size);
+	const unsigned int block_order = ilog2(block_size);
 	uint64_t total_blocks = 0;
 
 	while (*files != (uint64_t)-1) {
@@ -319,7 +319,7 @@ static void iterate_files(const char *path, const uint64_t *files,
 	uint64_t start_at, uint64_t end_at, uint64_t max_read_rate,
 	int progress)
 {
-	const int block_size = get_block_size(path);
+	const unsigned int block_size = get_block_size(path);
 	struct block_stats tot_stats = {0, 0, 0, 0};
 	uint64_t tot_size = 0;
 	int and_read_all = 1;

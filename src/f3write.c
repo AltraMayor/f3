@@ -179,8 +179,8 @@ out:
 static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 	const char *path, uint64_t number, int *phas_suggested_max_write_rate)
 {
-	const int block_size = fw_get_block_size(fw);
-	const int block_order = fw_get_block_order(fw);
+	const unsigned int block_size = fw_get_block_size(fw);
+	const unsigned int block_order = fw_get_block_order(fw);
 	uint64_t remaining_blocks = 1ULL << (GIGABYTE_ORDER - block_order);
 	char *full_fn;
 	const char *filename;
@@ -268,7 +268,7 @@ static inline void pr_freespace(uint64_t fs)
 static int fill_fs(const char *path, uint64_t start_at, uint64_t end_at,
 	uint64_t max_write_rate, int progress)
 {
-	const int block_size = get_block_size(path);
+	const unsigned int block_size = get_block_size(path);
 	uint64_t free_blocks = get_free_blocks(path);
 	struct flow fw;
 	struct dynamic_buffer dbuf;

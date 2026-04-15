@@ -86,7 +86,7 @@ struct args {
 	uint64_t	real_size_byte;
 	uint64_t	fake_size_byte;
 	int		wrap;
-	int		block_order;
+	unsigned int	block_order;
 	int		cache_order;
 	int		strict_cache;
 };
@@ -232,7 +232,7 @@ struct unit_test_item {
 	uint64_t	real_size_byte;
 	uint64_t	fake_size_byte;
 	int		wrap;
-	int		block_order;
+	unsigned int	block_order;
 	int		cache_order;
 	int		strict_cache;
 };
@@ -357,25 +357,25 @@ static int unit_test(const char *filename)
 }
 
 static inline void report_size(const char *prefix, uint64_t bytes,
-	int block_order)
+	unsigned int block_order)
 {
 	report_probed_size(0, printf_cb, prefix, bytes, block_order);
 }
 
-static inline void report_order(const char *prefix, int order)
+static inline void report_order(const char *prefix, unsigned int order)
 {
 	report_probed_order(0, printf_cb, prefix, order);
 }
 
 static inline void report_cache(const char *prefix, uint64_t cache_size_block,
-	int block_order)
+	unsigned int block_order)
 {
 	report_probed_cache(0, printf_cb, prefix, cache_size_block,
 		block_order);
 }
 
 static inline void report_speed(const char *prefix, uint64_t blocks,
-	uint64_t time_ns, int block_order)
+	uint64_t time_ns, unsigned int block_order)
 {
 	report_io_speed(0, printf_cb, prefix, blocks, "block", time_ns,
 		block_order);

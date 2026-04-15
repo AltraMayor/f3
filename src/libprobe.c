@@ -55,8 +55,8 @@ static int write_random_blocks(struct device *dev, const uint64_t pos[],
 	uint32_t n_pos, struct rdwr_info *rwi, progress_cb cb,
 	unsigned int indent)
 {
-	const int block_order = dev_get_block_order(dev);
-	const int block_size = dev_get_block_size(dev);
+	const unsigned int block_order = dev_get_block_order(dev);
+	const unsigned int block_size = dev_get_block_size(dev);
 	/* Aligning these pointers is necessary to directly read and write
 	 * the block device. For the file device, this is superfluous.
 	 */
@@ -87,8 +87,8 @@ static int write_blocks(struct device *dev,
 	uint64_t first_block, uint64_t last_block,
 	struct rdwr_info *rwi, progress_cb cb, unsigned int indent)
 {
-	const int block_order = dev_get_block_order(dev);
-	const int block_size = dev_get_block_size(dev);
+	const unsigned int block_order = dev_get_block_order(dev);
+	const unsigned int block_size = dev_get_block_size(dev);
 	uint64_t offset = first_block << block_order;
 	uint64_t first_pos = first_block;
 
@@ -203,8 +203,8 @@ static int find_first_x_block(struct device *dev,
 	enum block_state *pstate, struct rdwr_info *rwi,
 	progress_cb cb, unsigned int indent)
 {
-	const int block_order = dev_get_block_order(dev);
-	const int block_size = dev_get_block_size(dev);
+	const unsigned int block_order = dev_get_block_order(dev);
+	const unsigned int block_size = dev_get_block_size(dev);
 	char stack[align_head(block_order) + block_size];
 	char *probe_blk = align_mem(stack, block_order);
 	uint32_t i;
@@ -246,7 +246,7 @@ static int find_first_bad_block(struct device *dev, const uint64_t pos[],
 	uint32_t n_pos, bool *pany_bad, uint64_t *pbad_pos,
 	struct rdwr_info *rwi, progress_cb cb, unsigned int indent)
 {
-	const int block_order = dev_get_block_order(dev);
+	const unsigned int block_order = dev_get_block_order(dev);
 	struct def_x_block x_blocks[n_pos];
 	enum block_state bs;
 	uint32_t i;
@@ -531,7 +531,7 @@ static int find_cache_size(struct device *dev, const uint64_t left_pos,
 	uint64_t *pright_pos, struct rdwr_info *rwi, progress_cb cb,
 	unsigned int indent)
 {
-	const int block_order = dev_get_block_order(dev);
+	const unsigned int block_order = dev_get_block_order(dev);
 	const uint64_t end_pos = *pright_pos - 1;
 	uint64_t write_target = 1;
 	uint64_t final_write_target = MAX_CACHE_SIZE_BYTE >> block_order;
@@ -626,7 +626,7 @@ static int find_wrap(struct device *dev,
 	struct def_x_block x_blocks[n_samples];
 	bool any_bad;
 	uint64_t bad_pos;
-	int block_order;
+	unsigned int block_order;
 	uint64_t expected_offset, high_bit;
 	uint32_t i;
 	enum block_state bs;
@@ -695,7 +695,7 @@ static int find_wrap(struct device *dev,
 static uint64_t drive_mid_block(const struct device *dev)
 {
 	const uint64_t dev_size_byte = dev_get_size_byte(dev);
-	const int block_order = dev_get_block_order(dev);
+	const unsigned int block_order = dev_get_block_order(dev);
 	return clp2((dev_size_byte >> block_order) / 2);
 }
 
@@ -774,7 +774,7 @@ uint64_t probe_max_written_blocks(const struct device *dev)
 }
 
 void report_probed_size(unsigned int indent, progress_cb cb,
-	const char *prefix, uint64_t bytes, int block_order)
+	const char *prefix, uint64_t bytes, unsigned int block_order)
 {
 	double f = bytes;
 	const char *unit = adjust_unit(&f);
@@ -784,7 +784,7 @@ void report_probed_size(unsigned int indent, progress_cb cb,
 }
 
 void report_probed_order(unsigned int indent, progress_cb cb,
-	const char *prefix, int order)
+	const char *prefix, unsigned int order)
 {
 	double f = (1ULL << order);
 	const char *unit = adjust_unit(&f);
@@ -793,7 +793,8 @@ void report_probed_order(unsigned int indent, progress_cb cb,
 }
 
 void report_probed_cache(unsigned int indent, progress_cb cb,
-	const char *prefix, uint64_t cache_size_block, int block_order)
+	const char *prefix, uint64_t cache_size_block,
+	unsigned int block_order)
 {
 	double f = (cache_size_block << block_order);
 	const char *unit = adjust_unit(&f);
@@ -807,8 +808,8 @@ int probe_device(struct device *dev, struct probe_results *results,
 	long max_read_rate, long max_write_rate)
 {
 	const uint64_t dev_size_byte = dev_get_size_byte(dev);
-	const int block_order = dev_get_block_order(dev);
-	const int block_size = dev_get_block_size(dev);
+	const unsigned int block_order = dev_get_block_order(dev);
+	const unsigned int block_size = dev_get_block_size(dev);
 	const progress_cb fw_cb = show_progress ? cb : dummy_cb;
 	uint64_t left_pos, right_pos, mid_drive_pos;
 	struct rdwr_info rwi;

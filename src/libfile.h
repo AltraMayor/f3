@@ -5,7 +5,7 @@
 
 void adjust_dev_path(const char **dev_path);
 
-int get_block_size(const char *path);
+unsigned int get_block_size(const char *path);
 uint64_t get_free_blocks(const char *path);
 
 /* Return true if @filename matches the regex /^[0-9]+\.h2w$/ */

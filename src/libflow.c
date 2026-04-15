@@ -65,7 +65,7 @@ static inline void move_to_inc_at_start(struct flow *fw)
 	fw->state = FW_INC;
 }
 
-void init_flow(struct flow *fw, int block_size, uint64_t total_blocks,
+void init_flow(struct flow *fw, unsigned int block_size, uint64_t total_blocks,
 	uint64_t max_process_rate, progress_cb cb, unsigned int indent)
 {
 	fw->total_blocks		= total_blocks;
@@ -459,7 +459,7 @@ void end_measurement(struct flow *fw)
 void print_avg_seq_speed(const struct flow *fw, const char *speed_type,
 	bool use_sectors)
 {
-	int block_order = fw_get_block_order(fw);
+	unsigned int block_order = fw_get_block_order(fw);
 	uint64_t blocks, time_ns;
 	char prefix[128];
 	int ret = snprintf(prefix, sizeof(prefix), "Average sequential %s speed:",
@@ -492,10 +492,10 @@ void dbuf_free(struct dynamic_buffer *dbuf)
 	dbuf->max_buf = true;
 }
 
-char *dbuf_get_buf(struct dynamic_buffer *dbuf, int align_order,
+char *dbuf_get_buf(struct dynamic_buffer *dbuf, unsigned int align_order,
 	size_t *psize)
 {
-	const int max_align_order = ilog2(alignof(max_align_t));
+	const unsigned int max_align_order = ilog2(alignof(max_align_t));
 	const size_t original_size = *psize;
 	size_t size = original_size;
 	size_t alignment, threshold;

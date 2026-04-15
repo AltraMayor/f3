@@ -38,7 +38,7 @@ void adjust_dev_path(const char **dev_path)
 	}
 }
 
-int get_block_size(const char *path)
+unsigned int get_block_size(const char *path)
 {
 	struct statvfs fs;
 	assert(!statvfs(path, &fs));

@@ -65,7 +65,7 @@ struct flow {
 /* If @max_process_rate == 0, the maximum processing rate is infinity.
  * The unit of @max_process_rate is KB per second.
  */
-void init_flow(struct flow *fw, int block_size, uint64_t total_blocks,
+void init_flow(struct flow *fw, unsigned int block_size, uint64_t total_blocks,
 	uint64_t max_process_rate, progress_cb cb, unsigned int indent);
 
 /* Total number of blocks already processed. */
@@ -74,12 +74,12 @@ static inline uint64_t fw_get_total_processed_blocks(const struct flow *fw)
 	return fw->measured_blocks + fw->processed_blocks;
 }
 
-static inline int fw_get_block_size(const struct flow *fw)
+static inline unsigned int fw_get_block_size(const struct flow *fw)
 {
 	return fw->block_size;
 }
 
-static inline int fw_get_block_order(const struct flow *fw)
+static inline unsigned int fw_get_block_order(const struct flow *fw)
 {
 	return ilog2(fw->block_size);
 }
@@ -135,7 +135,7 @@ void dbuf_free(struct dynamic_buffer *dbuf);
  * the input value of *psize in bytes, this function never returns NULL.
  * The input value of *psize is the maximum size of the returned buffer.
  */
-char *dbuf_get_buf(struct dynamic_buffer *dbuf, int align_order,
+char *dbuf_get_buf(struct dynamic_buffer *dbuf, unsigned int align_order,
 	size_t *psize);
 
 #endif	/* HEADER_LIBFLOW_H */
