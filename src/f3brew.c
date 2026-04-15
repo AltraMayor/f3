@@ -268,16 +268,16 @@ static void write_blocks(struct device *dev, struct flow *fw,
 
 	start_measurement(fw);
 	while (first_pos <= last_block) {
-		const uint64_t chunk_bytes = get_rem_chunk_size(fw);
 		const uint64_t max_blocks_to_write = last_block - first_pos + 1;
-		size_t buf_len = chunk_bytes;
-		uint64_t blocks_to_write;
+		uint64_t blocks_to_write =
+			MIN(get_rem_chunk_blocks(fw), max_blocks_to_write);
+		size_t buf_len = blocks_to_write << block_order;
 		char *buffer, *stamp_blk;
 		uint64_t pos, next_pos;
 
 		buffer = dbuf_get_buf(&dbuf, block_order, &buf_len);
-		blocks_to_write =
-			MIN(buf_len >> block_order, max_blocks_to_write);
+		blocks_to_write = buf_len >> block_order;
+		assert(blocks_to_write > 0);
 		next_pos = first_pos + blocks_to_write;
 
 		stamp_blk = buffer;
@@ -293,7 +293,7 @@ static void write_blocks(struct device *dev, struct flow *fw,
 				" to 0x%" PRIx64, first_pos, next_pos - 1);
 		}
 
-		measure(fw, blocks_to_write << block_order);
+		measure(fw, blocks_to_write);
 		first_pos = next_pos;
 	}
 	end_measurement(fw);
@@ -423,16 +423,16 @@ static void read_blocks(struct device *dev, struct flow *fw,
 
 	start_measurement(fw);
 	while (first_pos <= last_block) {
-		const uint64_t chunk_bytes = get_rem_chunk_size(fw);
 		const uint64_t max_blocks_to_read = last_block - first_pos + 1;
-		size_t buf_len = chunk_bytes;
-		uint64_t blocks_to_read;
+		uint64_t blocks_to_read =
+			MIN(get_rem_chunk_blocks(fw), max_blocks_to_read);
+		size_t buf_len = blocks_to_read << block_order;
 		char *buffer, *probe_blk;
 		uint64_t pos, next_pos;
 
 		buffer = dbuf_get_buf(&dbuf, block_order, &buf_len);
-		blocks_to_read =
-			MIN(buf_len >> block_order, max_blocks_to_read);
+		blocks_to_read = buf_len >> block_order;
+		assert(blocks_to_read > 0);
 		next_pos = first_pos + blocks_to_read;
 
 		if (dev_read_blocks(dev, buffer, first_pos, next_pos - 1)) {
@@ -449,7 +449,7 @@ static void read_blocks(struct device *dev, struct flow *fw,
 			probe_blk += block_size;
 		}
 
-		measure(fw, blocks_to_read << block_order);
+		measure(fw, blocks_to_read);
 		first_pos = next_pos;
 	}
 	end_measurement(fw);

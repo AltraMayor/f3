@@ -206,6 +206,7 @@ static inline void print_status(const struct file_stats *stats)
 static void validate_file(const char *path, uint64_t number, struct flow *fw,
 	struct file_stats *stats)
 {
+	const int block_order = fw_get_block_order(fw);
 	char *full_fn;
 	const char *filename;
 	int fd, saved_errno;
@@ -254,17 +255,14 @@ static void validate_file(const char *path, uint64_t number, struct flow *fw,
 	start_measurement(fw);
 	while (true) {
 		bytes_read = check_chunk(&dbuf, fd, &expected_offset,
-			get_rem_chunk_size(fw), stats);
+			get_rem_chunk_blocks(fw) << block_order, stats);
 		if (bytes_read == 0)
 			break;
 		if (bytes_read < 0) {
 			saved_errno = - bytes_read;
 			break;
 		}
-		if (measure(fw, bytes_read) < 0) {
-			saved_errno = errno;
-			break;
-		}
+		measure(fw, bytes_read >> block_order);
 	}
 	end_measurement(fw);
 

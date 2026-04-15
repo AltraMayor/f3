@@ -77,7 +77,7 @@ static int write_random_blocks(struct device *dev, const uint64_t pos[],
 		if (_write_blocks(dev, buffer, pos[i], pos[i], &rwi->randw_fw,
 				cb, indent))
 			return true;
-		measure(&rwi->randw_fw, block_size);
+		measure(&rwi->randw_fw, 1);
 	}
 	end_measurement(&rwi->randw_fw);
 	return false;
@@ -100,17 +100,17 @@ static int write_blocks(struct device *dev,
 
 	start_measurement(&rwi->seqw_fw);
 	while (first_pos <= last_block) {
-		const uint64_t chunk_bytes = get_rem_chunk_size(&rwi->seqw_fw);
-		const uint64_t max_blocks_to_write =
-			last_block - first_pos + 1;
-		size_t buf_len = chunk_bytes;
-		uint64_t blocks_to_write;
+		const uint64_t max_blocks_to_write = last_block - first_pos + 1;
+		uint64_t blocks_to_write = MIN(
+			get_rem_chunk_blocks(&rwi->seqw_fw),
+			max_blocks_to_write);
+		size_t buf_len = blocks_to_write << block_order;
 		char *buffer, *stamp_blk;
 		uint64_t pos, next_pos;
 
 		buffer = dbuf_get_buf(&rwi->seqw_dbuf, block_order, &buf_len);
-		blocks_to_write =
-			MIN(buf_len >> block_order, max_blocks_to_write);
+		blocks_to_write = buf_len >> block_order;
+		assert(blocks_to_write > 0);
 		next_pos = first_pos + blocks_to_write;
 
 		stamp_blk = buffer;
@@ -125,7 +125,7 @@ static int write_blocks(struct device *dev,
 				&rwi->seqw_fw, cb, indent))
 			return true;
 
-		measure(&rwi->seqw_fw, blocks_to_write << block_order);
+		measure(&rwi->seqw_fw, blocks_to_write);
 		first_pos = next_pos;
 	}
 	end_measurement(&rwi->seqw_fw);
@@ -225,7 +225,7 @@ static int find_first_x_block(struct device *dev,
 			return true;
 		bs = validate_buffer_with_block(probe_blk, block_order,
 			x_blocks[i].expected_offset, &found_offset, rwi->salt);
-		measure(&rwi->randr_fw, block_size);
+		measure(&rwi->randr_fw, 1);
 
 		if (in_bs_set(bs_set, bs)) {
 			/* Found the first x_block. */

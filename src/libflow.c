@@ -68,36 +68,35 @@ static inline void move_to_inc_at_start(struct flow *fw)
 void init_flow(struct flow *fw, int block_size, uint64_t total_blocks,
 	uint64_t max_process_rate, progress_cb cb, unsigned int indent)
 {
-	fw->total_blocks	= total_blocks;
-	fw->cb			= cb;
-	fw->indent		= indent;
-	fw->block_size		= block_size; /* Bytes		*/
-	fw->blocks_per_delay	= 1;	/* block_size B/s	*/
-	fw->delay_ns		= 1000000000ULL;	/* 1s	*/
-	fw->max_process_rate	= max_process_rate == 0
+	fw->total_blocks		= total_blocks;
+	fw->cb				= cb;
+	fw->indent			= indent;
+	fw->block_size			= block_size; /* Bytes		*/
+	fw->blocks_per_delay		= 1;	/* block_size B/s	*/
+	fw->delay_ns			= 1000000000ULL;	/* 1s	*/
+	fw->max_process_rate		= max_process_rate == 0
 		? DBL_MAX : max_process_rate * 1024.;
-	fw->measured_blocks	= 0;
-	fw->measured_time_ns	= 0;
-	fw->erase		= 0;
-	fw->has_rem_chunk_size	= false;
-	fw->rem_chunk_size	= 0;
-	fw->rem_chunk_speed	= 0;
-	fw->processed_blocks	= 0;
-	fw->acc_delay_ns	= 0;
+	fw->measured_blocks		= 0;
+	fw->measured_time_ns		= 0;
+	fw->erase			= 0;
+	fw->has_rem_chunk_blocks	= false;
+	fw->rem_chunk_blocks		= 0;
+	fw->rem_chunk_speed		= 0;
+	fw->processed_blocks		= 0;
+	fw->acc_delay_ns		= 0;
 	assert(fw->block_size > 0);
 	assert(fw->block_size % SECTOR_SIZE == 0);
 
 	move_to_inc_at_start(fw);
 }
 
-uint64_t get_rem_chunk_size(const struct flow *fw)
+uint64_t get_rem_chunk_blocks(const struct flow *fw)
 {
 	const uint64_t rem_blocks = fw->blocks_per_delay - fw->processed_blocks;
-	const uint64_t rem_size = rem_blocks * fw->block_size;
 	assert(fw->blocks_per_delay > fw->processed_blocks);
-	return fw->has_rem_chunk_size && rem_size >= fw->rem_chunk_size
-		? fw->rem_chunk_size
-		: rem_size;
+	return fw->has_rem_chunk_blocks && rem_blocks >= fw->rem_chunk_blocks
+		? fw->rem_chunk_blocks
+		: rem_blocks;
 }
 
 static inline unsigned int repeat_ch(char *buf, char ch, int count)
@@ -275,27 +274,24 @@ static inline int is_rate_below(const struct flow *fw,
 	return delay_ns <= fw->delay_ns && inst_speed < fw->max_process_rate;
 }
 
-static void update_rem_chunk_size(struct flow *fw, double inst_speed)
+static void update_rem_chunk_blocks(struct flow *fw, double inst_speed)
 {
-	if (fw->rem_chunk_size != 0 && inst_speed < fw->rem_chunk_speed)
+	if (fw->rem_chunk_blocks != 0 && inst_speed < fw->rem_chunk_speed)
 		return;
 
-	fw->rem_chunk_size = (uint64_t)fw->blocks_per_delay * fw->block_size;
+	fw->rem_chunk_blocks = fw->blocks_per_delay;
 	fw->rem_chunk_speed = inst_speed;
 }
 
-int measure(struct flow *fw, long processed)
+void measure(struct flow *fw, uint64_t processed_blocks)
 {
-	ldiv_t result = ldiv(processed, fw->block_size);
 	struct timespec t2;
 	uint64_t delay_ns;
 	double bytes_g, inst_speed;
 
-	assert(result.rem == 0);
-	fw->processed_blocks += result.quot;
-
+	fw->processed_blocks += processed_blocks;
 	if (fw->processed_blocks < fw->blocks_per_delay)
-		return 0;
+		return;
 	assert(fw->processed_blocks == fw->blocks_per_delay);
 
 	assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
@@ -304,8 +300,8 @@ int measure(struct flow *fw, long processed)
 	/* Instantaneous speed in bytes per second. */
 	inst_speed = bytes_g / delay_ns;
 
-	if (!fw->has_rem_chunk_size)
-		update_rem_chunk_size(fw, inst_speed);
+	if (!fw->has_rem_chunk_blocks)
+		update_rem_chunk_blocks(fw, inst_speed);
 
 	if (delay_ns < fw->delay_ns && inst_speed > fw->max_process_rate) {
 		/* delay_ns should be such that
@@ -376,10 +372,10 @@ int measure(struct flow *fw, long processed)
 	switch (fw->state) {
 	case FW_INC:
 		if (is_rate_above(fw, delay_ns, inst_speed)) {
-			if (!fw->has_rem_chunk_size) {
+			if (!fw->has_rem_chunk_blocks) {
 				/* Recommend a chunk size to caller. */
-				assert(fw->rem_chunk_size != 0);
-				fw->has_rem_chunk_size = true;
+				assert(fw->rem_chunk_blocks != 0);
+				fw->has_rem_chunk_blocks = true;
 			}
 			move_to_search(fw,
 				fw->blocks_per_delay - fw->step_blocks / 2,
@@ -417,13 +413,13 @@ int measure(struct flow *fw, long processed)
 		break;
 
 	case FW_STEADY: {
-		if (!fw->has_rem_chunk_size) {
+		if (!fw->has_rem_chunk_blocks) {
 			/* Recommend a chunk size to caller.
 			 * Execution reaches here when fw->max_process_rate is
 			 * throttling the flow.
 			 */
-			assert(fw->rem_chunk_size != 0);
-			fw->has_rem_chunk_size = true;
+			assert(fw->rem_chunk_blocks != 0);
+			fw->has_rem_chunk_blocks = true;
 			/* Since it's in steady state, go for another round
 			 * before making any change.
 			 */
@@ -447,7 +443,6 @@ int measure(struct flow *fw, long processed)
 
 	report_progress(fw, inst_speed);
 	__start_measurement(fw);
-	return 0;
 }
 
 void end_measurement(struct flow *fw)

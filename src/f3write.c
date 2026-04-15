@@ -154,18 +154,18 @@ static int write_chunk(struct dynamic_buffer *dbuf, int fd, size_t chunk_size,
 }
 
 /* Return true when disk is full. */
-static int create_and_fill_file(const char *path, uint64_t number, size_t size,
+static int create_and_fill_file(const char *path, uint64_t number,
 	int *phas_suggested_max_write_rate, struct flow *fw)
 {
+	const int block_order = fw_get_block_order(fw);
+	uint64_t remaining_blocks = 1ULL << (GIGABYTE_ORDER - block_order);
 	char *full_fn;
 	const char *filename;
 	int fd, saved_errno;
-	size_t remaining;
 	uint64_t offset;
 	struct dynamic_buffer dbuf;
 
-	assert(size > 0);
-	assert(size % fw_get_block_size(fw) == 0);
+	assert(GIGABYTE_ORDER >= block_order);
 
 	/* Create the file. */
 	full_fn = full_fn_from_number(&filename, path, number);
@@ -187,16 +187,15 @@ static int create_and_fill_file(const char *path, uint64_t number, size_t size,
 	dbuf_init(&dbuf);
 	saved_errno = 0;
 	offset = number << GIGABYTE_ORDER;
-	remaining = size;
 	start_measurement(fw);
-	while (remaining > 0) {
-		uint64_t write_size = get_rem_chunk_size(fw);
-		if (write_size > remaining)
-			write_size = remaining;
-		saved_errno = write_chunk(&dbuf, fd, write_size, &offset);
+	while (remaining_blocks > 0) {
+		uint64_t write_blocks =
+			MIN(get_rem_chunk_blocks(fw), remaining_blocks);
+		saved_errno = write_chunk(&dbuf, fd,
+			write_blocks << block_order, &offset);
 		if (saved_errno)
 			break;
-		remaining -= write_size;
+		remaining_blocks -= write_blocks;
 
 		/* Push data to drive and tip the kernel. */
 		if (fdatasync(fd) < 0) {
@@ -205,10 +204,7 @@ static int create_and_fill_file(const char *path, uint64_t number, size_t size,
 		}
 		assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
 
-		if (measure(fw, write_size) < 0) {
-			saved_errno = errno;
-			break;
-		}
+		measure(fw, write_blocks);
 	}
 	end_measurement(fw);
 	dbuf_free(&dbuf);
@@ -217,7 +213,7 @@ static int create_and_fill_file(const char *path, uint64_t number, size_t size,
 
 	if (saved_errno == 0 || saved_errno == ENOSPC) {
 		if (saved_errno == 0)
-			assert(remaining == 0);
+			assert(remaining_blocks == 0);
 		printf("OK!\n");
 		return saved_errno == ENOSPC;
 	}
@@ -273,7 +269,7 @@ static int fill_fs(const char *path, uint64_t start_at, uint64_t end_at,
 	init_flow(&fw, block_size, free_blocks, max_write_rate,
 		progress ? printf_flush_cb : dummy_cb, 0);
 	for (i = start_at; i <= end_at; i++)
-		if (create_and_fill_file(path, i, GIGABYTE_SIZE,
+		if (create_and_fill_file(path, i,
 			&has_suggested_max_write_rate, &fw))
 			break;
 

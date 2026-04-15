@@ -43,9 +43,9 @@ struct flow {
 	 */
 
 	/* Has a recommended chunk size? */
-	bool		has_rem_chunk_size;
-	/* Recommended chunk size. */
-	uint64_t	rem_chunk_size;
+	bool		has_rem_chunk_blocks;
+	/* Recommended chunk size in blocks. */
+	uint64_t	rem_chunk_blocks;
 	/* Speed of the recommended chunk size in bytes per second. */
 	double		rem_chunk_speed;
 
@@ -101,10 +101,10 @@ static inline void fw_get_measurements(const struct flow *fw,
 	*time_ns = fw->measured_time_ns + fw->acc_delay_ns;
 }
 
-uint64_t get_rem_chunk_size(const struct flow *fw);
+uint64_t get_rem_chunk_blocks(const struct flow *fw);
 
 void start_measurement(struct flow *fw);
-int measure(struct flow *fw, long processed);
+void measure(struct flow *fw, uint64_t processed_blocks);
 void clear_progress(struct flow *fw);
 void end_measurement(struct flow *fw);
 
