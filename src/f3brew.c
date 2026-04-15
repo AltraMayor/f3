@@ -305,7 +305,7 @@ static void test_write_blocks(struct device *dev,
 	uint64_t first_block, uint64_t last_block,
 	long max_write_rate, int show_progress)
 {
-	const unsigned int block_size = dev_get_block_size(dev);
+	const unsigned int block_order = dev_get_block_order(dev);
 	const uint64_t total_blocks = last_block - first_block + 1;
 	struct flow fw;
 
@@ -313,7 +313,7 @@ static void test_write_blocks(struct device *dev,
 		first_block != last_block ? "s" : "", first_block, last_block);
 	fflush(stdout);
 
-	init_flow(&fw, block_size, total_blocks, max_write_rate,
+	init_flow(&fw, block_order, total_blocks, max_write_rate,
 		show_progress ? printf_flush_cb : dummy_cb, 0);
 
 	write_blocks(dev, &fw, first_block, last_block);
@@ -466,7 +466,7 @@ static void test_read_blocks(struct device *dev,
 	uint64_t first_block, uint64_t last_block,
 	long max_read_rate, int show_progress)
 {
-	const unsigned int block_size = dev_get_block_size(dev);
+	const unsigned int block_order = dev_get_block_order(dev);
 	const uint64_t total_blocks = last_block - first_block + 1;
 	struct flow fw;
 	struct block_stats stats = { 0, 0, 0, 0 };
@@ -474,12 +474,12 @@ static void test_read_blocks(struct device *dev,
 	printf("Reading block%s from 0x%" PRIx64 " to 0x%" PRIx64 ":\n",
 		first_block != last_block ? "s" : "", first_block, last_block);
 
-	init_flow(&fw, block_size, total_blocks, max_read_rate,
+	init_flow(&fw, block_order, total_blocks, max_read_rate,
 		show_progress ? printf_flush_cb : dummy_cb, 0);
 
 	read_blocks(dev, &fw, first_block, last_block, &stats);
 
-	print_stats(&stats, block_size, "block");
+	print_stats(&stats, block_order, "block");
 	print_avg_seq_speed(&fw, "read", false);
 	printf("\n");
 }

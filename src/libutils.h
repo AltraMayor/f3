@@ -133,7 +133,7 @@ static inline uint64_t diff_timespec_ns(const struct timespec *t1,
 		t2->tv_nsec - t1->tv_nsec;
 }
 
-void print_stats(const struct block_stats *stats, unsigned int block_size,
+void print_stats(const struct block_stats *stats, unsigned int block_order,
 	const char *unit_name);
 
 void report_io_speed(unsigned int indent, progress_cb cb, const char *prefix,

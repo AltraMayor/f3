@@ -268,36 +268,37 @@ static inline void pr_freespace(uint64_t fs)
 static int fill_fs(const char *path, uint64_t start_at, uint64_t end_at,
 	uint64_t max_write_rate, int progress)
 {
-	const unsigned int block_size = get_block_size(path);
+	const unsigned int block_order = get_block_order(path);
 	uint64_t free_blocks = get_free_blocks(path);
 	struct flow fw;
 	struct dynamic_buffer dbuf;
 	uint64_t i;
 	int has_suggested_max_write_rate = max_write_rate > 0;
 
-	pr_freespace(free_blocks * block_size);
+	pr_freespace(free_blocks << block_order);
 	if (free_blocks == 0) {
 		printf("No space!\n");
 		return 1;
 	}
 
 	assert(start_at <= end_at);
+	assert(GIGABYTE_ORDER >= block_order);
 	i = end_at - start_at + 1;
-	if (i <= (free_blocks * block_size >> GIGABYTE_ORDER)) {
+	if (i <= (free_blocks >> (GIGABYTE_ORDER - block_order))) {
 		/* The amount of data to write is less than the space available,
 		 * update free_blocks to improve estimate of time to finish.
 		 */
-		free_blocks = (i << GIGABYTE_ORDER) / block_size;
+		free_blocks = i << (GIGABYTE_ORDER - block_order);
 	} else {
 		/* There are more data to write than space available.
 		 * Reduce end_at to reduce the number of error messages
 		 * due to multiple write failures.
 		 */
 		end_at = start_at +
-			(free_blocks * block_size >> GIGABYTE_ORDER);
+			(free_blocks >> (GIGABYTE_ORDER - block_order));
 	}
 
-	init_flow(&fw, block_size, free_blocks, max_write_rate,
+	init_flow(&fw, block_order, free_blocks, max_write_rate,
 		progress ? printf_flush_cb : dummy_cb, 0);
 	dbuf_init(&dbuf);
 	for (i = start_at; i <= end_at; i++) {
@@ -308,7 +309,7 @@ static int fill_fs(const char *path, uint64_t start_at, uint64_t end_at,
 	dbuf_free(&dbuf);
 
 	/* Final report. */
-	pr_freespace(get_free_blocks(path) * block_size);
+	pr_freespace(get_free_blocks(path) << block_order);
 	print_avg_seq_speed(&fw, "write", true);
 	return 0;
 }

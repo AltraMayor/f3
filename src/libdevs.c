@@ -49,7 +49,8 @@ int dev_param_valid(uint64_t real_size_byte,
 
 	/* Check alignment of the sizes. */
 	block_size = 1 << block_order;
-	if (real_size_byte % block_size || announced_size_byte % block_size)
+	if ((real_size_byte & (block_size - 1)) != 0 ||
+			(announced_size_byte & (block_size - 1)) != 0)
 		return false;
 
 	/* If good, @wrap must make sense. */
@@ -535,15 +536,15 @@ static struct udev_monitor *create_monitor(struct udev *udev,
 
 static uint64_t get_udev_dev_size_byte(struct udev_device *dev)
 {
-	const char *str_size_sector =
+	const char *str_size_sectors =
 		udev_device_get_sysattr_value(dev, "size");
 	char *end;
-	long long size_sector;
-	if (!str_size_sector)
+	long long size_sectors;
+	if (str_size_sectors == NULL)
 		return 0;
-	size_sector = strtoll(str_size_sector, &end, 10);
-	assert(!*end);
-	return size_sector * 512LL;
+	size_sectors = strtoll(str_size_sectors, &end, 10);
+	assert(*end == '\0');
+	return size_sectors << SECTOR_ORDER;
 }
 
 static int wait_for_reset(struct udev *udev, const char *id_serial,
@@ -1356,8 +1357,8 @@ struct device *create_safe_device(struct device *dev, uint64_t max_blocks,
 	int min_memory)
 {
 	struct safe_device *sdev;
-	const int block_order = dev_get_block_order(dev);
 	const int block_size = dev_get_block_size(dev);
+	const int block_order = dev_get_block_order(dev);
 	uint64_t length;
 
 	sdev = malloc(sizeof(*sdev));

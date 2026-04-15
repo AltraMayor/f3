@@ -19,8 +19,8 @@ struct flow {
 	progress_cb	cb;
 	/* Indentation level for callback. */
 	unsigned int	indent;
-	/* Block size in bytes. */
-	unsigned int	block_size;
+	/* Block order. */
+	unsigned int	block_order;
 	/* Delay intended between measurements in nanoseconds. */
 	uint64_t	delay_ns;
 	/* Increment to apply to @blocks_per_delay. */
@@ -65,7 +65,7 @@ struct flow {
 /* If @max_process_rate == 0, the maximum processing rate is infinity.
  * The unit of @max_process_rate is KB per second.
  */
-void init_flow(struct flow *fw, unsigned int block_size, uint64_t total_blocks,
+void init_flow(struct flow *fw, unsigned int block_order, uint64_t total_blocks,
 	uint64_t max_process_rate, progress_cb cb, unsigned int indent);
 
 /* Total number of blocks already processed. */
@@ -76,12 +76,12 @@ static inline uint64_t fw_get_total_processed_blocks(const struct flow *fw)
 
 static inline unsigned int fw_get_block_size(const struct flow *fw)
 {
-	return fw->block_size;
+	return 1U << fw->block_order;
 }
 
 static inline unsigned int fw_get_block_order(const struct flow *fw)
 {
-	return ilog2(fw->block_size);
+	return fw->block_order;
 }
 
 static inline void inc_total_blocks(struct flow *fw, uint64_t n_blocks)

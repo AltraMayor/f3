@@ -65,15 +65,15 @@ static inline void move_to_inc_at_start(struct flow *fw)
 	fw->state = FW_INC;
 }
 
-void init_flow(struct flow *fw, unsigned int block_size, uint64_t total_blocks,
+void init_flow(struct flow *fw, unsigned int block_order, uint64_t total_blocks,
 	uint64_t max_process_rate, progress_cb cb, unsigned int indent)
 {
 	fw->total_blocks		= total_blocks;
 	fw->cb				= cb;
 	fw->indent			= indent;
-	fw->block_size			= block_size; /* Bytes		*/
-	fw->blocks_per_delay		= 1;	/* block_size B/s	*/
-	fw->delay_ns			= 1000000000ULL;	/* 1s	*/
+	fw->block_order			= block_order;
+	fw->blocks_per_delay		= 1;
+	fw->delay_ns			= 1000000000ULL; /* 1s */
 	fw->max_process_rate		= max_process_rate == 0
 		? DBL_MAX : max_process_rate * 1024.;
 	fw->measured_blocks		= 0;
@@ -84,8 +84,7 @@ void init_flow(struct flow *fw, unsigned int block_size, uint64_t total_blocks,
 	fw->rem_chunk_speed		= 0;
 	fw->processed_blocks		= 0;
 	fw->acc_delay_ns		= 0;
-	assert(fw->block_size > 0);
-	assert(fw->block_size % SECTOR_SIZE == 0);
+	assert(fw->block_order >= SECTOR_ORDER);
 
 	move_to_inc_at_start(fw);
 }
@@ -204,7 +203,7 @@ void start_measurement(struct flow *fw)
 	 * multiple files; this happens when a drive is faster than 1GB/s.
 	 */
 	report_progress(fw,
-		fw->blocks_per_delay * fw->block_size * 1000000000.0 /
+		(fw->blocks_per_delay << fw->block_order) * 1000000000.0 /
 			fw->delay_ns);
 	__start_measurement(fw);
 }
@@ -296,7 +295,7 @@ void measure(struct flow *fw, uint64_t processed_blocks)
 
 	assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
 	delay_ns = diff_timespec_ns(&fw->t1, &t2) + fw->acc_delay_ns;
-	bytes_g = fw->blocks_per_delay * fw->block_size * 1000000000.0;
+	bytes_g = (fw->blocks_per_delay << fw->block_order) * 1000000000.0;
 	/* Instantaneous speed in bytes per second. */
 	inst_speed = bytes_g / delay_ns;
 

@@ -323,24 +323,24 @@ enum block_state validate_block_update_stats(const void *buf,
 }
 
 static void print_stat(const char *prefix, uint64_t count,
-	unsigned int block_size, const char *unit_name)
+	unsigned int block_order, const char *unit_name)
 {
-	double f = (double)count * block_size;
+	double f = count << block_order;
 	const char *unit = adjust_unit(&f);
 	printf("%s %.2f %s (%" PRIu64 " %s%s)\n",
 		prefix, f, unit, count, unit_name, count != 1 ? "s" : "");
 }
 
-void print_stats(const struct block_stats *stats, unsigned int block_size,
+void print_stats(const struct block_stats *stats, unsigned int block_order,
 	const char *unit_name)
 {
-	print_stat("\n  Data OK:", stats->ok, block_size, unit_name);
+	print_stat("\n  Data OK:", stats->ok, block_order, unit_name);
 	print_stat("Data LOST:",
 		stats->bad + stats->changed + stats->overwritten,
-		block_size, unit_name);
-	print_stat("\t       Corrupted:", stats->bad, block_size, unit_name);
-	print_stat("\tSlightly changed:", stats->changed, block_size, unit_name);
-	print_stat("\t     Overwritten:", stats->overwritten, block_size, unit_name);
+		block_order, unit_name);
+	print_stat("\t       Corrupted:", stats->bad, block_order, unit_name);
+	print_stat("\tSlightly changed:", stats->changed, block_order, unit_name);
+	print_stat("\t     Overwritten:", stats->overwritten, block_order, unit_name);
 }
 
 void report_io_speed(unsigned int indent, progress_cb cb, const char *prefix,

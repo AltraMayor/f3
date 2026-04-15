@@ -517,7 +517,7 @@ static int sampling_probe(struct device *dev,
 static void report_cache_size_test(unsigned int indent, progress_cb cb,
 	const struct device *dev, uint64_t first_pos, uint64_t last_pos)
 {
-	double f_size = (last_pos - first_pos + 1) * dev_get_block_size(dev);
+	double f_size = (last_pos - first_pos + 1) << dev_get_block_order(dev);
 	const char *unit = adjust_unit(&f_size);
 	cb(indent, "### Testing cache size: %.2f %s; Block%s [%" PRIu64 ", %" PRIu64 "]\n",
 		f_size, unit, first_pos != last_pos ? "s" : "",
@@ -809,7 +809,6 @@ int probe_device(struct device *dev, struct probe_results *results,
 {
 	const uint64_t dev_size_byte = dev_get_size_byte(dev);
 	const unsigned int block_order = dev_get_block_order(dev);
-	const unsigned int block_size = dev_get_block_size(dev);
 	const progress_cb fw_cb = show_progress ? cb : dummy_cb;
 	uint64_t left_pos, right_pos, mid_drive_pos;
 	struct rdwr_info rwi;
@@ -819,9 +818,9 @@ int probe_device(struct device *dev, struct probe_results *results,
 	/* We initialize total_blocks to 0 because inc_total_blocks() is called
 	 * to update it when new blocks become available.
 	 */
-	init_flow(&rwi.seqw_fw, block_size, 0, max_write_rate, fw_cb, 0);
-	init_flow(&rwi.randw_fw, block_size, 0, max_write_rate, fw_cb, 0);
-	init_flow(&rwi.randr_fw, block_size, 0, max_read_rate, fw_cb, 0);
+	init_flow(&rwi.seqw_fw, block_order, 0, max_write_rate, fw_cb, 0);
+	init_flow(&rwi.randw_fw, block_order, 0, max_write_rate, fw_cb, 0);
+	init_flow(&rwi.randr_fw, block_order, 0, max_read_rate, fw_cb, 0);
 
 	/* @left_pos must point to a good block.
 	 * We just point to the last block of the first 1MB of the card

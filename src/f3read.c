@@ -288,9 +288,9 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 }
 
 static uint64_t get_total_blocks(const char *path, const uint64_t *files,
-	unsigned int block_size)
+	unsigned int block_order)
 {
-	const unsigned int block_order = ilog2(block_size);
+	const unsigned int block_size = 1U << block_order;
 	uint64_t total_blocks = 0;
 
 	while (*files != (uint64_t)-1) {
@@ -319,7 +319,7 @@ static void iterate_files(const char *path, const uint64_t *files,
 	uint64_t start_at, uint64_t end_at, uint64_t max_read_rate,
 	int progress)
 {
-	const unsigned int block_size = get_block_size(path);
+	const unsigned int block_order = get_block_order(path);
 	struct block_stats tot_stats = {0, 0, 0, 0};
 	uint64_t tot_size = 0;
 	int and_read_all = 1;
@@ -330,7 +330,7 @@ static void iterate_files(const char *path, const uint64_t *files,
 
 	UNUSED(end_at);
 
-	init_flow(&fw, block_size, get_total_blocks(path, files, block_size),
+	init_flow(&fw, block_order, get_total_blocks(path, files, block_order),
 		max_read_rate, progress ? printf_flush_cb : dummy_cb, 0);
 	dbuf_init(&dbuf);
 
@@ -365,7 +365,7 @@ static void iterate_files(const char *path, const uint64_t *files,
 	 * in @files is important since @end_at could be very large.
 	 */
 
-	print_stats(&tot_stats, SECTOR_SIZE, "sector");
+	print_stats(&tot_stats, SECTOR_ORDER, "sector");
 	if (or_missing_file)
 		printf("WARNING: Not all F3 files in the range %" PRIu64 " to %" PRIu64 " are available\n",
 			start_at + 1, number);
