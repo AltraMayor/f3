@@ -2,6 +2,7 @@
 #define _XOPEN_SOURCE 600
 
 #include <assert.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -11,6 +12,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/statvfs.h>
+#include <sys/types.h>
 #include <errno.h>
 #include <unistd.h>
 #include <err.h>
@@ -113,57 +115,77 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
 
-/* XXX Avoid duplicate this function, which was copied from libdevs.c. */
-static int write_all(int fd, const char *buf, size_t count)
+static void fill_buffer(char *buf, uint64_t sectors, uint64_t *poffset)
 {
-	size_t done = 0;
-	do {
-		ssize_t rc = write(fd, buf + done, count - done);
-		if (rc < 0) {
-			/* The write() failed. */
-			return errno;
-		}
-		done += rc;
-	} while (done < count);
-	return 0;
+	uint64_t i;
+	for (i = 0; i < sectors; i++) {
+		fill_buffer_with_block(buf, SECTOR_ORDER, *poffset, 0);
+		buf += SECTOR_SIZE;
+		*poffset += SECTOR_SIZE;
+	}
 }
 
-static int write_chunk(struct dynamic_buffer *dbuf, int fd, size_t chunk_size,
-	uint64_t *poffset)
+static int write_all(int fd, const char *buf, size_t *pbytes)
 {
+	ssize_t rc;
+	size_t done = 0;
+	do {
+		rc = write(fd, buf + done, *pbytes - done);
+		if (rc < 0) {
+			rc = errno;
+			goto out;
+		}
+		done += rc;
+	} while (done < *pbytes);
+	rc = 0;
+
+out:
+	*pbytes = done;
+	return rc;
+}
+
+static int write_chunk(struct flow *fw, struct dynamic_buffer *dbuf,
+	int fd, uint64_t remaining_blocks, uint64_t *poffset,
+	size_t *ptot_bytes_written)
+{
+	int rc = 0;
+	uint64_t chunk_size = MIN(get_rem_chunk_blocks(fw), remaining_blocks)
+		<< fw_get_block_order(fw);
 	size_t len = chunk_size;
-	char *buf = dbuf_get_buf(dbuf, 0, &len);
+	char * const buf = dbuf_get_buf(dbuf, 0, &len);
+	size_t tot_bytes_written = 0;
 
 	while (chunk_size > 0) {
-		size_t turn_size = chunk_size <= len ? chunk_size : len;
-		size_t i;
-		int ret;
+		const size_t turn_size = MIN(chunk_size, len);
+		size_t bytes_written = turn_size;
 
+		assert((turn_size & (SECTOR_SIZE - 1)) == 0);
+		fill_buffer(buf, turn_size >> SECTOR_ORDER, poffset);
+
+		rc = write_all(fd, buf, &bytes_written);
+		tot_bytes_written += bytes_written;
+		if (rc != 0)
+			goto out;
+		assert(bytes_written == turn_size);
 		chunk_size -= turn_size;
-		for (i = 0; i < turn_size; i += SECTOR_SIZE) {
-			fill_buffer_with_block(buf + i, SECTOR_ORDER, *poffset, 0);
-			*poffset += SECTOR_SIZE;
-		}
-
-		ret = write_all(fd, buf, turn_size);
-		if (ret)
-			return ret;
 	}
 
-	return 0;
+out:
+	*ptot_bytes_written = tot_bytes_written;
+	return rc;
 }
 
 /* Return true when disk is full. */
-static int create_and_fill_file(const char *path, uint64_t number,
-	int *phas_suggested_max_write_rate, struct flow *fw)
+static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
+	const char *path, uint64_t number, int *phas_suggested_max_write_rate)
 {
+	const int block_size = fw_get_block_size(fw);
 	const int block_order = fw_get_block_order(fw);
 	uint64_t remaining_blocks = 1ULL << (GIGABYTE_ORDER - block_order);
 	char *full_fn;
 	const char *filename;
 	int fd, saved_errno;
 	uint64_t offset;
-	struct dynamic_buffer dbuf;
 
 	assert(GIGABYTE_ORDER >= block_order);
 
@@ -184,30 +206,38 @@ static int create_and_fill_file(const char *path, uint64_t number,
 	assert(fd >= 0);
 
 	/* Write content. */
-	dbuf_init(&dbuf);
 	saved_errno = 0;
 	offset = number << GIGABYTE_ORDER;
 	start_measurement(fw);
 	while (remaining_blocks > 0) {
-		uint64_t write_blocks =
-			MIN(get_rem_chunk_blocks(fw), remaining_blocks);
-		saved_errno = write_chunk(&dbuf, fd,
-			write_blocks << block_order, &offset);
-		if (saved_errno)
+		size_t bytes_written;
+		uint64_t written_blocks;
+
+		saved_errno = write_chunk(fw, dbuf, fd, remaining_blocks,
+			&offset, &bytes_written);
+		if (bytes_written == 0)
 			break;
-		remaining_blocks -= write_blocks;
 
 		/* Push data to drive and tip the kernel. */
 		if (fdatasync(fd) < 0) {
-			saved_errno = errno;
-			break;
+			/* Preserve the first error. */
+			if (saved_errno == 0)
+				saved_errno = errno;
 		}
-		assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
+		if (saved_errno == 0) {
+			saved_errno = posix_fadvise(fd, 0, 0,
+				POSIX_FADV_DONTNEED);
+		}
 
-		measure(fw, write_blocks);
+		assert((bytes_written & (block_size - 1)) == 0);
+		written_blocks = bytes_written >> block_order;
+		measure(fw, written_blocks);
+		remaining_blocks -= written_blocks;
+
+		if (saved_errno != 0)
+			break;
 	}
 	end_measurement(fw);
-	dbuf_free(&dbuf);
 	close(fd);
 	free(full_fn);
 
@@ -219,7 +249,7 @@ static int create_and_fill_file(const char *path, uint64_t number,
 	}
 
 	/* Something went wrong. */
-	assert(saved_errno);
+	assert(saved_errno != 0);
 	printf("Write failure: %s\n", strerror(saved_errno));
 	if (saved_errno == EIO && !*phas_suggested_max_write_rate) {
 		*phas_suggested_max_write_rate = true;
@@ -241,6 +271,7 @@ static int fill_fs(const char *path, uint64_t start_at, uint64_t end_at,
 	const int block_size = get_block_size(path);
 	uint64_t free_blocks = get_free_blocks(path);
 	struct flow fw;
+	struct dynamic_buffer dbuf;
 	uint64_t i;
 	int has_suggested_max_write_rate = max_write_rate > 0;
 
@@ -268,15 +299,17 @@ static int fill_fs(const char *path, uint64_t start_at, uint64_t end_at,
 
 	init_flow(&fw, block_size, free_blocks, max_write_rate,
 		progress ? printf_flush_cb : dummy_cb, 0);
-	for (i = start_at; i <= end_at; i++)
-		if (create_and_fill_file(path, i,
-			&has_suggested_max_write_rate, &fw))
+	dbuf_init(&dbuf);
+	for (i = start_at; i <= end_at; i++) {
+		if (create_and_fill_file(&fw, &dbuf, path, i,
+				&has_suggested_max_write_rate))
 			break;
+	}
+	dbuf_free(&dbuf);
 
 	/* Final report. */
 	pr_freespace(get_free_blocks(path) * block_size);
 	print_avg_seq_speed(&fw, "write", true);
-
 	return 0;
 }
 
