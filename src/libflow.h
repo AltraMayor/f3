@@ -24,7 +24,7 @@ struct flow {
 	/* Delay intended between measurements in nanoseconds. */
 	uint64_t	delay_ns;
 	/* Increment to apply to @blocks_per_delay. */
-	uint64_t	step;
+	uint64_t	step_blocks;
 	/* Blocks to process before measurement. */
 	uint64_t	blocks_per_delay;
 	/* Maximum processing rate in bytes per second. */

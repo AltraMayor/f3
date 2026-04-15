@@ -61,7 +61,7 @@ static void nssleep(uint64_t wait_ns)
 
 static inline void move_to_inc_at_start(struct flow *fw)
 {
-	fw->step = 1;
+	fw->step_blocks = 1;
 	fw->state = FW_INC;
 }
 
@@ -233,17 +233,19 @@ static void move_to_search(struct flow *fw, uint64_t bpd1, uint64_t bpd2)
 
 static inline void dec_step(struct flow *fw)
 {
-	if (fw->blocks_per_delay > fw->step) {
-		fw->blocks_per_delay -= fw->step;
-		fw->step *= 2;
-	} else
-		move_to_search(fw, 1, fw->blocks_per_delay + fw->step / 2);
+	if (fw->blocks_per_delay > fw->step_blocks) {
+		fw->blocks_per_delay -= fw->step_blocks;
+		fw->step_blocks *= 2;
+	} else {
+		move_to_search(fw, 1,
+			fw->blocks_per_delay + fw->step_blocks / 2);
+	}
 }
 
 static inline void inc_step(struct flow *fw)
 {
-	fw->blocks_per_delay += fw->step;
-	fw->step *= 2;
+	fw->blocks_per_delay += fw->step_blocks;
+	fw->step_blocks *= 2;
 }
 
 static inline void move_to_inc(struct flow *fw)
@@ -254,7 +256,7 @@ static inline void move_to_inc(struct flow *fw)
 
 static inline void move_to_dec(struct flow *fw)
 {
-	fw->step = 1;
+	fw->step_blocks = 1;
 	fw->state = FW_DEC;
 	dec_step(fw);
 }
@@ -380,7 +382,7 @@ int measure(struct flow *fw, long processed)
 				fw->has_rem_chunk_size = true;
 			}
 			move_to_search(fw,
-				fw->blocks_per_delay - fw->step / 2,
+				fw->blocks_per_delay - fw->step_blocks / 2,
 				fw->blocks_per_delay);
 		} else if (is_rate_below(fw, delay_ns, inst_speed)) {
 			inc_step(fw);
@@ -393,7 +395,7 @@ int measure(struct flow *fw, long processed)
 			dec_step(fw);
 		} else if (is_rate_below(fw, delay_ns, inst_speed)) {
 			move_to_search(fw, fw->blocks_per_delay,
-				fw->blocks_per_delay + fw->step / 2);
+				fw->blocks_per_delay + fw->step_blocks / 2);
 		} else
 			move_to_steady(fw);
 		break;
