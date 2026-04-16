@@ -347,7 +347,7 @@ Tianze.
 Volker Runkel.
 
 `Fake-USB-Tester <https://github.com/shampuan/Fake-USB-Tester>`__ is a Linux GUI 
-written in Python and Qt6. Fake-USB-Tester supports ``f3write``, ``f3read``, 
+written in Python and Qt5. Fake-USB-Tester supports ``f3write``, ``f3read``, 
 and ``f3probe``. Author: shampuan.
 
 Please support the above projects by testing them and giving feedback to their
