@@ -334,6 +334,11 @@ Graphical User Interfaces
 Thanks to our growing community of flash fraud fighters,
 we have the following graphical user interfaces (GUI) available for F3:
 
+`F3-Gui <https://dantavares.github.io/f3-gui/>`__ It's a GUI for Linux using Flatpak. 
+It already includes ``f3write``, ``f3read``, ``f3probe``, and ``f3fix``. Other features 
+include automatically formatting the newly fixed partition using ``f3fix``. Author:
+Daniel Tavares.
+
 `F3 QT <https://github.com/zwpwjwtz/f3-qt>`__ is a Linux GUI that uses
 QT. F3 QT supports ``f3write``, ``f3read``, ``f3probe``, and ``f3fix``. Author:
 Tianze.
