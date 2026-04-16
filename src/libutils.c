@@ -152,7 +152,7 @@ int nsec_to_str(uint64_t nsec, char *str)
 	return tot;
 }
 
-void *align_mem2(void *p, int order, int *shift)
+void *align_mem2(void *p, unsigned int order, int *shift)
 {
 	uintptr_t ip0 = (uintptr_t)p;
 	uintptr_t head = align_head(order);
@@ -221,10 +221,10 @@ static inline uint64_t next_random_number(uint64_t random_number)
 	return random_number * 4294967311ULL + 17;
 }
 
-void fill_buffer_with_block(void *buf, int block_order, uint64_t offset,
-	uint64_t salt)
+void fill_buffer_with_block(void *buf, unsigned int block_order,
+	uint64_t offset, uint64_t salt)
 {
-	const unsigned int num_int64 = 1 << (block_order - 3);
+	const unsigned int num_int64 = 1U << (block_order - 3);
 	uint64_t *int64_array = buf;
 	uint64_t random_number = offset ^ salt;
 	unsigned int i;
@@ -255,16 +255,17 @@ const char *block_state_to_str(enum block_state state)
 	return conv_array[state];
 }
 
-enum block_state validate_buffer_with_block(const void *buf, int block_order,
-	uint64_t expected_offset, uint64_t *pfound_offset, uint64_t salt)
+enum block_state validate_buffer_with_block(const void *buf,
+	unsigned int block_order, uint64_t expected_offset,
+	uint64_t *pfound_offset, uint64_t salt)
 {
 	const uint64_t *int64_array = buf;
 	const uint64_t found_offset = int64_array[0];
-	const int num_int64 = 1 << (block_order - 3);
+	const unsigned int num_int64 = 1U << (block_order - 3);
 	uint64_t random_number = found_offset ^ salt;
 	const unsigned int bit_error_tolerance = 7;
 	unsigned int bit_error_count = 0;
-	int i;
+	unsigned int i;
 
 	assert(block_order >= SECTOR_ORDER);
 
@@ -294,9 +295,9 @@ enum block_state validate_buffer_with_block(const void *buf, int block_order,
 	return bs_bad;
 }
 
-enum block_state validate_block_update_stats(const void *buf, int block_order,
-	uint64_t expected_offset, uint64_t *pfound_offset, uint64_t salt,
-	struct block_stats *stats)
+enum block_state validate_block_update_stats(const void *buf,
+	unsigned int block_order, uint64_t expected_offset,
+	uint64_t *pfound_offset, uint64_t salt, struct block_stats *stats)
 {
 	enum block_state state = validate_buffer_with_block(buf, block_order,
 		expected_offset, pfound_offset, salt);
@@ -322,29 +323,29 @@ enum block_state validate_block_update_stats(const void *buf, int block_order,
 }
 
 static void print_stat(const char *prefix, uint64_t count,
-	int block_size, const char *unit_name)
+	unsigned int block_order, const char *unit_name)
 {
-	double f = (double)count * block_size;
+	double f = count << block_order;
 	const char *unit = adjust_unit(&f);
 	printf("%s %.2f %s (%" PRIu64 " %s%s)\n",
 		prefix, f, unit, count, unit_name, count != 1 ? "s" : "");
 }
 
-void print_stats(const struct block_stats *stats, int block_size,
+void print_stats(const struct block_stats *stats, unsigned int block_order,
 	const char *unit_name)
 {
-	print_stat("\n  Data OK:", stats->ok, block_size, unit_name);
+	print_stat("\n  Data OK:", stats->ok, block_order, unit_name);
 	print_stat("Data LOST:",
 		stats->bad + stats->changed + stats->overwritten,
-		block_size, unit_name);
-	print_stat("\t       Corrupted:", stats->bad, block_size, unit_name);
-	print_stat("\tSlightly changed:", stats->changed, block_size, unit_name);
-	print_stat("\t     Overwritten:", stats->overwritten, block_size, unit_name);
+		block_order, unit_name);
+	print_stat("\t       Corrupted:", stats->bad, block_order, unit_name);
+	print_stat("\tSlightly changed:", stats->changed, block_order, unit_name);
+	print_stat("\t     Overwritten:", stats->overwritten, block_order, unit_name);
 }
 
 void report_io_speed(unsigned int indent, progress_cb cb, const char *prefix,
 	uint64_t blocks, const char *block_unit, uint64_t time_ns,
-	int block_order)
+	unsigned int block_order)
 {
 	double speed;
 	const char *unit;

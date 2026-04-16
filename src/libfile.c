@@ -23,6 +23,7 @@
 #include <sys/statvfs.h>
 
 #include "libfile.h"
+#include "libutils.h"
 
 void adjust_dev_path(const char **dev_path)
 {
@@ -38,11 +39,22 @@ void adjust_dev_path(const char **dev_path)
 	}
 }
 
-int get_block_size(const char *path)
+unsigned int get_block_order(const char *path)
+{
+	struct statvfs fs;
+	unsigned int block_size;
+
+	assert(!statvfs(path, &fs));
+	block_size = fs.f_frsize;
+	assert(is_power_of_2(block_size));
+	return ilog2(block_size);
+}
+
+uint64_t get_free_blocks(const char *path)
 {
 	struct statvfs fs;
 	assert(!statvfs(path, &fs));
-	return fs.f_frsize;
+	return fs.f_bfree;
 }
 
 int is_my_file(const char *filename)

@@ -29,10 +29,10 @@ enum fake_type {
 const char *fake_type_to_name(enum fake_type fake_type);
 
 int dev_param_valid(uint64_t real_size_byte,
-	uint64_t announced_size_byte, int wrap, int block_order);
+	uint64_t announced_size_byte, int wrap, unsigned int block_order);
 
 enum fake_type dev_param_to_type(uint64_t real_size_byte,
-	uint64_t announced_size_byte, int wrap, int block_order);
+	uint64_t announced_size_byte, int wrap, unsigned int block_order);
 
 /*
  *	Abstract device
@@ -45,8 +45,8 @@ struct device;
  */
 
 uint64_t dev_get_size_byte(const struct device *dev);
-int dev_get_block_order(const struct device *dev);
-int dev_get_block_size(const struct device *dev);
+unsigned int dev_get_block_order(const struct device *dev);
+unsigned int dev_get_block_size(const struct device *dev);
 /* File name of the device.
  * This information is important because the filename may change due to resets.
  */
@@ -70,7 +70,7 @@ void free_device(struct device *dev);
 
 struct device *create_file_device(const char *filename,
 	uint64_t real_size_byte, uint64_t fake_size_byte, int wrap,
-	int block_order, int cache_order, int strict_cache,
+	unsigned int block_order, int cache_order, int strict_cache,
 	int keep_file);
 
 enum reset_type {

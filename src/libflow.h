@@ -12,25 +12,21 @@
 
 struct flow;
 
-typedef int (*flow_func_flush_chunk_t)(const struct flow *fw, int fd);
-
 struct flow {
-	/* Total number of bytes to be processed. */
-	uint64_t	total_size;
-	/* Total number of bytes already processed. */
-	uint64_t	total_processed;
+	/* Total number of blocks to be processed. */
+	uint64_t	total_blocks;
 	/* Callback to show progress. */
 	progress_cb	cb;
 	/* Indentation level for callback. */
 	unsigned int	indent;
-	/* Block size in bytes. */
-	int		block_size;
+	/* Block order. */
+	unsigned int	block_order;
 	/* Delay intended between measurements in nanoseconds. */
 	uint64_t	delay_ns;
 	/* Increment to apply to @blocks_per_delay. */
-	int64_t		step;
+	uint64_t	step_blocks;
 	/* Blocks to process before measurement. */
-	int64_t		blocks_per_delay;
+	uint64_t	blocks_per_delay;
 	/* Maximum processing rate in bytes per second. */
 	double		max_process_rate;
 	/* Number of measured blocks. */
@@ -40,57 +36,57 @@ struct flow {
 	/* State. */
 	enum {FW_INC, FW_DEC, FW_SEARCH, FW_STEADY} state;
 	/* Number of characters to erase before printing out progress. */
-	int		erase;
-
-	/*
-	 * Methods
-	 */
-	flow_func_flush_chunk_t func_flush_chunk;
+	unsigned int	erase;
 
 	/*
 	 * Initialized while measuring
 	 */
 
 	/* Has a recommended chunk size? */
-	bool		has_rem_chunk_size;
-	/* Recommended chunk size. */
-	uint64_t	rem_chunk_size;
+	bool		has_rem_chunk_blocks;
+	/* Recommended chunk size in blocks. */
+	uint64_t	rem_chunk_blocks;
 	/* Speed of the recommended chunk size in bytes per second. */
 	double		rem_chunk_speed;
 
 	/* Number of blocks processed since last measurement. */
-	int64_t		processed_blocks;
+	uint64_t	processed_blocks;
 	/*
 	 * Accumulated delay before @processed_blocks reaches @blocks_per_delay
 	 * in nanoseconds.
 	 */
 	uint64_t	acc_delay_ns;
 	/* Range of blocks_per_delay while in FW_SEARCH state. */
-	int64_t		bpd1, bpd2;
+	uint64_t	bpd1, bpd2;
 	/* Time measurements. */
 	struct timespec	t1;
 };
 
-/* If @max_process_rate <= 0, the maximum processing rate is infinity.
+/* If @max_process_rate == 0, the maximum processing rate is infinity.
  * The unit of @max_process_rate is KB per second.
  */
-void init_flow(struct flow *fw, int block_size, uint64_t total_size,
-	uint64_t max_process_rate, progress_cb cb, unsigned int indent,
-	flow_func_flush_chunk_t func_flush_chunk);
+void init_flow(struct flow *fw, unsigned int block_order, uint64_t total_blocks,
+	uint64_t max_process_rate, progress_cb cb, unsigned int indent);
 
-static inline int fw_get_block_size(const struct flow *fw)
+/* Total number of blocks already processed. */
+static inline uint64_t fw_get_total_processed_blocks(const struct flow *fw)
 {
-	return fw->block_size;
+	return fw->measured_blocks + fw->processed_blocks;
 }
 
-static inline int fw_get_block_order(const struct flow *fw)
+static inline unsigned int fw_get_block_size(const struct flow *fw)
 {
-	return ilog2(fw->block_size);
+	return 1U << fw->block_order;
 }
 
-static inline void inc_total_size(struct flow *fw, uint64_t size)
+static inline unsigned int fw_get_block_order(const struct flow *fw)
 {
-	fw->total_size = fw->total_processed + size;
+	return fw->block_order;
+}
+
+static inline void inc_total_blocks(struct flow *fw, uint64_t n_blocks)
+{
+	fw->total_blocks = fw_get_total_processed_blocks(fw) + n_blocks;
 }
 
 static inline void fw_set_indent(struct flow *fw, unsigned int indent)
@@ -101,16 +97,16 @@ static inline void fw_set_indent(struct flow *fw, unsigned int indent)
 static inline void fw_get_measurements(const struct flow *fw,
 	uint64_t *blocks, uint64_t *time_ns)
 {
-	*blocks = fw->measured_blocks + fw->processed_blocks;
+	*blocks = fw_get_total_processed_blocks(fw);
 	*time_ns = fw->measured_time_ns + fw->acc_delay_ns;
 }
 
-uint64_t get_rem_chunk_size(const struct flow *fw);
+uint64_t get_rem_chunk_blocks(const struct flow *fw);
 
 void start_measurement(struct flow *fw);
-int measure(int fd, struct flow *fw, long processed);
+void measure(struct flow *fw, uint64_t processed_blocks);
 void clear_progress(struct flow *fw);
-int end_measurement(int fd, struct flow *fw);
+void end_measurement(struct flow *fw);
 
 void print_avg_seq_speed(const struct flow *fw, const char *speed_type,
 	bool use_sectors);
@@ -135,14 +131,11 @@ static inline void dbuf_init(struct dynamic_buffer *dbuf)
 void dbuf_free(struct dynamic_buffer *dbuf);
 
 /*
- * Although the returned buffer may be smaller than @size,
- * this function never returns NULL.
+ * Although the returned buffer may be smaller than
+ * the input value of *psize in bytes, this function never returns NULL.
+ * The input value of *psize is the maximum size of the returned buffer.
  */
-char *dbuf_get_buf(struct dynamic_buffer *dbuf, size_t size);
-
-static inline size_t dbuf_get_len(const struct dynamic_buffer *dbuf)
-{
-	return dbuf->len;
-}
+char *dbuf_get_buf(struct dynamic_buffer *dbuf, unsigned int align_order,
+	size_t *psize);
 
 #endif	/* HEADER_LIBFLOW_H */

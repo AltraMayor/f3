@@ -2,6 +2,7 @@
 #define _XOPEN_SOURCE 600
 
 #include <assert.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
@@ -11,6 +12,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <sys/statvfs.h>
+#include <sys/types.h>
 #include <errno.h>
 #include <unistd.h>
 #include <err.h>
@@ -113,59 +115,79 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 static struct argp argp = {options, parse_opt, adoc, doc, NULL, NULL, NULL};
 
-/* XXX Avoid duplicate this function, which was copied from libdevs.c. */
-static int write_all(int fd, const char *buf, size_t count)
+static void fill_buffer(char *buf, uint64_t sectors, uint64_t *poffset)
 {
-	size_t done = 0;
-	do {
-		ssize_t rc = write(fd, buf + done, count - done);
-		if (rc < 0) {
-			/* The write() failed. */
-			return errno;
-		}
-		done += rc;
-	} while (done < count);
-	return 0;
+	uint64_t i;
+	for (i = 0; i < sectors; i++) {
+		fill_buffer_with_block(buf, SECTOR_ORDER, *poffset, 0);
+		buf += SECTOR_SIZE;
+		*poffset += SECTOR_SIZE;
+	}
 }
 
-static int write_chunk(struct dynamic_buffer *dbuf, int fd, size_t chunk_size,
-	uint64_t *poffset)
+static int write_all(int fd, const char *buf, size_t *pbytes)
 {
-	char *buf = dbuf_get_buf(dbuf, chunk_size);
-	size_t len = dbuf_get_len(dbuf);
+	ssize_t rc;
+	size_t done = 0;
+	do {
+		rc = write(fd, buf + done, *pbytes - done);
+		if (rc < 0) {
+			rc = errno;
+			goto out;
+		}
+		done += rc;
+	} while (done < *pbytes);
+	rc = 0;
+
+out:
+	*pbytes = done;
+	return rc;
+}
+
+static int write_chunk(struct flow *fw, struct dynamic_buffer *dbuf,
+	int fd, uint64_t remaining_blocks, uint64_t *poffset,
+	size_t *ptot_bytes_written)
+{
+	int rc = 0;
+	uint64_t chunk_size = MIN(get_rem_chunk_blocks(fw), remaining_blocks)
+		<< fw_get_block_order(fw);
+	size_t len = chunk_size;
+	char * const buf = dbuf_get_buf(dbuf, 0, &len);
+	size_t tot_bytes_written = 0;
 
 	while (chunk_size > 0) {
-		size_t turn_size = chunk_size <= len ? chunk_size : len;
-		size_t i;
-		int ret;
+		const size_t turn_size = MIN(chunk_size, len);
+		size_t bytes_written = turn_size;
 
+		assert((turn_size & (SECTOR_SIZE - 1)) == 0);
+		fill_buffer(buf, turn_size >> SECTOR_ORDER, poffset);
+
+		rc = write_all(fd, buf, &bytes_written);
+		tot_bytes_written += bytes_written;
+		if (rc != 0)
+			goto out;
+		assert(bytes_written == turn_size);
 		chunk_size -= turn_size;
-		for (i = 0; i < turn_size; i += SECTOR_SIZE) {
-			fill_buffer_with_block(buf + i, SECTOR_ORDER, *poffset, 0);
-			*poffset += SECTOR_SIZE;
-		}
-
-		ret = write_all(fd, buf, turn_size);
-		if (ret)
-			return ret;
 	}
 
-	return 0;
+out:
+	*ptot_bytes_written = tot_bytes_written;
+	return rc;
 }
 
 /* Return true when disk is full. */
-static int create_and_fill_file(const char *path, uint64_t number, size_t size,
-	int *phas_suggested_max_write_rate, struct flow *fw)
+static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
+	const char *path, uint64_t number, int *phas_suggested_max_write_rate)
 {
+	const unsigned int block_size = fw_get_block_size(fw);
+	const unsigned int block_order = fw_get_block_order(fw);
+	uint64_t remaining_blocks = 1ULL << (GIGABYTE_ORDER - block_order);
 	char *full_fn;
 	const char *filename;
 	int fd, saved_errno;
-	size_t remaining;
 	uint64_t offset;
-	struct dynamic_buffer dbuf;
 
-	assert(size > 0);
-	assert(size % fw_get_block_size(fw) == 0);
+	assert(GIGABYTE_ORDER >= block_order);
 
 	/* Create the file. */
 	full_fn = full_fn_from_number(&filename, path, number);
@@ -184,55 +206,56 @@ static int create_and_fill_file(const char *path, uint64_t number, size_t size,
 	assert(fd >= 0);
 
 	/* Write content. */
-	dbuf_init(&dbuf);
 	saved_errno = 0;
 	offset = number << GIGABYTE_ORDER;
-	remaining = size;
 	start_measurement(fw);
-	while (remaining > 0) {
-		uint64_t write_size = get_rem_chunk_size(fw);
-		if (write_size > remaining)
-			write_size = remaining;
-		saved_errno = write_chunk(&dbuf, fd, write_size, &offset);
-		if (saved_errno)
+	while (remaining_blocks > 0) {
+		size_t bytes_written;
+		uint64_t written_blocks;
+
+		saved_errno = write_chunk(fw, dbuf, fd, remaining_blocks,
+			&offset, &bytes_written);
+		if (bytes_written == 0)
 			break;
-		remaining -= write_size;
-		if (measure(fd, fw, write_size) < 0) {
-			saved_errno = errno;
-			break;
+
+		/* Push data to drive and tip the kernel. */
+		if (fdatasync(fd) < 0) {
+			/* Preserve the first error. */
+			if (saved_errno == 0)
+				saved_errno = errno;
 		}
+		if (saved_errno == 0) {
+			saved_errno = posix_fadvise(fd, 0, 0,
+				POSIX_FADV_DONTNEED);
+		}
+
+		assert((bytes_written & (block_size - 1)) == 0);
+		written_blocks = bytes_written >> block_order;
+		measure(fw, written_blocks);
+		remaining_blocks -= written_blocks;
+
+		if (saved_errno != 0)
+			break;
 	}
-	if (end_measurement(fd, fw) < 0) {
-		/* If a write failure has happened before, preserve it. */
-		if (!saved_errno)
-			saved_errno = errno;
-	}
-	dbuf_free(&dbuf);
+	end_measurement(fw);
 	close(fd);
 	free(full_fn);
 
 	if (saved_errno == 0 || saved_errno == ENOSPC) {
 		if (saved_errno == 0)
-			assert(remaining == 0);
+			assert(remaining_blocks == 0);
 		printf("OK!\n");
 		return saved_errno == ENOSPC;
 	}
 
 	/* Something went wrong. */
-	assert(saved_errno);
+	assert(saved_errno != 0);
 	printf("Write failure: %s\n", strerror(saved_errno));
 	if (saved_errno == EIO && !*phas_suggested_max_write_rate) {
 		*phas_suggested_max_write_rate = true;
 		printf("\nWARNING:\nThe write error above may be due to your memory card overheating\nunder constant, maximum write rate. You can test this hypothesis\ntouching your memory card. If it is hot, you can try f3write\nagain, once your card has cooled down, using parameter --max-write-rate=2048\nto limit the maximum write rate to 2MB/s, or another suitable rate.\n\n");
 	}
 	return false;
-}
-
-static inline uint64_t get_freespace(const char *path)
-{
-	struct statvfs fs;
-	assert(!statvfs(path, &fs));
-	return (uint64_t)fs.f_frsize * (uint64_t)fs.f_bfree;
 }
 
 static inline void pr_freespace(uint64_t fs)
@@ -242,59 +265,52 @@ static inline void pr_freespace(uint64_t fs)
 	printf("Free space: %.2f %s\n", f, unit);
 }
 
-static int flush_chunk(const struct flow *fw, int fd)
-{
-	UNUSED(fw);
-
-	if (fdatasync(fd) < 0)
-		return -1; /* Caller can read errno(3). */
-
-	/* Help the kernel to help us. */
-	assert(!posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED));
-	return 0;
-}
-
 static int fill_fs(const char *path, uint64_t start_at, uint64_t end_at,
 	uint64_t max_write_rate, int progress)
 {
-	uint64_t free_space;
+	const unsigned int block_order = get_block_order(path);
+	uint64_t free_blocks = get_free_blocks(path);
 	struct flow fw;
+	struct dynamic_buffer dbuf;
 	uint64_t i;
 	int has_suggested_max_write_rate = max_write_rate > 0;
 
-	free_space = get_freespace(path);
-	pr_freespace(free_space);
-	if (free_space <= 0) {
+	pr_freespace(free_blocks << block_order);
+	if (free_blocks == 0) {
 		printf("No space!\n");
 		return 1;
 	}
 
 	assert(start_at <= end_at);
+	assert(GIGABYTE_ORDER >= block_order);
 	i = end_at - start_at + 1;
-	if (i <= (free_space >> GIGABYTE_ORDER)) {
+	if (i <= (free_blocks >> (GIGABYTE_ORDER - block_order))) {
 		/* The amount of data to write is less than the space available,
-		 * update free_space to improve estimate of time to finish.
+		 * update free_blocks to improve estimate of time to finish.
 		 */
-		free_space = i << GIGABYTE_ORDER;
+		free_blocks = i << (GIGABYTE_ORDER - block_order);
 	} else {
 		/* There are more data to write than space available.
 		 * Reduce end_at to reduce the number of error messages
 		 * due to multiple write failures.
 		 */
-		end_at = start_at + (free_space >> GIGABYTE_ORDER);
+		end_at = start_at +
+			(free_blocks >> (GIGABYTE_ORDER - block_order));
 	}
 
-	init_flow(&fw, get_block_size(path), free_space, max_write_rate,
-		progress ? printf_flush_cb : dummy_cb, 0, flush_chunk);
-	for (i = start_at; i <= end_at; i++)
-		if (create_and_fill_file(path, i, GIGABYTE_SIZE,
-			&has_suggested_max_write_rate, &fw))
+	init_flow(&fw, block_order, free_blocks, max_write_rate,
+		progress ? printf_flush_cb : dummy_cb, 0);
+	dbuf_init(&dbuf);
+	for (i = start_at; i <= end_at; i++) {
+		if (create_and_fill_file(&fw, &dbuf, path, i,
+				&has_suggested_max_write_rate))
 			break;
+	}
+	dbuf_free(&dbuf);
 
 	/* Final report. */
-	pr_freespace(get_freespace(path));
+	pr_freespace(get_free_blocks(path) << block_order);
 	print_avg_seq_speed(&fw, "write", true);
-
 	return 0;
 }
 

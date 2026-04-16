@@ -17,20 +17,21 @@
 uint64_t probe_max_written_blocks(const struct device *dev);
 
 void report_probed_size(unsigned int indent, progress_cb cb,
-	const char *prefix, uint64_t bytes, int block_order);
+	const char *prefix, uint64_t bytes, unsigned int block_order);
 
 void report_probed_order(unsigned int indent, progress_cb cb,
-	const char *prefix, int order);
+	const char *prefix, unsigned int order);
 
 void report_probed_cache(unsigned int indent, progress_cb cb,
-	const char *prefix, uint64_t cache_size_block, int block_order);
+	const char *prefix, uint64_t cache_size_block,
+	unsigned int block_order);
 
 struct probe_results {
 	uint64_t real_size_byte;
 	uint64_t announced_size_byte;
 	int wrap;
 	uint64_t cache_size_block;
-	int block_order;
+	unsigned int block_order;
 
 	uint64_t seqw_blocks, seqw_time_ns;
 	uint64_t randw_blocks, randw_time_ns;

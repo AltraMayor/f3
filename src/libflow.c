@@ -61,46 +61,41 @@ static void nssleep(uint64_t wait_ns)
 
 static inline void move_to_inc_at_start(struct flow *fw)
 {
-	fw->step = 1;
+	fw->step_blocks = 1;
 	fw->state = FW_INC;
 }
 
-void init_flow(struct flow *fw, int block_size, uint64_t total_size,
-	uint64_t max_process_rate, progress_cb cb, unsigned int indent,
-	flow_func_flush_chunk_t func_flush_chunk)
+void init_flow(struct flow *fw, unsigned int block_order, uint64_t total_blocks,
+	uint64_t max_process_rate, progress_cb cb, unsigned int indent)
 {
-	fw->total_size		= total_size;
-	fw->total_processed	= 0;
-	fw->cb			= cb;
-	fw->indent		= indent;
-	fw->block_size		= block_size; /* Bytes		*/
-	fw->blocks_per_delay	= 1;	/* block_size B/s	*/
-	fw->delay_ns		= 1000000000ULL;	/* 1s	*/
-	fw->max_process_rate	= max_process_rate == 0
+	fw->total_blocks		= total_blocks;
+	fw->cb				= cb;
+	fw->indent			= indent;
+	fw->block_order			= block_order;
+	fw->blocks_per_delay		= 1;
+	fw->delay_ns			= 1000000000ULL; /* 1s */
+	fw->max_process_rate		= max_process_rate == 0
 		? DBL_MAX : max_process_rate * 1024.;
-	fw->measured_blocks	= 0;
-	fw->measured_time_ns	= 0;
-	fw->erase		= 0;
-	fw->func_flush_chunk	= func_flush_chunk;
-	fw->has_rem_chunk_size	= false;
-	fw->rem_chunk_size	= 0;
-	fw->rem_chunk_speed	= 0;
-	fw->processed_blocks	= 0;
-	fw->acc_delay_ns	= 0;
-	assert(fw->block_size > 0);
-	assert(fw->block_size % SECTOR_SIZE == 0);
+	fw->measured_blocks		= 0;
+	fw->measured_time_ns		= 0;
+	fw->erase			= 0;
+	fw->has_rem_chunk_blocks	= false;
+	fw->rem_chunk_blocks		= 0;
+	fw->rem_chunk_speed		= 0;
+	fw->processed_blocks		= 0;
+	fw->acc_delay_ns		= 0;
+	assert(fw->block_order >= SECTOR_ORDER);
 
 	move_to_inc_at_start(fw);
 }
 
-uint64_t get_rem_chunk_size(const struct flow *fw)
+uint64_t get_rem_chunk_blocks(const struct flow *fw)
 {
-	const int64_t rem_blocks = fw->blocks_per_delay - fw->processed_blocks;
-	const uint64_t rem_size = rem_blocks * fw->block_size;
-	assert(rem_blocks > 0);
-	return fw->has_rem_chunk_size && rem_size >= fw->rem_chunk_size
-		? fw->rem_chunk_size
-		: rem_size;
+	const uint64_t rem_blocks = fw->blocks_per_delay - fw->processed_blocks;
+	assert(fw->blocks_per_delay > fw->processed_blocks);
+	return fw->has_rem_chunk_blocks && rem_blocks >= fw->rem_chunk_blocks
+		? fw->rem_chunk_blocks
+		: rem_blocks;
 }
 
 static inline unsigned int repeat_ch(char *buf, char ch, int count)
@@ -116,7 +111,7 @@ void clear_progress(struct flow *fw)
 {
 	char buf[512], *at_buf = buf;
 
-	if (fw->erase <= 0) {
+	if (fw->erase == 0) {
 		if (fw->indent > 0) {
 			/* Remove indented empty line. */
 			fw->cb(fw->indent, "\b");
@@ -124,7 +119,7 @@ void clear_progress(struct flow *fw)
 		goto out;
 	}
 
-	assert((size_t)fw->erase * 3 + 1 <= sizeof(buf));
+	assert(fw->erase * 3 + 1 <= sizeof(buf));
 	at_buf += repeat_ch(at_buf, '\b', fw->erase);
 	at_buf += repeat_ch(at_buf, ' ', fw->erase);
 	at_buf += repeat_ch(at_buf, '\b', fw->erase);
@@ -153,6 +148,8 @@ static inline bool has_enough_measurements(const struct flow *fw)
 
 static void report_progress(struct flow *fw, double inst_speed)
 {
+	const uint64_t total_processed_blocks =
+		fw_get_total_processed_blocks(fw);
 	const char *unit = adjust_unit(&inst_speed);
 	double percent;
 	char buf[128 + TIME_STR_SIZE];
@@ -164,22 +161,21 @@ static void report_progress(struct flow *fw, double inst_speed)
 	 * the initial free space isn't exactly reported
 	 * by the kernel; this issue has been seen on Macs.
 	 */
-	if (fw->total_size < fw->total_processed)
-		fw->total_size = fw->total_processed;
+	if (fw->total_blocks < total_processed_blocks)
+		fw->total_blocks = total_processed_blocks;
 
-	percent = fw->total_processed * 100.0 / fw->total_size;
+	percent = total_processed_blocks * 100.0 / fw->total_blocks;
 	c = snprintf(at_buf, rem_size, "%.2f%% -- %.2f %s/s",
 		percent, inst_speed, unit);
 	CHECK_AND_MOVE;
 
 	if (has_enough_measurements(fw)) {
-		const double rem_size_byte =
-			fw->total_size - fw->total_processed;
-		const double speed_byte_per_ns =
-			(double)(fw->measured_blocks * fw->block_size) /
-			fw->measured_time_ns;
+		const double rem_blocks =
+			fw->total_blocks - total_processed_blocks;
+		const double speed_blocks_per_ns =
+			(double)fw->measured_blocks / fw->measured_time_ns;
 		const uint64_t rem_time_ns =
-			round(rem_size_byte / speed_byte_per_ns);
+			round(rem_blocks / speed_blocks_per_ns);
 
 		c = snprintf(at_buf, rem_size, " -- ");
 		CHECK_AND_MOVE;
@@ -202,13 +198,17 @@ static inline void __start_measurement(struct flow *fw)
 
 void start_measurement(struct flow *fw)
 {
+	uint64_t blocks, time_ns;
+
 	/*
 	 * The report below is especially useful when a single measurement spans
 	 * multiple files; this happens when a drive is faster than 1GB/s.
 	 */
-	report_progress(fw,
-		fw->blocks_per_delay * fw->block_size * 1000000000.0 /
-			fw->delay_ns);
+	fw_get_measurements(fw, &blocks, &time_ns);
+	if (time_ns > 0) {
+		report_progress(fw,
+			(blocks << fw->block_order) * 1000000000.0 / time_ns);
+	}
 	__start_measurement(fw);
 }
 
@@ -217,7 +217,7 @@ static inline void move_to_steady(struct flow *fw)
 	fw->state = FW_STEADY;
 }
 
-static void move_to_search(struct flow *fw, int64_t bpd1, int64_t bpd2)
+static void move_to_search(struct flow *fw, uint64_t bpd1, uint64_t bpd2)
 {
 	assert(bpd1 > 0);
 	assert(bpd2 >= bpd1);
@@ -235,17 +235,19 @@ static void move_to_search(struct flow *fw, int64_t bpd1, int64_t bpd2)
 
 static inline void dec_step(struct flow *fw)
 {
-	if (fw->blocks_per_delay - fw->step > 0) {
-		fw->blocks_per_delay -= fw->step;
-		fw->step *= 2;
-	} else
-		move_to_search(fw, 1, fw->blocks_per_delay + fw->step / 2);
+	if (fw->blocks_per_delay > fw->step_blocks) {
+		fw->blocks_per_delay -= fw->step_blocks;
+		fw->step_blocks *= 2;
+	} else {
+		move_to_search(fw, 1,
+			fw->blocks_per_delay + fw->step_blocks / 2);
+	}
 }
 
 static inline void inc_step(struct flow *fw)
 {
-	fw->blocks_per_delay += fw->step;
-	fw->step *= 2;
+	fw->blocks_per_delay += fw->step_blocks;
+	fw->step_blocks *= 2;
 }
 
 static inline void move_to_inc(struct flow *fw)
@@ -256,7 +258,7 @@ static inline void move_to_inc(struct flow *fw)
 
 static inline void move_to_dec(struct flow *fw)
 {
-	fw->step = 1;
+	fw->step_blocks = 1;
 	fw->state = FW_DEC;
 	dec_step(fw);
 }
@@ -275,48 +277,34 @@ static inline int is_rate_below(const struct flow *fw,
 	return delay_ns <= fw->delay_ns && inst_speed < fw->max_process_rate;
 }
 
-static inline int flush_chunk(const struct flow *fw, int fd)
+static void update_rem_chunk_blocks(struct flow *fw, double inst_speed)
 {
-	if (fw->func_flush_chunk)
-		return fw->func_flush_chunk(fw, fd);
-	return 0;
-}
-
-static void update_rem_chunk_size(struct flow *fw, double inst_speed)
-{
-	if (fw->rem_chunk_size != 0 && inst_speed < fw->rem_chunk_speed)
+	if (fw->rem_chunk_blocks != 0 && inst_speed < fw->rem_chunk_speed)
 		return;
 
-	fw->rem_chunk_size = (uint64_t)fw->blocks_per_delay * fw->block_size;
+	fw->rem_chunk_blocks = fw->blocks_per_delay;
 	fw->rem_chunk_speed = inst_speed;
 }
 
-int measure(int fd, struct flow *fw, long processed)
+void measure(struct flow *fw, uint64_t processed_blocks)
 {
-	ldiv_t result = ldiv(processed, fw->block_size);
 	struct timespec t2;
 	uint64_t delay_ns;
 	double bytes_g, inst_speed;
 
-	assert(result.rem == 0);
-	fw->processed_blocks += result.quot;
-	fw->total_processed += processed;
-
+	fw->processed_blocks += processed_blocks;
 	if (fw->processed_blocks < fw->blocks_per_delay)
-		return 0;
+		return;
 	assert(fw->processed_blocks == fw->blocks_per_delay);
-
-	if (flush_chunk(fw, fd) < 0)
-		return -1; /* Caller can read errno(3). */
 
 	assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
 	delay_ns = diff_timespec_ns(&fw->t1, &t2) + fw->acc_delay_ns;
-	bytes_g = fw->blocks_per_delay * fw->block_size * 1000000000.0;
+	bytes_g = (fw->blocks_per_delay << fw->block_order) * 1000000000.0;
 	/* Instantaneous speed in bytes per second. */
 	inst_speed = bytes_g / delay_ns;
 
-	if (!fw->has_rem_chunk_size)
-		update_rem_chunk_size(fw, inst_speed);
+	if (!fw->has_rem_chunk_blocks)
+		update_rem_chunk_blocks(fw, inst_speed);
 
 	if (delay_ns < fw->delay_ns && inst_speed > fw->max_process_rate) {
 		/* delay_ns should be such that
@@ -377,20 +365,23 @@ int measure(int fd, struct flow *fw, long processed)
 		}
 	}
 
-	/* Update mean. */
+	/* Update average. */
 	fw->measured_blocks += fw->processed_blocks;
 	fw->measured_time_ns += delay_ns;
+	/* Reset accumulators. */
+	fw->processed_blocks = 0;
+	fw->acc_delay_ns = 0;
 
 	switch (fw->state) {
 	case FW_INC:
 		if (is_rate_above(fw, delay_ns, inst_speed)) {
-			if (!fw->has_rem_chunk_size) {
+			if (!fw->has_rem_chunk_blocks) {
 				/* Recommend a chunk size to caller. */
-				assert(fw->rem_chunk_size != 0);
-				fw->has_rem_chunk_size = true;
+				assert(fw->rem_chunk_blocks != 0);
+				fw->has_rem_chunk_blocks = true;
 			}
 			move_to_search(fw,
-				fw->blocks_per_delay - fw->step / 2,
+				fw->blocks_per_delay - fw->step_blocks / 2,
 				fw->blocks_per_delay);
 		} else if (is_rate_below(fw, delay_ns, inst_speed)) {
 			inc_step(fw);
@@ -403,7 +394,7 @@ int measure(int fd, struct flow *fw, long processed)
 			dec_step(fw);
 		} else if (is_rate_below(fw, delay_ns, inst_speed)) {
 			move_to_search(fw, fw->blocks_per_delay,
-				fw->blocks_per_delay + fw->step / 2);
+				fw->blocks_per_delay + fw->step_blocks / 2);
 		} else
 			move_to_steady(fw);
 		break;
@@ -425,13 +416,13 @@ int measure(int fd, struct flow *fw, long processed)
 		break;
 
 	case FW_STEADY: {
-		if (!fw->has_rem_chunk_size) {
+		if (!fw->has_rem_chunk_blocks) {
 			/* Recommend a chunk size to caller.
 			 * Execution reaches here when fw->max_process_rate is
 			 * throttling the flow.
 			 */
-			assert(fw->rem_chunk_size != 0);
-			fw->has_rem_chunk_size = true;
+			assert(fw->rem_chunk_blocks != 0);
+			fw->has_rem_chunk_blocks = true;
 			/* Since it's in steady state, go for another round
 			 * before making any change.
 			 */
@@ -454,48 +445,24 @@ int measure(int fd, struct flow *fw, long processed)
 	}
 
 	report_progress(fw, inst_speed);
-
-	/* Reset accumulators. */
-	fw->processed_blocks = 0;
-	fw->acc_delay_ns = 0;
 	__start_measurement(fw);
-	return 0;
 }
 
-int end_measurement(int fd, struct flow *fw)
+void end_measurement(struct flow *fw)
 {
-	struct timespec t2;
-	int saved_errno;
-	int ret = 0;
-
-	if (fw->processed_blocks <= 0)
-		goto out;
-
-	if (flush_chunk(fw, fd) < 0) {
-		saved_errno = errno;
-		ret = -1;
-		goto out;
+	if (fw->processed_blocks > 0) {
+		/* Track progress in between files. */
+		struct timespec t2;
+		assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
+		fw->acc_delay_ns += diff_timespec_ns(&fw->t1, &t2);
 	}
-
-	/* Save time in between closing ongoing file and creating a new file. */
-	assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
-	fw->acc_delay_ns += diff_timespec_ns(&fw->t1, &t2);
-
-out:
-	/* Erase progress information. */
-	clear_progress(fw);
-
-	if (ret < 0) {
-		/* Propagate errno(3) to caller. */
-		errno = saved_errno;
-	}
-	return ret;
+	clear_progress(fw); /* Erase progress information. */
 }
 
 void print_avg_seq_speed(const struct flow *fw, const char *speed_type,
 	bool use_sectors)
 {
-	int block_order = fw_get_block_order(fw);
+	unsigned int block_order = fw_get_block_order(fw);
 	uint64_t blocks, time_ns;
 	char prefix[128];
 	int ret = snprintf(prefix, sizeof(prefix), "Average sequential %s speed:",
@@ -528,30 +495,58 @@ void dbuf_free(struct dynamic_buffer *dbuf)
 	dbuf->max_buf = true;
 }
 
-char *dbuf_get_buf(struct dynamic_buffer *dbuf, size_t size)
+char *dbuf_get_buf(struct dynamic_buffer *dbuf, unsigned int align_order,
+	size_t *psize)
 {
-	/* If enough buffer, or it's already the largest buffer, return it. */
-	if (size <= dbuf->len || dbuf->max_buf)
-		return dbuf->buf;
+	const unsigned int max_align_order = ilog2(alignof(max_align_t));
+	const size_t original_size = *psize;
+	size_t size = original_size;
+	size_t alignment, threshold;
+	int shift;
+	char *ret;
+
+	if (align_order < max_align_order)
+		align_order = max_align_order;
+	alignment = 1ULL << align_order;
+
+	/* If enough buffer and aligned, return it. */
+	if (size <= dbuf->len && is_aligned(dbuf->buf, alignment)) {
+		assert(*psize == original_size);
+		ret = dbuf->buf;
+		goto out;
+	}
+
+	if (dbuf->max_buf) {
+		/* It's already the largest buffer. */
+		goto align;
+	}
 
 	/*
 	 * Allocate a new buffer.
 	 */
-
 	__dbuf_free(dbuf);
+	threshold = sizeof(dbuf->backup_buf) - align_head(align_order);
 	do {
-		dbuf->buf = malloc(size);
+		dbuf->buf = aligned_alloc(alignment, size);
 		if (dbuf->buf != NULL) {
 			dbuf->len = size;
-			return dbuf->buf;
+			*psize = size;
+			ret = dbuf->buf;
+			goto out;
 		} else {
 			dbuf->max_buf = true;
 		}
 		size /= 2;
-	} while (size > sizeof(dbuf->backup_buf));
+	} while (size > threshold);
 
 	/* A larger buffer is not available; failsafe. */
 	dbuf->buf = dbuf->backup_buf;
 	dbuf->len = sizeof(dbuf->backup_buf);
-	return dbuf->buf;
+
+align:
+	ret = align_mem2(dbuf->buf, align_order, &shift);
+	*psize = MIN(*psize, dbuf->len - shift);
+out:
+	assert(*psize <= original_size);
+	return ret;
 }

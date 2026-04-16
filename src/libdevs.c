@@ -38,9 +38,9 @@ const char *fake_type_to_name(enum fake_type fake_type)
 }
 
 int dev_param_valid(uint64_t real_size_byte,
-	uint64_t announced_size_byte, int wrap, int block_order)
+	uint64_t announced_size_byte, int wrap, unsigned int block_order)
 {
-	int block_size;
+	unsigned int block_size;
 
 	/* Check general ranges. */
 	if (real_size_byte > announced_size_byte || wrap < 0 || wrap >= 64 ||
@@ -49,7 +49,8 @@ int dev_param_valid(uint64_t real_size_byte,
 
 	/* Check alignment of the sizes. */
 	block_size = 1 << block_order;
-	if (real_size_byte % block_size || announced_size_byte % block_size)
+	if ((real_size_byte & (block_size - 1)) != 0 ||
+			(announced_size_byte & (block_size - 1)) != 0)
 		return false;
 
 	/* If good, @wrap must make sense. */
@@ -62,7 +63,7 @@ int dev_param_valid(uint64_t real_size_byte,
 }
 
 enum fake_type dev_param_to_type(uint64_t real_size_byte,
-	uint64_t announced_size_byte, int wrap, int block_order)
+	uint64_t announced_size_byte, int wrap, unsigned int block_order)
 {
 	uint64_t two_wrap;
 
@@ -87,7 +88,7 @@ enum fake_type dev_param_to_type(uint64_t real_size_byte,
 
 struct device {
 	uint64_t	size_byte;
-	int		block_order;
+	unsigned int	block_order;
 
 	int (*read_blocks)(struct device *dev, char *buf,
 		uint64_t first_pos, uint64_t last_pos);
@@ -103,14 +104,14 @@ uint64_t dev_get_size_byte(const struct device *dev)
 	return dev->size_byte;
 }
 
-int dev_get_block_order(const struct device *dev)
+unsigned int dev_get_block_order(const struct device *dev)
 {
 	return dev->block_order;
 }
 
-int dev_get_block_size(const struct device *dev)
+unsigned int dev_get_block_size(const struct device *dev)
 {
-	return 1 << dev->block_order;
+	return 1U << dev->block_order;
 }
 
 const char *dev_get_filename(struct device *dev)
@@ -169,10 +170,10 @@ static inline struct file_device *dev_fdev(struct device *dev)
 static int fdev_read_block(struct device *dev, char *buf, uint64_t block_pos)
 {
 	struct file_device *fdev = dev_fdev(dev);
-	const int block_size = dev_get_block_size(dev);
-	const int block_order = dev_get_block_order(dev);
+	const unsigned int block_size = dev_get_block_size(dev);
+	const unsigned int block_order = dev_get_block_order(dev);
 	off_t off_ret, offset = block_pos << block_order;
-	int done;
+	unsigned int done;
 
 	offset &= fdev->address_mask;
 	if ((uint64_t)offset >= fdev->real_size_byte) {
@@ -220,7 +221,7 @@ no_block:
 static int fdev_read_blocks(struct device *dev, char *buf,
 		uint64_t first_pos, uint64_t last_pos)
 {
-	const int block_size = dev_get_block_size(dev);
+	const unsigned int block_size = dev_get_block_size(dev);
 	uint64_t pos;
 
 	for (pos = first_pos; pos <= last_pos; pos++) {
@@ -250,8 +251,8 @@ static int fdev_write_block(struct device *dev, const char *buf,
 	uint64_t block_pos)
 {
 	struct file_device *fdev = dev_fdev(dev);
-	const int block_size = dev_get_block_size(dev);
-	const int block_order = dev_get_block_order(dev);
+	const unsigned int block_size = dev_get_block_size(dev);
+	const unsigned int block_order = dev_get_block_order(dev);
 	off_t off_ret, offset = block_pos << block_order;
 
 	offset &= fdev->address_mask;
@@ -282,7 +283,7 @@ static int fdev_write_block(struct device *dev, const char *buf,
 static int fdev_write_blocks(struct device *dev, const char *buf,
 		uint64_t first_pos, uint64_t last_pos)
 {
-	const int block_size = dev_get_block_size(dev);
+	const unsigned int block_size = dev_get_block_size(dev);
 	uint64_t pos;
 
 	for (pos = first_pos; pos <= last_pos; pos++) {
@@ -310,7 +311,7 @@ static const char *fdev_get_filename(struct device *dev)
 
 struct device *create_file_device(const char *filename,
 	uint64_t real_size_byte, uint64_t fake_size_byte, int wrap,
-	int block_order, int cache_order, int strict_cache,
+	unsigned int block_order, int cache_order, int strict_cache,
 	int keep_file)
 {
 	struct file_device *fdev;
@@ -359,8 +360,8 @@ struct device *create_file_device(const char *filename,
 		blksize_t block_size;
 		assert(!fstat(fdev->fd, &fd_stat));
 		block_size = fd_stat.st_blksize;
+		assert(is_power_of_2(block_size));
 		block_order = ilog2(block_size);
-		assert(block_size == (1 << block_order));
 	}
 
 	if (!dev_param_valid(real_size_byte, fake_size_byte, wrap, block_order))
@@ -437,7 +438,7 @@ static int bdev_read_blocks(struct device *dev, char *buf,
 		uint64_t first_pos, uint64_t last_pos)
 {
 	struct block_device *bdev = dev_bdev(dev);
-	const int block_order = dev_get_block_order(dev);
+	const unsigned int block_order = dev_get_block_order(dev);
 	size_t length = (last_pos - first_pos + 1) << block_order;
 	off_t offset = first_pos << block_order;
 	off_t off_ret = lseek(bdev->fd, offset, SEEK_SET);
@@ -451,7 +452,7 @@ static int bdev_write_blocks(struct device *dev, const char *buf,
 		uint64_t first_pos, uint64_t last_pos)
 {
 	struct block_device *bdev = dev_bdev(dev);
-	const int block_order = dev_get_block_order(dev);
+	const unsigned int block_order = dev_get_block_order(dev);
 	size_t length = (last_pos - first_pos + 1) << block_order;
 	off_t offset = first_pos << block_order;
 	off_t off_ret = lseek(bdev->fd, offset, SEEK_SET);
@@ -535,15 +536,15 @@ static struct udev_monitor *create_monitor(struct udev *udev,
 
 static uint64_t get_udev_dev_size_byte(struct udev_device *dev)
 {
-	const char *str_size_sector =
+	const char *str_size_sectors =
 		udev_device_get_sysattr_value(dev, "size");
 	char *end;
-	long long size_sector;
-	if (!str_size_sector)
+	long long size_sectors;
+	if (str_size_sectors == NULL)
 		return 0;
-	size_sector = strtoll(str_size_sector, &end, 10);
-	assert(!*end);
-	return size_sector * 512LL;
+	size_sectors = strtoll(str_size_sectors, &end, 10);
+	assert(*end == '\0');
+	return size_sectors << SECTOR_ORDER;
 }
 
 static int wait_for_reset(struct udev *udev, const char *id_serial,
@@ -1356,8 +1357,8 @@ struct device *create_safe_device(struct device *dev, uint64_t max_blocks,
 	int min_memory)
 {
 	struct safe_device *sdev;
-	const int block_order = dev_get_block_order(dev);
 	const int block_size = dev_get_block_size(dev);
+	const int block_order = dev_get_block_order(dev);
 	uint64_t length;
 
 	sdev = malloc(sizeof(*sdev));
