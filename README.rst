@@ -346,6 +346,10 @@ Tianze.
 `F3XSwift <https://github.com/vrunkel/F3XSwift>`__ is a Mac GUI. F3XSwift supports ``f3write`` and ``f3read``. Author:
 Volker Runkel.
 
+`Fake-USB-Tester <https://github.com/shampuan/Fake-USB-Tester>`__ is a Linux GUI 
+written in Python and Qt6. Fake-USB-Tester supports ``f3write``, ``f3read``, 
+and ``f3probe``. Author: shampuan.
+
 Please support the above projects by testing them and giving feedback to their
 authors. This will improve their code as it has improved mine.
 
