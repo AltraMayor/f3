@@ -17,14 +17,18 @@
 #define UNUSED(x)	((void)x)
 #define DIM(x)		(sizeof(x) / sizeof((x)[0]))
 
-static inline uint64_t uint64_min(uint64_t a, uint64_t b)
-{
-	return a < b ? a : b;
-}
+#define GEN_MIN(name, type)				\
+	static inline type name##_min(type a, type b)	\
+	{						\
+		return a < b ? a : b;			\
+	}
 
-#define MIN(a, b) _Generic((a),		\
-	uint64_t: uint64_min,		\
-	unsigned long long: uint64_min	\
+GEN_MIN(ul, unsigned long)
+GEN_MIN(ull, unsigned long long)
+
+#define MIN(a, b) _Generic(1 ? (a) : (b),	\
+	unsigned long: ul_min,			\
+	unsigned long long: ull_min		\
 	)(a, b)
 
 typedef void (*progress_cb)(unsigned int indent, const char *format, ...);
