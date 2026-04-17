@@ -101,6 +101,13 @@ static inline void fw_get_measurements(const struct flow *fw,
 	*time_ns = fw->measured_time_ns + fw->acc_delay_ns;
 }
 
+/* Return speed in bytes per second. */
+static inline double fw_get_speed(const struct flow *fw, uint64_t blocks,
+	uint64_t time_ns)
+{
+	return (blocks << fw->block_order) * 1000000000.0 / time_ns;
+}
+
 uint64_t get_rem_chunk_blocks(const struct flow *fw);
 
 void start_measurement(struct flow *fw);
