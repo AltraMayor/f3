@@ -181,11 +181,14 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 {
 	const unsigned int block_size = fw_get_block_size(fw);
 	const unsigned int block_order = fw_get_block_order(fw);
-	uint64_t remaining_blocks = 1ULL << (GIGABYTE_ORDER - block_order);
+	const uint64_t total_file_blocks =
+		1ULL << (GIGABYTE_ORDER - block_order);
+	uint64_t remaining_blocks = total_file_blocks;
 	char *full_fn;
 	const char *filename;
 	int fd, saved_errno;
 	uint64_t offset;
+	struct timespec file_t1, file_t2;
 
 	assert(GIGABYTE_ORDER >= block_order);
 
@@ -208,6 +211,7 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 	/* Write content. */
 	saved_errno = 0;
 	offset = number << GIGABYTE_ORDER;
+	assert(!clock_gettime(CLOCK_MONOTONIC, &file_t1));
 	start_measurement(fw);
 	while (remaining_blocks > 0) {
 		size_t bytes_written;
@@ -238,13 +242,29 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 			break;
 	}
 	end_measurement(fw);
+	assert(!clock_gettime(CLOCK_MONOTONIC, &file_t2));
 	close(fd);
 	free(full_fn);
 
 	if (saved_errno == 0 || saved_errno == ENOSPC) {
+		uint64_t file_time_ns = diff_timespec_ns(&file_t1, &file_t2);
+
 		if (saved_errno == 0)
 			assert(remaining_blocks == 0);
-		printf("OK!\n");
+		
+		if (file_time_ns > 0) {
+			const uint64_t written_bytes =
+				(total_file_blocks - remaining_blocks) <<
+				block_order;
+			double file_avg_speed =
+				written_bytes * 1000000000.0 / file_time_ns;
+			const char *unit = adjust_unit(&file_avg_speed);
+
+			printf("OK! (Average: %.2f %s/s)\n",
+				file_avg_speed, unit);
+		} else {
+			printf("OK!\n");
+		}
 		return saved_errno == ENOSPC;
 	}
 
