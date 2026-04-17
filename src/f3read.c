@@ -217,6 +217,7 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 	const char *filename;
 	int fd, saved_errno;
 	uint64_t expected_offset;
+	struct timespec file_t1, file_t2;
 
 	zero_fstats(stats);
 
@@ -255,6 +256,7 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 
 	saved_errno = 0;
 	expected_offset = number << GIGABYTE_ORDER;
+	assert(!clock_gettime(CLOCK_MONOTONIC, &file_t1));
 	start_measurement(fw);
 	while (true) {
 		size_t bytes_read;
@@ -272,6 +274,7 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 		}
 	}
 	end_measurement(fw);
+	assert(!clock_gettime(CLOCK_MONOTONIC, &file_t2));
 
 	print_status(stats);
 	if (!stats->read_all) {
@@ -280,6 +283,17 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 			strerror(saved_errno));
 	} else if (saved_errno != 0) {
 		printf(" - %s", strerror(saved_errno));
+	} else if (stats->bytes_read > 0) {
+		uint64_t file_time_ns = diff_timespec_ns(&file_t1, &file_t2);
+
+		if (file_time_ns > 0) {
+			double file_avg_speed = fw_get_speed(fw,
+				(stats->bytes_read >> block_order),
+				file_time_ns);
+			const char *unit = adjust_unit(&file_avg_speed);
+			assert((stats->bytes_read & (block_size - 1)) == 0);
+			printf(" Avg: %.2f %s/s", file_avg_speed, unit);
+		}
 	}
 	printf("\n");
 
