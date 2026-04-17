@@ -7,6 +7,7 @@
 #include <inttypes.h>
 #include <stdio.h>
 #include <limits.h>
+#include <math.h>
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -213,6 +214,11 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 {
 	const unsigned int block_size = fw_get_block_size(fw);
 	const unsigned int block_order = fw_get_block_order(fw);
+	double file_min_speed = INFINITY;
+	double file_max_speed = -INFINITY;
+	uint64_t file_tot_blocks = 0;
+	uint64_t file_tot_time_ns = 0;
+	uint64_t file_speed_samples = 0;
 	char *full_fn;
 	const char *filename;
 	int fd, saved_errno;
@@ -260,6 +266,7 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 	start_measurement(fw);
 	while (true) {
 		size_t bytes_read;
+		struct fw_measurement m;
 		int rc = check_chunk(fw, dbuf, fd, &expected_offset, stats,
 			&bytes_read);
 		if (rc == 0 && bytes_read == 0) {
@@ -267,7 +274,18 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 			break;
 		}
 		assert((bytes_read & (block_size - 1)) == 0);
-		measure(fw, bytes_read >> block_order, NULL);
+		measure(fw, bytes_read >> block_order, &m);
+		if (m.valid) {
+			double inst_speed = fw_get_speed(fw, m.blocks,
+				m.time_ns);
+			file_speed_samples++;
+			if (inst_speed > file_max_speed)
+				file_max_speed = inst_speed;
+			if (inst_speed < file_min_speed)
+				file_min_speed = inst_speed;
+			file_tot_blocks += m.blocks;
+			file_tot_time_ns += m.time_ns;
+		}
 		if (rc != 0) {
 			saved_errno = rc;
 			break;
@@ -285,8 +303,15 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 		printf(" - %s", strerror(saved_errno));
 	} else if (stats->bytes_read > 0) {
 		uint64_t file_time_ns = diff_timespec_ns(&file_t1, &file_t2);
+		double file_avg_speed;
 
-		if (file_time_ns > 0) {
+		if (file_speed_samples >= 2) {
+			file_avg_speed = fw_get_speed(fw, file_tot_blocks,
+				file_tot_time_ns);
+			print_avg_min_max_samples(" ", "",
+				file_avg_speed, file_min_speed,	file_max_speed,
+				file_speed_samples);
+		} else if (file_time_ns > 0) {
 			double file_avg_speed = fw_get_speed(fw,
 				(stats->bytes_read >> block_order),
 				file_time_ns);
