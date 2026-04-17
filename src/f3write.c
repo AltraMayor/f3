@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <math.h>
 #include <limits.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -184,6 +185,11 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 	const uint64_t total_file_blocks =
 		1ULL << (GIGABYTE_ORDER - block_order);
 	uint64_t remaining_blocks = total_file_blocks;
+	double file_min_speed = INFINITY;
+	double file_max_speed = -INFINITY;
+	uint64_t file_tot_blocks = 0;
+	uint64_t file_tot_time_ns = 0;
+	uint64_t file_speed_samples = 0;
 	char *full_fn;
 	const char *filename;
 	int fd, saved_errno;
@@ -216,6 +222,7 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 	while (remaining_blocks > 0) {
 		size_t bytes_written;
 		uint64_t written_blocks;
+		struct fw_measurement m;
 
 		saved_errno = write_chunk(fw, dbuf, fd, remaining_blocks,
 			&offset, &bytes_written);
@@ -235,7 +242,18 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 
 		assert((bytes_written & (block_size - 1)) == 0);
 		written_blocks = bytes_written >> block_order;
-		measure(fw, written_blocks);
+		measure(fw, written_blocks, &m);
+		if (m.valid) {
+			double inst_speed = fw_get_speed(fw, m.blocks,
+				m.time_ns);
+			file_speed_samples++;
+			if (inst_speed > file_max_speed)
+				file_max_speed = inst_speed;
+			if (inst_speed < file_min_speed)
+				file_min_speed = inst_speed;
+			file_tot_blocks += m.blocks;
+			file_tot_time_ns += m.time_ns;
+		}
 		remaining_blocks -= written_blocks;
 
 		if (saved_errno != 0)
@@ -248,12 +266,19 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 
 	if (saved_errno == 0 || saved_errno == ENOSPC) {
 		uint64_t file_time_ns = diff_timespec_ns(&file_t1, &file_t2);
+		double file_avg_speed;
 
 		if (saved_errno == 0)
 			assert(remaining_blocks == 0);
-		
-		if (file_time_ns > 0) {
-			double file_avg_speed = fw_get_speed(fw,
+
+		if (file_speed_samples >= 2) {
+			file_avg_speed = fw_get_speed(fw, file_tot_blocks,
+				file_tot_time_ns);
+			print_avg_min_max_samples("OK! ", "\n",
+				file_avg_speed, file_min_speed,	file_max_speed,
+				file_speed_samples);
+		} else if (file_time_ns > 0) {
+			file_avg_speed = fw_get_speed(fw,
 				total_file_blocks - remaining_blocks,
 				file_time_ns);
 			const char *unit = adjust_unit(&file_avg_speed);

@@ -110,8 +110,15 @@ static inline double fw_get_speed(const struct flow *fw, uint64_t blocks,
 
 uint64_t get_rem_chunk_blocks(const struct flow *fw);
 
+struct fw_measurement {
+	bool		valid;
+	uint64_t	blocks;
+	uint64_t	time_ns;
+};
+
 void start_measurement(struct flow *fw);
-void measure(struct flow *fw, uint64_t processed_blocks);
+void measure(struct flow *fw, uint64_t processed_blocks,
+	struct fw_measurement *m);
 void clear_progress(struct flow *fw);
 void end_measurement(struct flow *fw);
 

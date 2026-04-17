@@ -267,7 +267,7 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 			break;
 		}
 		assert((bytes_read & (block_size - 1)) == 0);
-		measure(fw, bytes_read >> block_order);
+		measure(fw, bytes_read >> block_order, NULL);
 		if (rc != 0) {
 			saved_errno = rc;
 			break;

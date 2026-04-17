@@ -343,6 +343,18 @@ void print_stats(const struct block_stats *stats, unsigned int block_order,
 	print_stat("\t     Overwritten:", stats->overwritten, block_order, unit_name);
 }
 
+void print_avg_min_max_samples(const char *prefix, const char *suffix,
+	double avg_speed, double min_speed, double max_speed, uint64_t samples)
+{
+	const char *avg_unit = adjust_unit(&avg_speed);
+	const char *min_unit = adjust_unit(&min_speed);
+	const char *max_unit = adjust_unit(&max_speed);
+
+	printf("%sAvg: %.2f %s/s\n\tMin: %.2f %s/s, Max: %.2f %s/s, %" PRIu64 " samples%s",
+		prefix, avg_speed, avg_unit, min_speed, min_unit,
+		max_speed, max_unit, samples, suffix);
+}
+
 void report_io_speed(unsigned int indent, progress_cb cb, const char *prefix,
 	uint64_t blocks, const char *block_unit, uint64_t time_ns,
 	unsigned int block_order)
