@@ -457,13 +457,19 @@ void measure(struct flow *fw, uint64_t processed_blocks,
 	__start_measurement(fw);
 }
 
-void end_measurement(struct flow *fw)
+void end_measurement(struct flow *fw, bool measurement_boundary)
 {
 	if (fw->processed_blocks > 0) {
-		/* Track progress in between files. */
+		/* Track progress in between measurement boundaries. */
 		struct timespec t2;
 		assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
 		fw->acc_delay_ns += diff_timespec_ns(&fw->t1, &t2);
+		if (measurement_boundary) {
+			fw->measured_blocks += fw->processed_blocks;
+			fw->measured_time_ns += fw->acc_delay_ns;
+			fw->processed_blocks = 0;
+			fw->acc_delay_ns = 0;
+		}
 	}
 	clear_progress(fw); /* Erase progress information. */
 }

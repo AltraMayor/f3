@@ -296,7 +296,7 @@ static void write_blocks(struct device *dev, struct flow *fw,
 		measure(fw, blocks_to_write, NULL);
 		first_pos = next_pos;
 	}
-	end_measurement(fw);
+	end_measurement(fw, false);
 	dbuf_free(&dbuf);
 }
 
@@ -452,7 +452,7 @@ static void read_blocks(struct device *dev, struct flow *fw,
 		measure(fw, blocks_to_read, NULL);
 		first_pos = next_pos;
 	}
-	end_measurement(fw);
+	end_measurement(fw, false);
 	dbuf_free(&dbuf);
 
 	if (range.state != bs_unknown)

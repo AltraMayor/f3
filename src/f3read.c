@@ -291,7 +291,7 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 			break;
 		}
 	}
-	end_measurement(fw);
+	end_measurement(fw, true);
 	assert(!clock_gettime(CLOCK_MONOTONIC, &file_t2));
 
 	print_status(stats);
