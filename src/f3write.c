@@ -184,6 +184,8 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 	const uint64_t total_file_blocks =
 		1ULL << (GIGABYTE_ORDER - block_order);
 	uint64_t remaining_blocks = total_file_blocks;
+	double file_min_speed = -1.0;
+	double file_max_speed = 0.0;
 	char *full_fn;
 	const char *filename;
 	int fd, saved_errno;
@@ -216,6 +218,7 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 	while (remaining_blocks > 0) {
 		size_t bytes_written;
 		uint64_t written_blocks;
+		double inst_speed;
 
 		saved_errno = write_chunk(fw, dbuf, fd, remaining_blocks,
 			&offset, &bytes_written);
@@ -235,7 +238,13 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 
 		assert((bytes_written & (block_size - 1)) == 0);
 		written_blocks = bytes_written >> block_order;
-		measure(fw, written_blocks);
+		inst_speed = measure(fw, written_blocks);
+		if (inst_speed > 0.0) {
+			if (inst_speed > file_max_speed)
+				file_max_speed = inst_speed;
+			if (file_min_speed < 0.0 || inst_speed < file_min_speed)
+				file_min_speed = inst_speed;
+		}
 		remaining_blocks -= written_blocks;
 
 		if (saved_errno != 0)
@@ -251,17 +260,15 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 
 		if (saved_errno == 0)
 			assert(remaining_blocks == 0);
-		
+
 		if (file_time_ns > 0) {
 			const uint64_t written_bytes =
 				(total_file_blocks - remaining_blocks) <<
 				block_order;
 			double file_avg_speed =
 				written_bytes * 1000000000.0 / file_time_ns;
-			const char *unit = adjust_unit(&file_avg_speed);
-
-			printf("OK! (Average: %.2f %s/s)\n",
-				file_avg_speed, unit);
+			print_min_max_avg("OK! ", "\n", file_min_speed,
+				file_max_speed, file_avg_speed);
 		} else {
 			printf("OK!\n");
 		}

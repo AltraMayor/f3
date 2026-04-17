@@ -104,7 +104,7 @@ static inline void fw_get_measurements(const struct flow *fw,
 uint64_t get_rem_chunk_blocks(const struct flow *fw);
 
 void start_measurement(struct flow *fw);
-void measure(struct flow *fw, uint64_t processed_blocks);
+double measure(struct flow *fw, uint64_t processed_blocks);
 void clear_progress(struct flow *fw);
 void end_measurement(struct flow *fw);
 

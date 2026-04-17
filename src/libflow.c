@@ -286,7 +286,7 @@ static void update_rem_chunk_blocks(struct flow *fw, double inst_speed)
 	fw->rem_chunk_speed = inst_speed;
 }
 
-void measure(struct flow *fw, uint64_t processed_blocks)
+double measure(struct flow *fw, uint64_t processed_blocks)
 {
 	struct timespec t2;
 	uint64_t delay_ns;
@@ -294,7 +294,7 @@ void measure(struct flow *fw, uint64_t processed_blocks)
 
 	fw->processed_blocks += processed_blocks;
 	if (fw->processed_blocks < fw->blocks_per_delay)
-		return;
+		return 0.0;
 	assert(fw->processed_blocks == fw->blocks_per_delay);
 
 	assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
@@ -446,6 +446,7 @@ void measure(struct flow *fw, uint64_t processed_blocks)
 
 	report_progress(fw, inst_speed);
 	__start_measurement(fw);
+	return inst_speed;
 }
 
 void end_measurement(struct flow *fw)
