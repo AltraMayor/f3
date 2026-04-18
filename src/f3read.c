@@ -213,10 +213,13 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 {
 	const unsigned int block_size = fw_get_block_size(fw);
 	const unsigned int block_order = fw_get_block_order(fw);
+	double file_min_speed = -1.0;
+	double file_max_speed = 0.0;
 	char *full_fn;
 	const char *filename;
 	int fd, saved_errno;
 	uint64_t expected_offset;
+	struct timespec file_t1, file_t2;
 
 	zero_fstats(stats);
 
@@ -255,9 +258,11 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 
 	saved_errno = 0;
 	expected_offset = number << GIGABYTE_ORDER;
+	assert(!clock_gettime(CLOCK_MONOTONIC, &file_t1));
 	start_measurement(fw);
 	while (true) {
 		size_t bytes_read;
+		double inst_speed;
 		int rc = check_chunk(fw, dbuf, fd, &expected_offset, stats,
 			&bytes_read);
 		if (rc == 0 && bytes_read == 0) {
@@ -265,13 +270,20 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 			break;
 		}
 		assert((bytes_read & (block_size - 1)) == 0);
-		measure(fw, bytes_read >> block_order);
+		inst_speed = measure(fw, bytes_read >> block_order);
+		if (inst_speed > 0.0) {
+			if (inst_speed > file_max_speed)
+				file_max_speed = inst_speed;
+			if (file_min_speed < 0.0 || inst_speed < file_min_speed)
+				file_min_speed = inst_speed;
+		}
 		if (rc != 0) {
 			saved_errno = rc;
 			break;
 		}
 	}
-	end_measurement(fw);
+	end_measurement(fw, true);
+	assert(!clock_gettime(CLOCK_MONOTONIC, &file_t2));
 
 	print_status(stats);
 	if (!stats->read_all) {
@@ -280,6 +292,14 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 			strerror(saved_errno));
 	} else if (saved_errno != 0) {
 		printf(" - %s", strerror(saved_errno));
+	} else if (stats->bytes_read > 0) {
+		uint64_t file_time_ns = diff_timespec_ns(&file_t1, &file_t2);
+		if (file_time_ns > 0) {
+			double file_avg_speed =
+				stats->bytes_read * 1000000000.0 / file_time_ns;
+			print_min_max_avg("\n\t", "", file_min_speed,
+				file_max_speed,	file_avg_speed);
+		}
 	}
 	printf("\n");
 

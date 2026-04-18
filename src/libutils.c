@@ -343,6 +343,31 @@ void print_stats(const struct block_stats *stats, unsigned int block_order,
 	print_stat("\t     Overwritten:", stats->overwritten, block_order, unit_name);
 }
 
+void print_min_max_avg(const char *prefix, const char *suffix,
+	double min_speed, double max_speed, double avg_speed)
+{
+	const char *min_unit, *max_unit, *avg_unit;
+
+	/* Due to rounding errors, avg_speed may be slightly outside
+	 * the [min_speed, max_speed] range.
+	 */
+	if (max_speed == 0.0 || avg_speed < min_speed) {
+		min_unit = max_unit = avg_unit = adjust_unit(&avg_speed);
+		min_speed = max_speed = avg_speed;
+	} else {
+		/* libflow limits max_speed, so its value is more reliable. */
+		if (max_speed < avg_speed)
+			avg_speed = max_speed;
+
+		min_unit = adjust_unit(&min_speed);
+		max_unit = adjust_unit(&max_speed);
+		avg_unit = adjust_unit(&avg_speed);
+	}
+	printf("%sAvg: %.2f %s/s, Min: %.2f %s/s, Max: %.2f %s/s%s",
+		prefix, avg_speed, avg_unit, min_speed, min_unit,
+		max_speed, max_unit, suffix);
+}
+
 void report_io_speed(unsigned int indent, progress_cb cb, const char *prefix,
 	uint64_t blocks, const char *block_unit, uint64_t time_ns,
 	unsigned int block_order)
