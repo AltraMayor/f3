@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <math.h>
 #include <limits.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -181,11 +182,19 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 {
 	const unsigned int block_size = fw_get_block_size(fw);
 	const unsigned int block_order = fw_get_block_order(fw);
-	uint64_t remaining_blocks = 1ULL << (GIGABYTE_ORDER - block_order);
+	const uint64_t total_file_blocks =
+		1ULL << (GIGABYTE_ORDER - block_order);
+	uint64_t remaining_blocks = total_file_blocks;
+	double file_min_speed = INFINITY;
+	double file_max_speed = -INFINITY;
+	uint64_t file_tot_blocks = 0;
+	uint64_t file_tot_time_ns = 0;
+	uint64_t file_speed_samples = 0;
 	char *full_fn;
 	const char *filename;
 	int fd, saved_errno;
 	uint64_t offset;
+	struct timespec file_t1, file_t2;
 
 	assert(GIGABYTE_ORDER >= block_order);
 
@@ -208,10 +217,12 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 	/* Write content. */
 	saved_errno = 0;
 	offset = number << GIGABYTE_ORDER;
+	assert(!clock_gettime(CLOCK_MONOTONIC, &file_t1));
 	start_measurement(fw);
 	while (remaining_blocks > 0) {
 		size_t bytes_written;
 		uint64_t written_blocks;
+		struct fw_measurement m;
 
 		saved_errno = write_chunk(fw, dbuf, fd, remaining_blocks,
 			&offset, &bytes_written);
@@ -231,20 +242,51 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 
 		assert((bytes_written & (block_size - 1)) == 0);
 		written_blocks = bytes_written >> block_order;
-		measure(fw, written_blocks);
+		measure(fw, written_blocks, &m);
+		if (m.valid) {
+			double inst_speed = fw_get_speed(fw, m.blocks,
+				m.time_ns);
+			file_speed_samples++;
+			if (inst_speed > file_max_speed)
+				file_max_speed = inst_speed;
+			if (inst_speed < file_min_speed)
+				file_min_speed = inst_speed;
+			file_tot_blocks += m.blocks;
+			file_tot_time_ns += m.time_ns;
+		}
 		remaining_blocks -= written_blocks;
 
 		if (saved_errno != 0)
 			break;
 	}
-	end_measurement(fw);
+	end_measurement(fw, true);
+	assert(!clock_gettime(CLOCK_MONOTONIC, &file_t2));
 	close(fd);
 	free(full_fn);
 
 	if (saved_errno == 0 || saved_errno == ENOSPC) {
+		uint64_t file_time_ns = diff_timespec_ns(&file_t1, &file_t2);
+		double file_avg_speed;
+
 		if (saved_errno == 0)
 			assert(remaining_blocks == 0);
-		printf("OK!\n");
+
+		if (file_speed_samples >= 2) {
+			file_avg_speed = fw_get_speed(fw, file_tot_blocks,
+				file_tot_time_ns);
+			print_avg_min_max_samples("OK! ", "\n",
+				file_avg_speed, file_min_speed,	file_max_speed,
+				file_speed_samples);
+		} else if (file_time_ns > 0) {
+			file_avg_speed = fw_get_speed(fw,
+				total_file_blocks - remaining_blocks,
+				file_time_ns);
+			const char *unit = adjust_unit(&file_avg_speed);
+			printf("OK! Avg: %.2f %s/s\n",
+				file_avg_speed, unit);
+		} else {
+			printf("OK!\n");
+		}
 		return saved_errno == ENOSPC;
 	}
 

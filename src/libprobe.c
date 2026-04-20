@@ -77,9 +77,9 @@ static int write_random_blocks(struct device *dev, const uint64_t pos[],
 		if (_write_blocks(dev, buffer, pos[i], pos[i], &rwi->randw_fw,
 				cb, indent))
 			return true;
-		measure(&rwi->randw_fw, 1);
+		measure(&rwi->randw_fw, 1, NULL);
 	}
-	end_measurement(&rwi->randw_fw);
+	end_measurement(&rwi->randw_fw, false);
 	return false;
 }
 
@@ -125,10 +125,10 @@ static int write_blocks(struct device *dev,
 				&rwi->seqw_fw, cb, indent))
 			return true;
 
-		measure(&rwi->seqw_fw, blocks_to_write);
+		measure(&rwi->seqw_fw, blocks_to_write, NULL);
 		first_pos = next_pos;
 	}
-	end_measurement(&rwi->seqw_fw);
+	end_measurement(&rwi->seqw_fw, false);
 	return false;
 }
 
@@ -225,17 +225,17 @@ static int find_first_x_block(struct device *dev,
 			return true;
 		bs = validate_buffer_with_block(probe_blk, block_order,
 			x_blocks[i].expected_offset, &found_offset, rwi->salt);
-		measure(&rwi->randr_fw, 1);
+		measure(&rwi->randr_fw, 1, NULL);
 
 		if (in_bs_set(bs_set, bs)) {
 			/* Found the first x_block. */
 			*pfirst_x_block_idx = i;
 			*pstate = bs;
-			end_measurement(&rwi->randr_fw);
+			end_measurement(&rwi->randr_fw, false);
 			return false;
 		}
 	}
-	end_measurement(&rwi->randr_fw);
+	end_measurement(&rwi->randr_fw, false);
 
 not_found:
 	*pfirst_x_block_idx = n_blocks;

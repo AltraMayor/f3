@@ -286,15 +286,19 @@ static void update_rem_chunk_blocks(struct flow *fw, double inst_speed)
 	fw->rem_chunk_speed = inst_speed;
 }
 
-void measure(struct flow *fw, uint64_t processed_blocks)
+void measure(struct flow *fw, uint64_t processed_blocks,
+	struct fw_measurement *m)
 {
 	struct timespec t2;
 	uint64_t delay_ns;
 	double bytes_g, inst_speed;
 
 	fw->processed_blocks += processed_blocks;
-	if (fw->processed_blocks < fw->blocks_per_delay)
+	if (fw->processed_blocks < fw->blocks_per_delay) {
+		if (m != NULL)
+			m->valid = false;
 		return;
+	}
 	assert(fw->processed_blocks == fw->blocks_per_delay);
 
 	assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
@@ -368,6 +372,11 @@ void measure(struct flow *fw, uint64_t processed_blocks)
 	/* Update average. */
 	fw->measured_blocks += fw->processed_blocks;
 	fw->measured_time_ns += delay_ns;
+	if (m != NULL) {
+		m->valid = true;
+		m->blocks = fw->processed_blocks;
+		m->time_ns = delay_ns;
+	}
 	/* Reset accumulators. */
 	fw->processed_blocks = 0;
 	fw->acc_delay_ns = 0;
@@ -448,13 +457,19 @@ void measure(struct flow *fw, uint64_t processed_blocks)
 	__start_measurement(fw);
 }
 
-void end_measurement(struct flow *fw)
+void end_measurement(struct flow *fw, bool measurement_boundary)
 {
 	if (fw->processed_blocks > 0) {
-		/* Track progress in between files. */
+		/* Track progress in between measurement boundaries. */
 		struct timespec t2;
 		assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
 		fw->acc_delay_ns += diff_timespec_ns(&fw->t1, &t2);
+		if (measurement_boundary) {
+			fw->measured_blocks += fw->processed_blocks;
+			fw->measured_time_ns += fw->acc_delay_ns;
+			fw->processed_blocks = 0;
+			fw->acc_delay_ns = 0;
+		}
 	}
 	clear_progress(fw); /* Erase progress information. */
 }

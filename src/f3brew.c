@@ -293,10 +293,10 @@ static void write_blocks(struct device *dev, struct flow *fw,
 				" to 0x%" PRIx64, first_pos, next_pos - 1);
 		}
 
-		measure(fw, blocks_to_write);
+		measure(fw, blocks_to_write, NULL);
 		first_pos = next_pos;
 	}
-	end_measurement(fw);
+	end_measurement(fw, false);
 	dbuf_free(&dbuf);
 }
 
@@ -449,10 +449,10 @@ static void read_blocks(struct device *dev, struct flow *fw,
 			probe_blk += block_size;
 		}
 
-		measure(fw, blocks_to_read);
+		measure(fw, blocks_to_read, NULL);
 		first_pos = next_pos;
 	}
-	end_measurement(fw);
+	end_measurement(fw, false);
 	dbuf_free(&dbuf);
 
 	if (range.state != bs_unknown)
