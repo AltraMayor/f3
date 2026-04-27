@@ -75,7 +75,7 @@ void init_flow(struct flow *fw, unsigned int block_order, uint64_t total_blocks,
 	fw->blocks_per_delay		= 1;
 	fw->delay_ns			= 1000000000ULL; /* 1s */
 	fw->max_process_rate		= max_process_rate == 0
-		? DBL_MAX : max_process_rate * 1024.;
+		? DBL_MAX : max_process_rate << KILOBYTE_ORDER;
 	fw->measured_blocks		= 0;
 	fw->measured_time_ns		= 0;
 	fw->erase			= 0;
