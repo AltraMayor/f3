@@ -244,8 +244,8 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 		written_blocks = bytes_written >> block_order;
 		measure(fw, written_blocks, &m);
 		if (m.valid) {
-			double inst_speed = fw_get_speed(fw, m.blocks,
-				m.time_ns);
+			double inst_speed = calc_avg_speed(block_order,
+				m.blocks, m.time_ns);
 			file_speed_samples++;
 			if (inst_speed > file_max_speed)
 				file_max_speed = inst_speed;
@@ -272,13 +272,13 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 			assert(remaining_blocks == 0);
 
 		if (file_speed_samples >= 2) {
-			file_avg_speed = fw_get_speed(fw, file_tot_blocks,
-				file_tot_time_ns);
+			file_avg_speed = calc_avg_speed(block_order,
+				file_tot_blocks, file_tot_time_ns);
 			print_avg_min_max_samples("OK! ", "\n",
 				file_avg_speed, file_min_speed,	file_max_speed,
 				file_speed_samples);
 		} else if (file_time_ns > 0) {
-			file_avg_speed = fw_get_speed(fw,
+			file_avg_speed = calc_avg_speed(block_order,
 				total_file_blocks - remaining_blocks,
 				file_time_ns);
 			const char *unit = adjust_unit(&file_avg_speed);

@@ -276,8 +276,8 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 		assert((bytes_read & (block_size - 1)) == 0);
 		measure(fw, bytes_read >> block_order, &m);
 		if (m.valid) {
-			double inst_speed = fw_get_speed(fw, m.blocks,
-				m.time_ns);
+			double inst_speed = calc_avg_speed(block_order,
+				m.blocks, m.time_ns);
 			file_speed_samples++;
 			if (inst_speed > file_max_speed)
 				file_max_speed = inst_speed;
@@ -306,13 +306,13 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 		double file_avg_speed;
 
 		if (file_speed_samples >= 2) {
-			file_avg_speed = fw_get_speed(fw, file_tot_blocks,
-				file_tot_time_ns);
+			file_avg_speed = calc_avg_speed(block_order,
+				file_tot_blocks, file_tot_time_ns);
 			print_avg_min_max_samples(" ", "",
 				file_avg_speed, file_min_speed,	file_max_speed,
 				file_speed_samples);
 		} else if (file_time_ns > 0) {
-			double file_avg_speed = fw_get_speed(fw,
+			file_avg_speed = calc_avg_speed(block_order,
 				(stats->bytes_read >> block_order),
 				file_time_ns);
 			const char *unit = adjust_unit(&file_avg_speed);

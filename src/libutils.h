@@ -143,4 +143,11 @@ void report_io_speed(unsigned int indent, progress_cb cb, const char *prefix,
 	uint64_t blocks, const char *block_unit, uint64_t time_ns,
 	unsigned int block_order);
 
+/* Return speed in bytes per second. */
+static inline double calc_avg_speed(unsigned int block_order, uint64_t blocks,
+	uint64_t time_ns)
+{
+	return (blocks << block_order) * 1000000000.0 / time_ns;
+}
+
 #endif	/* HEADER_LIBUTILS_H */

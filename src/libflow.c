@@ -207,7 +207,7 @@ void start_measurement(struct flow *fw)
 	fw_get_measurements(fw, &blocks, &time_ns);
 	if (time_ns > 0) {
 		report_progress(fw,
-			(blocks << fw->block_order) * 1000000000.0 / time_ns);
+			calc_avg_speed(fw->block_order, blocks, time_ns));
 	}
 	__start_measurement(fw);
 }
