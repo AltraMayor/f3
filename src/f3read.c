@@ -312,11 +312,16 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 				file_avg_speed, file_min_speed,	file_max_speed,
 				file_speed_samples);
 		} else if (file_time_ns > 0) {
-			file_avg_speed = calc_avg_speed(block_order,
-				(stats->bytes_read >> block_order),
-				file_time_ns);
-			const char *unit = adjust_unit(&file_avg_speed);
+			const uint64_t blocks_read =
+				stats->bytes_read >> block_order;
 			assert((stats->bytes_read & (block_size - 1)) == 0);
+			if (file_tot_blocks == blocks_read &&
+					file_tot_time_ns > 0) {
+				file_time_ns = file_tot_time_ns;
+			}
+			file_avg_speed = calc_avg_speed(block_order,
+				blocks_read, file_time_ns);
+			const char *unit = adjust_unit(&file_avg_speed);
 			printf(" Avg: %.2f %s/s", file_avg_speed, unit);
 		}
 	}

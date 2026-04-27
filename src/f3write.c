@@ -278,9 +278,14 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 				file_avg_speed, file_min_speed,	file_max_speed,
 				file_speed_samples);
 		} else if (file_time_ns > 0) {
+			const uint64_t blocks_written =
+				total_file_blocks - remaining_blocks;
+			if (file_tot_blocks == blocks_written &&
+				file_tot_time_ns > 0) {
+				file_time_ns = file_tot_time_ns;
+			}
 			file_avg_speed = calc_avg_speed(block_order,
-				total_file_blocks - remaining_blocks,
-				file_time_ns);
+				blocks_written, file_time_ns);
 			const char *unit = adjust_unit(&file_avg_speed);
 			printf("OK! Avg: %.2f %s/s\n",
 				file_avg_speed, unit);
