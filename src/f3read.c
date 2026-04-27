@@ -214,6 +214,8 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 {
 	const unsigned int block_size = fw_get_block_size(fw);
 	const unsigned int block_order = fw_get_block_order(fw);
+	const uint64_t max_file_blocks =
+		1ULL << (GIGABYTE_ORDER - block_order);
 	double file_min_speed = INFINITY;
 	double file_max_speed = -INFINITY;
 	uint64_t file_tot_blocks = 0;
@@ -224,6 +226,8 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 	int fd, saved_errno;
 	uint64_t expected_offset;
 	struct timespec file_t1, file_t2;
+
+	assert(GIGABYTE_ORDER >= block_order);
 
 	zero_fstats(stats);
 
@@ -291,7 +295,7 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 			break;
 		}
 	}
-	end_measurement(fw, true);
+	end_measurement(fw, max_file_blocks);
 	assert(!clock_gettime(CLOCK_MONOTONIC, &file_t2));
 
 	print_status(stats);

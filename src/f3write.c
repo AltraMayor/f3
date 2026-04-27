@@ -259,7 +259,7 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 		if (saved_errno != 0)
 			break;
 	}
-	end_measurement(fw, true);
+	end_measurement(fw, total_file_blocks);
 	assert(!clock_gettime(CLOCK_MONOTONIC, &file_t2));
 	close(fd);
 	free(full_fn);

@@ -79,7 +79,7 @@ static int write_random_blocks(struct device *dev, const uint64_t pos[],
 			return true;
 		measure(&rwi->randw_fw, 1, NULL);
 	}
-	end_measurement(&rwi->randw_fw, false);
+	end_measurement(&rwi->randw_fw, 0);
 	return false;
 }
 
@@ -128,7 +128,7 @@ static int write_blocks(struct device *dev,
 		measure(&rwi->seqw_fw, blocks_to_write, NULL);
 		first_pos = next_pos;
 	}
-	end_measurement(&rwi->seqw_fw, false);
+	end_measurement(&rwi->seqw_fw, 0);
 	return false;
 }
 
@@ -231,11 +231,11 @@ static int find_first_x_block(struct device *dev,
 			/* Found the first x_block. */
 			*pfirst_x_block_idx = i;
 			*pstate = bs;
-			end_measurement(&rwi->randr_fw, false);
+			end_measurement(&rwi->randr_fw, 0);
 			return false;
 		}
 	}
-	end_measurement(&rwi->randr_fw, false);
+	end_measurement(&rwi->randr_fw, 0);
 
 not_found:
 	*pfirst_x_block_idx = n_blocks;

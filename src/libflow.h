@@ -113,7 +113,7 @@ void start_measurement(struct flow *fw);
 void measure(struct flow *fw, uint64_t processed_blocks,
 	struct fw_measurement *m);
 void clear_progress(struct flow *fw);
-void end_measurement(struct flow *fw, bool measurement_boundary);
+void end_measurement(struct flow *fw, uint64_t boundary_blocks);
 
 void print_avg_seq_speed(const struct flow *fw, const char *speed_type,
 	bool use_sectors);
