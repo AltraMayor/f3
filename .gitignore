@@ -1,8 +1,10 @@
-cscope.out
-
 *.swp
 *~
 
 doc/_build
 
 build/
+a/
+cscope.out
+perf.data
+perf.data.old

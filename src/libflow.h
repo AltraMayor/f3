@@ -10,6 +10,9 @@
 
 #include "libutils.h"
 
+#define FW_MAX_PROCESS_RATE_NONE	(0)
+#define FW_MAX_BLOCKS_PER_DELAY_NONE	(0)
+
 struct flow;
 
 struct flow {
@@ -23,10 +26,12 @@ struct flow {
 	unsigned int	block_order;
 	/* Delay intended between measurements in nanoseconds. */
 	uint64_t	delay_ns;
-	/* Increment to apply to @blocks_per_delay. */
+	/* Increment to apply to blocks_per_delay. */
 	uint64_t	step_blocks;
 	/* Blocks to process before measurement. */
 	uint64_t	blocks_per_delay;
+	/* Maximum value that blocks_per_delay can take. */
+	uint64_t	max_blocks_per_delay;
 	/* Maximum processing rate in bytes per second. */
 	double		max_process_rate;
 	/* Number of measured blocks. */
@@ -52,7 +57,7 @@ struct flow {
 	/* Number of blocks processed since last measurement. */
 	uint64_t	processed_blocks;
 	/*
-	 * Accumulated delay before @processed_blocks reaches @blocks_per_delay
+	 * Accumulated delay before processed_blocks reaches blocks_per_delay
 	 * in nanoseconds.
 	 */
 	uint64_t	acc_delay_ns;
@@ -62,11 +67,22 @@ struct flow {
 	struct timespec	t1;
 };
 
-/* If @max_process_rate == 0, the maximum processing rate is infinity.
- * The unit of @max_process_rate is KB per second.
+/*
+ * If max_process_rate == FW_MAX_PROCESS_RATE_NONE,
+ * the maximum processing rate is infinity.
+ * The unit of max_process_rate is KB per second.
+ *
+ * If max_blocks_per_delay == FW_MAX_BLOCKS_PER_DELAY_NONE,
+ * there is no limit to blocks_per_delay.
+ * max_blocks_per_delay is meant to act as a measurement boundary when
+ * end_measurement() is called at a given limit (e.g. f3write and f3read
+ * call it at the end of each 1GB file). Thanks to this limit, f3write and
+ * f3read can make per-file measurements and libflow can still detect when
+ * the drive slows down.
  */
 void init_flow(struct flow *fw, unsigned int block_order, uint64_t total_blocks,
-	uint64_t max_process_rate, progress_cb cb, unsigned int indent);
+	uint64_t max_process_rate, uint64_t max_blocks_per_delay,
+	progress_cb cb, unsigned int indent);
 
 /* Total number of blocks already processed. */
 static inline uint64_t fw_get_total_processed_blocks(const struct flow *fw)
@@ -101,13 +117,6 @@ static inline void fw_get_measurements(const struct flow *fw,
 	*time_ns = fw->measured_time_ns + fw->acc_delay_ns;
 }
 
-/* Return speed in bytes per second. */
-static inline double fw_get_speed(const struct flow *fw, uint64_t blocks,
-	uint64_t time_ns)
-{
-	return (blocks << fw->block_order) * 1000000000.0 / time_ns;
-}
-
 uint64_t get_rem_chunk_blocks(const struct flow *fw);
 
 struct fw_measurement {
@@ -120,7 +129,7 @@ void start_measurement(struct flow *fw);
 void measure(struct flow *fw, uint64_t processed_blocks,
 	struct fw_measurement *m);
 void clear_progress(struct flow *fw);
-void end_measurement(struct flow *fw, bool measurement_boundary);
+void end_measurement(struct flow *fw);
 
 void print_avg_seq_speed(const struct flow *fw, const char *speed_type,
 	bool use_sectors);

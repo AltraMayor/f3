@@ -368,7 +368,7 @@ void report_io_speed(unsigned int indent, progress_cb cb, const char *prefix,
 		return;
 	}
 
-	speed = (blocks << block_order) * 1000000000.0 / time_ns;
+	speed = calc_avg_speed(block_order, blocks, time_ns);
 	unit = adjust_unit(&speed);
 	nsec_to_str(time_ns, time_str);
 	cb(indent, "%s %.2f %s/s (%" PRIu64 " %s%s / %s)\n",

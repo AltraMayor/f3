@@ -66,16 +66,19 @@ static inline void move_to_inc_at_start(struct flow *fw)
 }
 
 void init_flow(struct flow *fw, unsigned int block_order, uint64_t total_blocks,
-	uint64_t max_process_rate, progress_cb cb, unsigned int indent)
+	uint64_t max_process_rate, uint64_t max_blocks_per_delay,
+	progress_cb cb, unsigned int indent)
 {
 	fw->total_blocks		= total_blocks;
 	fw->cb				= cb;
 	fw->indent			= indent;
 	fw->block_order			= block_order;
 	fw->blocks_per_delay		= 1;
+	fw->max_blocks_per_delay	= max_blocks_per_delay == 0
+		? UINT64_MAX : max_blocks_per_delay;
 	fw->delay_ns			= 1000000000ULL; /* 1s */
 	fw->max_process_rate		= max_process_rate == 0
-		? DBL_MAX : max_process_rate * 1024.;
+		? DBL_MAX : max_process_rate << KILOBYTE_ORDER;
 	fw->measured_blocks		= 0;
 	fw->measured_time_ns		= 0;
 	fw->erase			= 0;
@@ -207,7 +210,7 @@ void start_measurement(struct flow *fw)
 	fw_get_measurements(fw, &blocks, &time_ns);
 	if (time_ns > 0) {
 		report_progress(fw,
-			(blocks << fw->block_order) * 1000000000.0 / time_ns);
+			calc_avg_speed(fw->block_order, blocks, time_ns));
 	}
 	__start_measurement(fw);
 }
@@ -244,10 +247,15 @@ static inline void dec_step(struct flow *fw)
 	}
 }
 
-static inline void inc_step(struct flow *fw)
+static void inc_step(struct flow *fw)
 {
 	fw->blocks_per_delay += fw->step_blocks;
 	fw->step_blocks *= 2;
+
+	if (fw->blocks_per_delay > fw->max_blocks_per_delay) {
+		fw->blocks_per_delay = fw->max_blocks_per_delay;
+		move_to_steady(fw);
+	}
 }
 
 static inline void move_to_inc(struct flow *fw)
@@ -457,14 +465,15 @@ void measure(struct flow *fw, uint64_t processed_blocks,
 	__start_measurement(fw);
 }
 
-void end_measurement(struct flow *fw, bool measurement_boundary)
+void end_measurement(struct flow *fw)
 {
 	if (fw->processed_blocks > 0) {
 		/* Track progress in between measurement boundaries. */
 		struct timespec t2;
 		assert(!clock_gettime(CLOCK_MONOTONIC, &t2));
 		fw->acc_delay_ns += diff_timespec_ns(&fw->t1, &t2);
-		if (measurement_boundary) {
+		if (fw->max_blocks_per_delay < UINT64_MAX) {
+			/* Measurement boundary. */
 			fw->measured_blocks += fw->processed_blocks;
 			fw->measured_time_ns += fw->acc_delay_ns;
 			fw->processed_blocks = 0;

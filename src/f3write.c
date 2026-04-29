@@ -244,8 +244,8 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 		written_blocks = bytes_written >> block_order;
 		measure(fw, written_blocks, &m);
 		if (m.valid) {
-			double inst_speed = fw_get_speed(fw, m.blocks,
-				m.time_ns);
+			double inst_speed = calc_avg_speed(block_order,
+				m.blocks, m.time_ns);
 			file_speed_samples++;
 			if (inst_speed > file_max_speed)
 				file_max_speed = inst_speed;
@@ -259,7 +259,7 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 		if (saved_errno != 0)
 			break;
 	}
-	end_measurement(fw, true);
+	end_measurement(fw);
 	assert(!clock_gettime(CLOCK_MONOTONIC, &file_t2));
 	close(fd);
 	free(full_fn);
@@ -272,15 +272,20 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 			assert(remaining_blocks == 0);
 
 		if (file_speed_samples >= 2) {
-			file_avg_speed = fw_get_speed(fw, file_tot_blocks,
-				file_tot_time_ns);
+			file_avg_speed = calc_avg_speed(block_order,
+				file_tot_blocks, file_tot_time_ns);
 			print_avg_min_max_samples("OK! ", "\n",
 				file_avg_speed, file_min_speed,	file_max_speed,
 				file_speed_samples);
 		} else if (file_time_ns > 0) {
-			file_avg_speed = fw_get_speed(fw,
-				total_file_blocks - remaining_blocks,
-				file_time_ns);
+			const uint64_t blocks_written =
+				total_file_blocks - remaining_blocks;
+			if (file_tot_blocks == blocks_written &&
+				file_tot_time_ns > 0) {
+				file_time_ns = file_tot_time_ns;
+			}
+			file_avg_speed = calc_avg_speed(block_order,
+				blocks_written, file_time_ns);
 			const char *unit = adjust_unit(&file_avg_speed);
 			printf("OK! Avg: %.2f %s/s\n",
 				file_avg_speed, unit);
@@ -341,6 +346,7 @@ static int fill_fs(const char *path, uint64_t start_at, uint64_t end_at,
 	}
 
 	init_flow(&fw, block_order, free_blocks, max_write_rate,
+		(GIGABYTE_SIZE >> block_order),
 		progress ? printf_flush_cb : dummy_cb, 0);
 	dbuf_init(&dbuf);
 	for (i = start_at; i <= end_at; i++) {
@@ -381,7 +387,7 @@ int main(int argc, char **argv)
 		/* Defaults. */
 		.start_at	= 0,
 		.end_at		= LONG_MAX - 1,
-		.max_write_rate = 0,
+		.max_write_rate = FW_MAX_PROCESS_RATE_NONE,
 		/* If stdout isn't a terminal, suppress progress. */
 		.show_progress	= isatty(STDOUT_FILENO),
 	};

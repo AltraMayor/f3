@@ -1,0 +1,29 @@
+{
+	"makefile.launchConfigurations": [
+		{
+			"cwd": "${workspaceFolder}",
+			"binaryPath": "${workspaceFolder}/build/f3brew",
+			"binaryArgs": []
+		},
+		{
+			"cwd": "${workspaceFolder}",
+			"binaryPath": "${workspaceFolder}/build/f3fix",
+			"binaryArgs": []
+		},
+		{
+			"cwd": "${workspaceFolder}",
+			"binaryPath": "${workspaceFolder}/build/f3probe",
+			"binaryArgs": []
+		},
+		{
+			"cwd": "${workspaceFolder}",
+			"binaryPath": "${workspaceFolder}/build/f3read",
+			"binaryArgs": []
+		},
+		{
+			"cwd": "${workspaceFolder}",
+			"binaryPath": "${workspaceFolder}/build/f3write",
+			"binaryArgs": []
+		}
+	]
+}

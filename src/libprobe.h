@@ -5,6 +5,7 @@
 
 #include "libutils.h"
 #include "libdevs.h"
+#include "libflow.h" /* Enable usage of FW_MAX_PROCESS_RATE_NONE */
 
 /* Provide an upper bound on the number of *unique* blocks that will be written
  * when probe_device(dev) is called.

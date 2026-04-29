@@ -276,8 +276,8 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 		assert((bytes_read & (block_size - 1)) == 0);
 		measure(fw, bytes_read >> block_order, &m);
 		if (m.valid) {
-			double inst_speed = fw_get_speed(fw, m.blocks,
-				m.time_ns);
+			double inst_speed = calc_avg_speed(block_order,
+				m.blocks, m.time_ns);
 			file_speed_samples++;
 			if (inst_speed > file_max_speed)
 				file_max_speed = inst_speed;
@@ -291,7 +291,7 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 			break;
 		}
 	}
-	end_measurement(fw, true);
+	end_measurement(fw);
 	assert(!clock_gettime(CLOCK_MONOTONIC, &file_t2));
 
 	print_status(stats);
@@ -306,17 +306,22 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 		double file_avg_speed;
 
 		if (file_speed_samples >= 2) {
-			file_avg_speed = fw_get_speed(fw, file_tot_blocks,
-				file_tot_time_ns);
+			file_avg_speed = calc_avg_speed(block_order,
+				file_tot_blocks, file_tot_time_ns);
 			print_avg_min_max_samples(" ", "",
 				file_avg_speed, file_min_speed,	file_max_speed,
 				file_speed_samples);
 		} else if (file_time_ns > 0) {
-			double file_avg_speed = fw_get_speed(fw,
-				(stats->bytes_read >> block_order),
-				file_time_ns);
-			const char *unit = adjust_unit(&file_avg_speed);
+			const uint64_t blocks_read =
+				stats->bytes_read >> block_order;
 			assert((stats->bytes_read & (block_size - 1)) == 0);
+			if (file_tot_blocks == blocks_read &&
+					file_tot_time_ns > 0) {
+				file_time_ns = file_tot_time_ns;
+			}
+			file_avg_speed = calc_avg_speed(block_order,
+				blocks_read, file_time_ns);
+			const char *unit = adjust_unit(&file_avg_speed);
 			printf(" Avg: %.2f %s/s", file_avg_speed, unit);
 		}
 	}
@@ -370,7 +375,8 @@ static void iterate_files(const char *path, const uint64_t *files,
 	UNUSED(end_at);
 
 	init_flow(&fw, block_order, get_total_blocks(path, files, block_order),
-		max_read_rate, progress ? printf_flush_cb : dummy_cb, 0);
+		max_read_rate, (GIGABYTE_SIZE >> block_order),
+		progress ? printf_flush_cb : dummy_cb, 0);
 	dbuf_init(&dbuf);
 
 	printf("                  SECTORS      ok/corrupted/changed/overwritten\n");
@@ -425,7 +431,7 @@ int main(int argc, char **argv)
 		/* Defaults. */
 		.start_at	= 0,
 		.end_at		= LONG_MAX - 1,
-		.max_read_rate	= 0,
+		.max_read_rate	= FW_MAX_PROCESS_RATE_NONE,
 		/* If stdout isn't a terminal, suppress progress. */
 		.show_progress	= isatty(STDOUT_FILENO),
 	};
