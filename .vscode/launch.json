@@ -1,0 +1,66 @@
+{
+	// Use IntelliSense to learn about possible attributes.
+	// Hover to view descriptions of existing attributes.
+	// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"name": "f3brew test",
+			"type": "cppdbg",
+			"request": "launch",
+			"cwd": "${workspaceFolder}",
+			"program": "${workspaceFolder}/build/f3brew",
+			"args": ["--debug", "test"],
+			"MIMode": "gdb",
+		},
+		{
+			"name": "f3probe unit-test",
+			"type": "cppdbg",
+			"request": "launch",
+			"cwd": "${workspaceFolder}",
+			"program": "${workspaceFolder}/build/f3probe",
+			"args": ["--debug-unit-test", "test"],
+			"MIMode": "gdb",
+		},
+		{
+			"name": "f3probe simple test",
+			"type": "cppdbg",
+			"request": "launch",
+			"cwd": "${workspaceFolder}",
+			"program": "${workspaceFolder}/build/f3probe",
+			"args": ["--debug", "--destructive", "--verbose", "test"],
+			"MIMode": "gdb",
+		},
+		{
+			"name": "f3probe test",
+			"type": "cppdbg",
+			"request": "launch",
+			"cwd": "${workspaceFolder}",
+			"program": "${workspaceFolder}/build/f3probe",
+			"args": ["--debug-real-size=1G", "--debug-fake-size=1T", "--debug-wrap=40", "--debug-cache-order=21", "--debug-strict-cache", "--destructive", "--verbose", "test"],
+			"MIMode": "gdb",
+			// Uncomment the following line to run under sudo:
+			//"miDebuggerPath": "${workspaceFolder}/.vscode/gdb-sudo.sh"
+		},
+		{
+			// Create folder "a" before launching.
+			"name": "f3write a",
+			"type": "cppdbg",
+			"request": "launch",
+			"cwd": "${workspaceFolder}",
+			"program": "${workspaceFolder}/build/f3write",
+			"args": ["--end-at=5", "a"],
+			"MIMode": "gdb",
+		},
+		{
+			// Create folder "a" before launching.
+			"name": "f3read a",
+			"type": "cppdbg",
+			"request": "launch",
+			"cwd": "${workspaceFolder}",
+			"program": "${workspaceFolder}/build/f3read",
+			"args": ["a"],
+			"MIMode": "gdb",
+		}
+	]
+}
