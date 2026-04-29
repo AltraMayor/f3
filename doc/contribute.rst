@@ -17,26 +17,26 @@ How can you help?
    an article about fake flash. The media has not been covering this
    subject, and having more users aware that fake flash exists will make
    counterfeiters' life harder.
--  If you own fake flash, consider donating them to me. I've been
-   working on ``f3probe`` to tell in a few seconds if a flash drive is
-   fake or not. I expect that ``f3probe`` will be a game changer, but I
-   lack a diverse set of fake flash samples to check my hypotheses.
-   Before you mail me the card, e-mail me the output you got from
-   ``f3write``, ``f3read``, and (if possible) ``f3probe`` as well as the
-   size the card was expected to be; I'm trying to amass a diverse set
-   of fake flash, not necessarily a large number of them.
+-  If you own fake flash, consider opening an issue on GitHub to offer
+   donating it to anyone willing to help with the development of F3.
+   Even if having someone accepting your offer is a long shot,
+   it's a bet in the right direction: growing our community.
+   To help someone identify how your fake drive can support their tests,
+   include in the issue the output you got from ``f3write``, ``f3read``, and
+   (if possible) ``f3probe`` as well as the size the card was expected to be.
+   The output of ``f3probe`` is particularly useful when you use the parameters
+   ``--verbose``, ``--destructive``, and ``--time-ops``.
+-  Improve this documentation. New users would benefit from your perspective
+   on how F3 works and how to use it. Create a pull request with your
+   improvements and I'll prioritize reviewing it.
 -  If you know how to use F3 well on your platform, write a blog entry
    about it, and let me know the link so I can post it on this page. You
    can also send me your name and e-mail to publish on this page as
    someone that can help other users of your platform.
--  (New) If you have a dual-boot machine with Windows and Linux, write a
-   blog entry that compares h2testw, f3write/f3read, FakeFlashTest.exe,
-   and f3probe. If you do this comparison, please send me the link to
+-  If you have a dual-boot machine with Windows and Linux, write a
+   blog entry that compares h2testw vs f3write/f3read, FakeFlashTest.exe and
+   ValiDrive vs f3probe. If you do this comparison, please send me the link to
    publish it on this page.
--  If you are able to test F3 on your platform, send me your name and
-   e-mail, and I'll send to you a request to test new code when it is
-   available on GitHub before I release it as stable to everyone. I only
-   have Linux boxes, so other platforms are specially helpful.
 -  If you are able to code, improve F3. I want to keep the code small to
    easily audit it, so focus on things that will either address a real
    need, for example, users' requests, or to simplify the code, or fix
