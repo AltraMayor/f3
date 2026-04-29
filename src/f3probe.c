@@ -130,10 +130,10 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 	case 'b':
 		ll = arg_to_ll_bytes(state, arg);
-		if (ll != 0 && (ll < SECTOR_ORDER || ll > 20))
+		if (ll != 0 && (ll < SECTOR_ORDER || ll > MEGABYTE_ORDER))
 			argp_error(state,
-				"Block order must be in the interval [%i, 20] or be zero",
-				SECTOR_ORDER);
+				"Block order must be in the interval [%i, %i] or be zero",
+				SECTOR_ORDER, MEGABYTE_ORDER);
 		args->block_order = ll;
 		args->debug = true;
 		break;
@@ -239,37 +239,37 @@ struct unit_test_item {
 
 static const struct unit_test_item ftype_to_params[] = {
 	/* Smallest good drive. */
-	{1ULL << 21,	1ULL << 21,	21,	SECTOR_ORDER,	-1,	false},
+	{2 * MEGABYTE_SIZE,		2 * MEGABYTE_SIZE,	MEGABYTE_ORDER + 1,	SECTOR_ORDER,		-1,	false},
 
 	/* Good, 4KB-block, 1GB drive. */
-	{GIGABYTE_SIZE,	GIGABYTE_SIZE,	GIGABYTE_ORDER,	12,	-1,	false},
+	{GIGABYTE_SIZE,			GIGABYTE_SIZE,		GIGABYTE_ORDER,		KILOBYTE_ORDER + 2,	-1,	false},
 
 	/* Bad drive. */
-	{0,		GIGABYTE_SIZE,	GIGABYTE_ORDER,	SECTOR_ORDER,	-1,	false},
+	{0,				GIGABYTE_SIZE,		GIGABYTE_ORDER,		SECTOR_ORDER,		-1,	false},
 
 	/* Geometry of a real limbo drive. */
-	{1777645568ULL,	32505331712ULL,	35,	SECTOR_ORDER,	-1,	false},
+	{1777645568ULL,			32505331712ULL,		GIGABYTE_ORDER + 5,	SECTOR_ORDER,		-1,	false},
 
 	/* Wraparound drive. */
-	{1ULL << 31,	1ULL << 34,	31,	SECTOR_ORDER,	-1,	false},
+	{2 * GIGABYTE_SIZE,		16 * GIGABYTE_SIZE,	GIGABYTE_ORDER + 1,	SECTOR_ORDER,		-1,	false},
 
 	/* Chain drive. */
-	{1ULL << 31,	1ULL << 34,	32,	SECTOR_ORDER,	-1,	false},
+	{2 * GIGABYTE_SIZE,		16 * GIGABYTE_SIZE,	GIGABYTE_ORDER + 2,	SECTOR_ORDER,		-1,	false},
 
 	/* Extreme case for memory usage (limbo drive). */
-	{(1ULL<<20)+512,1ULL << 40,	40,	SECTOR_ORDER,	-1,	false},
+	{MEGABYTE_SIZE + SECTOR_SIZE,	TERABYTE_SIZE,		TERABYTE_ORDER,		SECTOR_ORDER,		-1,	false},
 
 	/* Geometry of a real limbo drive with 256MB of strict cache. */
-	{7600799744ULL,	67108864000ULL,	36,	SECTOR_ORDER,	19,	true},
+	{7600799744ULL,			67108864000ULL,		GIGABYTE_ORDER + 6,	SECTOR_ORDER,		19,	true},
 
 	/* The drive before with a non-strict cache. */
-	{7600799744ULL,	67108864000ULL,	36,	SECTOR_ORDER,	19,	false},
+	{7600799744ULL,			67108864000ULL,		GIGABYTE_ORDER + 6,	SECTOR_ORDER,		19,	false},
 
 	/* The devil drive I. */
-	{0,		1ULL << 40,	40,	SECTOR_ORDER,	21,	true},
+	{0,				TERABYTE_SIZE,		TERABYTE_ORDER,		SECTOR_ORDER,		21,	true},
 
 	/* The devil drive II. */
-	{0,		1ULL << 40,	40,	SECTOR_ORDER,	21,	false},
+	{0,				TERABYTE_SIZE,		TERABYTE_ORDER,		SECTOR_ORDER,		21,	false},
 };
 
 static int unit_test(const char *filename)
@@ -571,8 +571,8 @@ int main(int argc, char **argv)
 		.show_progress	= isatty(STDOUT_FILENO),
 		.max_read_rate	= FW_MAX_PROCESS_RATE_NONE,
 		.max_write_rate = FW_MAX_PROCESS_RATE_NONE,
-		.real_size_byte	= 1ULL << 31,
-		.fake_size_byte	= 1ULL << 34,
+		.real_size_byte	= 2 * GIGABYTE_SIZE,
+		.fake_size_byte	= 16 * GIGABYTE_SIZE,
 		.wrap		= 31,
 		.block_order	= SECTOR_ORDER,
 		.cache_order	= -1,

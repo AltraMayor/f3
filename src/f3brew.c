@@ -139,10 +139,10 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 	case 'b':
 		ll = arg_to_ll_bytes(state, arg);
-		if (ll != 0 && (ll < SECTOR_ORDER || ll > 20))
+		if (ll != 0 && (ll < SECTOR_ORDER || ll > MEGABYTE_ORDER))
 			argp_error(state,
-				"Block order must be in the interval [%i, 20] or be zero",
-				SECTOR_ORDER);
+				"Block order must be in the interval [%i, %i] or be zero",
+				SECTOR_ORDER, MEGABYTE_ORDER);
 		args->block_order = ll;
 		args->debug = true;
 		break;
@@ -563,8 +563,8 @@ int main(int argc, char **argv)
 		.test_write	= true,
 		.test_read	= true,
 		.fix_cmd	= false,
-		.real_size_byte	= 1ULL << 31,
-		.fake_size_byte	= 1ULL << 34,
+		.real_size_byte	= 2 * GIGABYTE_SIZE,
+		.fake_size_byte	= 16 * GIGABYTE_SIZE,
 		.wrap		= 31,
 		.block_order	= SECTOR_ORDER,
 		.cache_order	= -1,
