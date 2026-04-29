@@ -296,7 +296,7 @@ static void write_blocks(struct device *dev, struct flow *fw,
 		measure(fw, blocks_to_write, NULL);
 		first_pos = next_pos;
 	}
-	end_measurement(fw, 0);
+	end_measurement(fw);
 	dbuf_free(&dbuf);
 }
 
@@ -314,6 +314,7 @@ static void test_write_blocks(struct device *dev,
 	fflush(stdout);
 
 	init_flow(&fw, block_order, total_blocks, max_write_rate,
+		FW_MAX_BLOCKS_PER_DELAY_NONE,
 		show_progress ? printf_flush_cb : dummy_cb, 0);
 
 	write_blocks(dev, &fw, first_block, last_block);
@@ -452,7 +453,7 @@ static void read_blocks(struct device *dev, struct flow *fw,
 		measure(fw, blocks_to_read, NULL);
 		first_pos = next_pos;
 	}
-	end_measurement(fw, 0);
+	end_measurement(fw);
 	dbuf_free(&dbuf);
 
 	if (range.state != bs_unknown)
@@ -475,6 +476,7 @@ static void test_read_blocks(struct device *dev,
 		first_block != last_block ? "s" : "", first_block, last_block);
 
 	init_flow(&fw, block_order, total_blocks, max_read_rate,
+		FW_MAX_BLOCKS_PER_DELAY_NONE,
 		show_progress ? printf_flush_cb : dummy_cb, 0);
 
 	read_blocks(dev, &fw, first_block, last_block, &stats);
@@ -501,8 +503,8 @@ int main(int argc, char **argv)
 		.strict_cache	= false,
 		.first_block	= 0,
 		.last_block	= -1ULL,
-		.max_read_rate	= 0,
-		.max_write_rate = 0,
+		.max_read_rate	= FW_MAX_PROCESS_RATE_NONE,
+		.max_write_rate = FW_MAX_PROCESS_RATE_NONE,
 		/* If stdout isn't a terminal, suppress progress. */
 		.show_progress	= isatty(STDOUT_FILENO),
 	};

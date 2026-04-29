@@ -259,7 +259,7 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 		if (saved_errno != 0)
 			break;
 	}
-	end_measurement(fw, total_file_blocks);
+	end_measurement(fw);
 	assert(!clock_gettime(CLOCK_MONOTONIC, &file_t2));
 	close(fd);
 	free(full_fn);
@@ -346,6 +346,7 @@ static int fill_fs(const char *path, uint64_t start_at, uint64_t end_at,
 	}
 
 	init_flow(&fw, block_order, free_blocks, max_write_rate,
+		(GIGABYTE_SIZE >> block_order),
 		progress ? printf_flush_cb : dummy_cb, 0);
 	dbuf_init(&dbuf);
 	for (i = start_at; i <= end_at; i++) {
@@ -386,7 +387,7 @@ int main(int argc, char **argv)
 		/* Defaults. */
 		.start_at	= 0,
 		.end_at		= LONG_MAX - 1,
-		.max_write_rate = 0,
+		.max_write_rate = FW_MAX_PROCESS_RATE_NONE,
 		/* If stdout isn't a terminal, suppress progress. */
 		.show_progress	= isatty(STDOUT_FILENO),
 	};

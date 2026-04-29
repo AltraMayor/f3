@@ -214,8 +214,6 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 {
 	const unsigned int block_size = fw_get_block_size(fw);
 	const unsigned int block_order = fw_get_block_order(fw);
-	const uint64_t max_file_blocks =
-		1ULL << (GIGABYTE_ORDER - block_order);
 	double file_min_speed = INFINITY;
 	double file_max_speed = -INFINITY;
 	uint64_t file_tot_blocks = 0;
@@ -226,8 +224,6 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 	int fd, saved_errno;
 	uint64_t expected_offset;
 	struct timespec file_t1, file_t2;
-
-	assert(GIGABYTE_ORDER >= block_order);
 
 	zero_fstats(stats);
 
@@ -295,7 +291,7 @@ static void validate_file(struct flow *fw, struct dynamic_buffer *dbuf,
 			break;
 		}
 	}
-	end_measurement(fw, max_file_blocks);
+	end_measurement(fw);
 	assert(!clock_gettime(CLOCK_MONOTONIC, &file_t2));
 
 	print_status(stats);
@@ -379,7 +375,8 @@ static void iterate_files(const char *path, const uint64_t *files,
 	UNUSED(end_at);
 
 	init_flow(&fw, block_order, get_total_blocks(path, files, block_order),
-		max_read_rate, progress ? printf_flush_cb : dummy_cb, 0);
+		max_read_rate, (GIGABYTE_SIZE >> block_order),
+		progress ? printf_flush_cb : dummy_cb, 0);
 	dbuf_init(&dbuf);
 
 	printf("                  SECTORS      ok/corrupted/changed/overwritten\n");
@@ -434,7 +431,7 @@ int main(int argc, char **argv)
 		/* Defaults. */
 		.start_at	= 0,
 		.end_at		= LONG_MAX - 1,
-		.max_read_rate	= 0,
+		.max_read_rate	= FW_MAX_PROCESS_RATE_NONE,
 		/* If stdout isn't a terminal, suppress progress. */
 		.show_progress	= isatty(STDOUT_FILENO),
 	};

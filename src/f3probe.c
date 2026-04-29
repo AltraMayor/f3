@@ -569,8 +569,8 @@ int main(int argc, char **argv)
 		.verbose	= false,
 		/* If stdout isn't a terminal, suppress progress. */
 		.show_progress	= isatty(STDOUT_FILENO),
-		.max_read_rate	= 0,
-		.max_write_rate = 0,
+		.max_read_rate	= FW_MAX_PROCESS_RATE_NONE,
+		.max_write_rate = FW_MAX_PROCESS_RATE_NONE,
 		.real_size_byte	= 1ULL << 31,
 		.fake_size_byte	= 1ULL << 34,
 		.wrap		= 31,

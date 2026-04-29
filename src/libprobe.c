@@ -79,7 +79,7 @@ static int write_random_blocks(struct device *dev, const uint64_t pos[],
 			return true;
 		measure(&rwi->randw_fw, 1, NULL);
 	}
-	end_measurement(&rwi->randw_fw, 0);
+	end_measurement(&rwi->randw_fw);
 	return false;
 }
 
@@ -128,7 +128,7 @@ static int write_blocks(struct device *dev,
 		measure(&rwi->seqw_fw, blocks_to_write, NULL);
 		first_pos = next_pos;
 	}
-	end_measurement(&rwi->seqw_fw, 0);
+	end_measurement(&rwi->seqw_fw);
 	return false;
 }
 
@@ -231,11 +231,11 @@ static int find_first_x_block(struct device *dev,
 			/* Found the first x_block. */
 			*pfirst_x_block_idx = i;
 			*pstate = bs;
-			end_measurement(&rwi->randr_fw, 0);
+			end_measurement(&rwi->randr_fw);
 			return false;
 		}
 	}
-	end_measurement(&rwi->randr_fw, 0);
+	end_measurement(&rwi->randr_fw);
 
 not_found:
 	*pfirst_x_block_idx = n_blocks;
@@ -818,9 +818,12 @@ int probe_device(struct device *dev, struct probe_results *results,
 	/* We initialize total_blocks to 0 because inc_total_blocks() is called
 	 * to update it when new blocks become available.
 	 */
-	init_flow(&rwi.seqw_fw, block_order, 0, max_write_rate, fw_cb, 0);
-	init_flow(&rwi.randw_fw, block_order, 0, max_write_rate, fw_cb, 0);
-	init_flow(&rwi.randr_fw, block_order, 0, max_read_rate, fw_cb, 0);
+	init_flow(&rwi.seqw_fw, block_order, 0, max_write_rate,
+		FW_MAX_BLOCKS_PER_DELAY_NONE, fw_cb, 0);
+	init_flow(&rwi.randw_fw, block_order, 0, max_write_rate,
+		FW_MAX_BLOCKS_PER_DELAY_NONE, fw_cb, 0);
+	init_flow(&rwi.randr_fw, block_order, 0, max_read_rate,
+		FW_MAX_BLOCKS_PER_DELAY_NONE, fw_cb, 0);
 
 	/* @left_pos must point to a good block.
 	 * We just point to the last block of the first 1MB of the card
