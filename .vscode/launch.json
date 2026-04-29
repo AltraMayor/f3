@@ -10,7 +10,7 @@
 			"request": "launch",
 			"cwd": "${workspaceFolder}",
 			"program": "${workspaceFolder}/build/f3brew",
-			"args": ["--debug", "test"],
+			"args": ["--debug", "--fix-cmd", "test"],
 			"MIMode": "gdb",
 		},
 		{

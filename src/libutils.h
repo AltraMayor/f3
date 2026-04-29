@@ -12,6 +12,7 @@
 #define TERABYTE_ORDER	(40)
 
 #define SECTOR_SIZE	(1ULL << SECTOR_ORDER)
+#define MEGABYTE_SIZE	(1ULL << MEGABYTE_ORDER)
 #define GIGABYTE_SIZE	(1ULL << GIGABYTE_ORDER)
 
 #define UNUSED(x)	((void)x)
