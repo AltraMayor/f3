@@ -1,3 +1,11 @@
+Version 10.0 - Apr 29, 2026
+
+    * f3probe: New probing algorithm and --verbose flag
+    * f3brew: Progress report and rate limiting (i.e., --max-write-rate and --max-read-rate)
+    * f3write/f3read: Report per-file min/max and average speeds
+    * GitHub Actions: FreeBSD and OpenBSD support
+    * Move codebase from C99 to C17 and refactor project
+
 Version 9.0 - Mar 27, 2025
 
     * f3read/f3write: Avoid the execution stack to list files
