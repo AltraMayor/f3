@@ -502,13 +502,18 @@ static int test_device(struct args *args)
 	case FKTY_LIMBO:
 	case FKTY_WRAPAROUND:
 	case FKTY_CHAIN: {
-		uint64_t last_good_sector = (results.real_size_byte >>
+		const uint64_t last_good_block = (results.real_size_byte >>
+			results.block_order) - 1;
+		const uint64_t last_good_sector = (results.real_size_byte >>
 			SECTOR_ORDER) - 1;
 		assert(results.block_order >= SECTOR_ORDER);
 		printf("Bad news: The device `%s' is a counterfeit of type %s\n\n"
-			"You can \"fix\" this device using the following command:\n"
+			"Use the command below to check all blocks in the usable area:\n"
+			"f3brew --fix-cmd --end-at=%" PRIu64 " %s\n"
+			"If you prefer checking with f3write/f3read, use the following command:\n"
 			"f3fix --last-sec=%" PRIu64 " %s\n",
 			args->filename, fake_type_to_name(fake_type),
+			last_good_block, args->filename,
 			last_good_sector, args->filename);
 		break;
 	}
