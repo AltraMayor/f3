@@ -833,7 +833,7 @@ int probe_device(struct device *dev, struct probe_results *results,
 	 * (@left_pos, @right_pos), we avoid losing the partition table.
 	 */
 	assert(block_order <= MEGABYTE_ORDER);
-	left_pos = (1ULL << (MEGABYTE_ORDER - block_order)) - 1;
+	left_pos = (MEGABYTE_SIZE >> block_order) - 1;
 
 	/* @right_pos must point to a bad block.
 	 * We just point to the block after the very last block.

@@ -141,7 +141,7 @@ struct dynamic_buffer {
 	/* Ensure that backup_buf has the same memory alignment as
 	 * it would have, had it been returned by malloc().
 	 */
-	alignas(max_align_t) char backup_buf[1 << 21]; /* 2MB */
+	alignas(max_align_t) char backup_buf[2 * MEGABYTE_SIZE];
 };
 
 static inline void dbuf_init(struct dynamic_buffer *dbuf)

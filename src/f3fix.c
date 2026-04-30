@@ -183,11 +183,11 @@ static void list_fs_types(void)
 }
 
 static PedSector map_sector_to_logical_sector(PedSector sector,
-	int logical_sector_size)
+	unsigned int logical_sector_size)
 {
-	assert(logical_sector_size >= 512);
-	assert(logical_sector_size % 512 == 0);
-	return sector / (logical_sector_size / 512);
+	assert(logical_sector_size >= SECTOR_SIZE);
+	assert((logical_sector_size & (SECTOR_SIZE - 1)) == 0);
+	return sector / (logical_sector_size >> SECTOR_ORDER);
 }
 
 /* 0 on failure, 1 otherwise. */
@@ -249,7 +249,8 @@ int main (int argc, char *argv[])
 
 		.disk_type		= ped_disk_type_get("msdos"),
 		.fs_type		= ped_file_system_type_get("fat32"),
-		.first_sec		= 2048,	/* Skip first 1MB. */
+		/* Skip first 1MB to avoid the partition table. */
+		.first_sec		= MEGABYTE_SIZE / SECTOR_SIZE,
 	};
 
 	PedDevice *dev;

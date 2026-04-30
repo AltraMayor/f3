@@ -54,6 +54,8 @@ static struct argp_option options[] = {
 		"Where test begins; the default is block zero",	0},
 	{"end-at",		'e',	"BLOCK",	0,
 		"Where test ends; the default is the very last block",	0},
+	{"fix-cmd",		'x',	NULL,		0,
+		"Show how to call f3fix to fix the drive",	0},
 	{"max-read-rate",	'r',	"KB/s",		0,
 		"Maximum read rate",					0},
 	{"max-write-rate",	'w',	"KB/s",		0,
@@ -78,7 +80,7 @@ struct args {
 	enum reset_type	reset_type;
 	bool test_write;
 	bool test_read;
-	/* 3 free bytes. */
+	bool fix_cmd;
 
 	/* Geometry. */
 	uint64_t	real_size_byte;
@@ -137,10 +139,10 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 	case 'b':
 		ll = arg_to_ll_bytes(state, arg);
-		if (ll != 0 && (ll < SECTOR_ORDER || ll > 20))
+		if (ll != 0 && (ll < SECTOR_ORDER || ll > MEGABYTE_ORDER))
 			argp_error(state,
-				"Block order must be in the interval [%i, 20] or be zero",
-				SECTOR_ORDER);
+				"Block order must be in the interval [%i, %i] or be zero",
+				SECTOR_ORDER, MEGABYTE_ORDER);
 		args->block_order = ll;
 		args->debug = true;
 		break;
@@ -215,6 +217,10 @@ static error_t parse_opt(int key, char *arg, struct argp_state *state)
 
 	case 'R':
 		args->test_read = false;
+		break;
+
+	case 'x':
+		args->fix_cmd = true;
 		break;
 
 	case ARGP_KEY_INIT:
@@ -327,30 +333,26 @@ static void test_write_blocks(struct device *dev,
 struct block_range {
 	enum block_state	state;
 	unsigned int		block_order;
-	uint64_t		start_sector_offset;
-	uint64_t		end_sector_offset;
+	uint64_t		start_block;
+	uint64_t		end_block;
 
 	/* Only used by state bs_overwritten. */
-	uint64_t		found_sector_offset;
+	uint64_t		found_block;
 };
 
-static int is_block(uint64_t offset, unsigned int block_order)
-{
-	return !(((1ULL << block_order) - 1) & offset);
-}
-
-static void print_offset(uint64_t offset, unsigned int block_order)
-{
-	assert(is_block(offset, block_order));
-	printf("block 0x%" PRIx64, offset >> block_order);
+#define INIT_UNKNOWN_RANGE(block_order) {	\
+	.state = bs_unknown,			\
+	.block_order = (block_order),		\
+	.start_block = 0,			\
+	.end_block = UINT64_MAX,		\
+	.found_block = 0			\
 }
 
 static void print_block_range(const struct block_range *range)
 {
-	printf("[%s] from ", block_state_to_str(range->state));
-	print_offset(range->start_sector_offset, range->block_order);
-	printf(" to ");
-	print_offset(range->end_sector_offset, range->block_order);
+	printf("[%s] from block 0x%" PRIx64 " to 0x%" PRIx64,
+		block_state_to_str(range->state),
+		range->start_block, range->end_block);
 
 	switch (range->state) {
 	case bs_good:
@@ -359,8 +361,7 @@ static void print_block_range(const struct block_range *range)
 		break;
 
 	case bs_overwritten:
-		printf(", found ");
-		print_offset(range->found_sector_offset, range->block_order);
+		printf(", found block 0x%" PRIx64, range->found_block);
 		break;
 
 	default:
@@ -370,23 +371,46 @@ static void print_block_range(const struct block_range *range)
 	printf("\n");
 }
 
-static void validate_block(struct flow *fw, uint64_t expected_sector_offset,
-	const char *probe_blk, unsigned int block_order,
-	struct block_range *range, struct block_stats *stats)
+static inline bool is_block(uint64_t offset, unsigned int block_order)
 {
-	uint64_t found_sector_offset;
-	enum block_state state = validate_block_update_stats(probe_blk, block_order,
-		expected_sector_offset, &found_sector_offset, 0, stats);
+	return !(((1ULL << block_order) - 1) & offset);
+}
+
+static void update_good_range(struct block_range *good_range,
+	const struct block_range *range)
+{
+	uint64_t good_range_blocks, range_blocks;
+
+	if (range->state != bs_good)
+		return;
+
+	good_range_blocks =
+		good_range->end_block - good_range->start_block + 1;
+	range_blocks = range->end_block - range->start_block + 1;
+	if (range_blocks > good_range_blocks)
+		*good_range = *range;
+}
+
+static void validate_block(struct flow *fw, uint64_t block,
+	const char *probe_blk, unsigned int block_order,
+	struct block_range *range, struct block_range *good_range,
+	struct block_stats *stats)
+{
+	const uint64_t expected_offset = block << block_order;
+	uint64_t found_offset;
+	enum block_state state = validate_block_update_stats(probe_blk,
+		block_order, expected_offset, &found_offset, 0, stats);
+	const uint64_t found_block = found_offset >> block_order;
 	bool push_range;
+
+	assert(is_block(found_offset, block_order));
 
 	push_range = (range->state != state) || (
 			state == bs_overwritten
 			&& (
-				(expected_sector_offset
-					- range->start_sector_offset)
+				(block - range->start_block)
 				!=
-				(found_sector_offset
-					- range->found_sector_offset)
+				(found_block - range->found_block)
 			)
 		);
 
@@ -394,30 +418,25 @@ static void validate_block(struct flow *fw, uint64_t expected_sector_offset,
 		if (range->state != bs_unknown) {
 			clear_progress(fw);
 			print_block_range(range);
+			update_good_range(good_range, range);
 		}
 		range->state = state;
-		range->start_sector_offset = expected_sector_offset;
-		range->end_sector_offset = expected_sector_offset;
-		range->found_sector_offset = found_sector_offset;
+		range->start_block = block;
+		range->end_block = block;
+		range->found_block = found_block;
 	} else {
-		range->end_sector_offset = expected_sector_offset;
+		range->end_block = block;
 	}
 }
 
 static void read_blocks(struct device *dev, struct flow *fw,
-	uint64_t first_block, uint64_t last_block, struct block_stats *stats)
+	uint64_t first_block, uint64_t last_block, struct block_stats *stats,
+	struct block_range *good_range)
 {
 	const unsigned int block_size = dev_get_block_size(dev);
 	const unsigned int block_order = dev_get_block_order(dev);
-	uint64_t expected_sector_offset = first_block << block_order;
 	uint64_t first_pos = first_block;
-	struct block_range range = {
-		.state = bs_unknown,
-		.block_order = block_order,
-		.start_sector_offset = 0,
-		.end_sector_offset = 0,
-		.found_sector_offset = 0,
-	};
+	struct block_range range = INIT_UNKNOWN_RANGE(block_order);
 	struct dynamic_buffer dbuf;
 
 	dbuf_init(&dbuf);
@@ -444,9 +463,8 @@ static void read_blocks(struct device *dev, struct flow *fw,
 
 		probe_blk = buffer;
 		for (pos = first_pos; pos < next_pos; pos++) {
-			validate_block(fw, expected_sector_offset, probe_blk,
-				block_order, &range, stats);
-			expected_sector_offset += block_size;
+			validate_block(fw, pos, probe_blk, block_order,
+				&range, good_range, stats);
 			probe_blk += block_size;
 		}
 
@@ -456,21 +474,67 @@ static void read_blocks(struct device *dev, struct flow *fw,
 	end_measurement(fw);
 	dbuf_free(&dbuf);
 
-	if (range.state != bs_unknown)
+	if (range.state != bs_unknown) {
 		print_block_range(&range);
-	else
+		update_good_range(good_range, &range);
+	} else {
 		assert(first_block > last_block);
+	}
+}
+
+static void print_fix_cmd(const char *filename,
+	const struct block_range *good_range)
+{
+	const uint64_t first_1MB_block =
+		MEGABYTE_SIZE >> good_range->block_order;
+	const unsigned int shift = good_range->block_order - SECTOR_ORDER;
+	const uint64_t first_good_sector = good_range->start_block << shift;
+	const uint64_t last_good_sector =
+		((good_range->end_block + 1) << shift) - 1;
+	uint64_t size_byte;
+
+	assert(MEGABYTE_ORDER >= good_range->block_order);
+	assert(good_range->block_order >= SECTOR_ORDER);
+
+	/* Set size_byte. */
+	if (good_range->state != bs_good) {
+		size_byte = 0;
+	} else if (good_range->end_block >= first_1MB_block) {
+		const uint64_t start_block =
+			good_range->start_block <= first_1MB_block
+				? first_1MB_block
+				: good_range->start_block;
+		size_byte = (good_range->end_block - start_block + 1) <<
+			good_range->block_order;
+	} else {
+		size_byte = 0;
+	}
+
+	if (size_byte < MEGABYTE_SIZE) {
+		printf("There is no good region large enough to \"fix\" this device.\n\n");
+		return;
+	}
+
+	printf("You can \"fix\" this device using the following command:\n");
+	if (good_range->start_block < first_1MB_block) {
+		printf("f3fix --last-sec=%" PRIu64 " %s\n\n",
+			last_good_sector, filename);
+		return;
+	}
+	printf("f3fix --first-sec=%" PRIu64 " --last-sec=%" PRIu64 " %s\n\n",
+		first_good_sector, last_good_sector, filename);
 }
 
 /* XXX Properly handle return errors. */
 static void test_read_blocks(struct device *dev,
 	uint64_t first_block, uint64_t last_block,
-	long max_read_rate, int show_progress)
+	long max_read_rate, int show_progress, bool fix_cmd)
 {
 	const unsigned int block_order = dev_get_block_order(dev);
 	const uint64_t total_blocks = last_block - first_block + 1;
 	struct flow fw;
 	struct block_stats stats = { 0, 0, 0, 0 };
+	struct block_range good_range = INIT_UNKNOWN_RANGE(block_order);
 
 	printf("Reading block%s from 0x%" PRIx64 " to 0x%" PRIx64 ":\n",
 		first_block != last_block ? "s" : "", first_block, last_block);
@@ -479,11 +543,14 @@ static void test_read_blocks(struct device *dev,
 		FW_MAX_BLOCKS_PER_DELAY_NONE,
 		show_progress ? printf_flush_cb : dummy_cb, 0);
 
-	read_blocks(dev, &fw, first_block, last_block, &stats);
+	read_blocks(dev, &fw, first_block, last_block, &stats, &good_range);
 
 	print_stats(&stats, block_order, "block");
 	print_avg_seq_speed(&fw, "read", false);
 	printf("\n");
+
+	if (fix_cmd)
+		print_fix_cmd(dev_get_filename(dev), &good_range);
 }
 
 int main(int argc, char **argv)
@@ -495,8 +562,9 @@ int main(int argc, char **argv)
 		.reset_type	= RT_MANUAL_USB,
 		.test_write	= true,
 		.test_read	= true,
-		.real_size_byte	= 1ULL << 31,
-		.fake_size_byte	= 1ULL << 34,
+		.fix_cmd	= false,
+		.real_size_byte	= 2 * GIGABYTE_SIZE,
+		.fake_size_byte	= 16 * GIGABYTE_SIZE,
 		.wrap		= 31,
 		.block_order	= SECTOR_ORDER,
 		.cache_order	= -1,
@@ -552,7 +620,7 @@ int main(int argc, char **argv)
 
 	if (args.test_read)
 		test_read_blocks(dev, args.first_block, args.last_block,
-			args.max_read_rate, args.show_progress);
+			args.max_read_rate, args.show_progress, args.fix_cmd);
 
 	free_device(dev);
 	return 0;

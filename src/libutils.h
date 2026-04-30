@@ -12,7 +12,10 @@
 #define TERABYTE_ORDER	(40)
 
 #define SECTOR_SIZE	(1ULL << SECTOR_ORDER)
+#define KILOBYTE_SIZE	(1ULL << KILOBYTE_ORDER)
+#define MEGABYTE_SIZE	(1ULL << MEGABYTE_ORDER)
 #define GIGABYTE_SIZE	(1ULL << GIGABYTE_ORDER)
+#define TERABYTE_SIZE	(1ULL << TERABYTE_ORDER)
 
 #define UNUSED(x)	((void)x)
 #define DIM(x)		(sizeof(x) / sizeof((x)[0]))
