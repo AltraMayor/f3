@@ -460,7 +460,20 @@ static int bdev_read_blocks(struct device *dev, char *buf,
 	if (off_ret < 0)
 		return - errno;
 	assert(off_ret == offset);
-	return read_all(bdev->fd, buf, length);
+	{
+		int rc = read_all(bdev->fd, buf, length);
+#if defined(__APPLE__) && defined(__MACH__)
+		if (rc)
+			warnx("raw read failed: off=%lld len=%zu blocks=[%llu,%llu] "
+				"errno=%d (%s); buf%%pagesize=%lu buf%%blocksize=%lu",
+				(long long)offset, length,
+				(unsigned long long)first_pos, (unsigned long long)last_pos,
+				-rc, strerror(-rc),
+				(unsigned long)((uintptr_t)buf % (uintptr_t)getpagesize()),
+				(unsigned long)((uintptr_t)buf & (dev_get_block_size(dev) - 1)));
+#endif
+		return rc;
+	}
 }
 
 static int bdev_write_blocks(struct device *dev, const char *buf,
@@ -476,8 +489,21 @@ static int bdev_write_blocks(struct device *dev, const char *buf,
 		return - errno;
 	assert(off_ret == offset);
 	rc = write_all(bdev->fd, buf, length);
-	if (rc)
+	if (rc) {
+#if defined(__APPLE__) && defined(__MACH__)
+		/* Darwin diagnostic: the non-verbose probe hides I/O errors behind a
+		 * silenced callback, so surface the offset / errno / buffer alignment
+		 * of a raw write failure here. */
+		warnx("raw write failed: off=%lld len=%zu blocks=[%llu,%llu] "
+			"errno=%d (%s); buf%%pagesize=%lu buf%%blocksize=%lu",
+			(long long)offset, length,
+			(unsigned long long)first_pos, (unsigned long long)last_pos,
+			rc, strerror(rc),
+			(unsigned long)((uintptr_t)buf % (uintptr_t)getpagesize()),
+			(unsigned long)((uintptr_t)buf & (dev_get_block_size(dev) - 1)));
+#endif
 		return rc;
+	}
 #if defined(__APPLE__) && defined(__MACH__)
 	/* Defeat caches on the write side. The raw node (/dev/rdiskN) was opened
 	 * with F_NOCACHE, so the OS buffer cache is already bypassed. NOTE:
