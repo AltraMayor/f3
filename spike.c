@@ -51,7 +51,7 @@
 #include <sys/disk.h>
 
 #define TAG_A 0xAAAAAAAAAAAAAAAAULL	/* written to block 0          */
-#define TAG_B 0xBBBBBBBBBBBBBBBBULL	/* written to the last block    */
+#define TAG_B 0xBBBBBBBBBBBBBBBBULL	/* written to the high block    */
 
 /* Fill @buf with repeating 16-byte records of {tag, block_idx} so a read-back
  * tells us unambiguously which write produced the bytes we see. */
@@ -149,23 +149,33 @@ static int read_block(int fd, uint64_t idx, unsigned char *buf, uint32_t bsz)
 static const char *tag_name(uint64_t tag)
 {
 	if (tag == TAG_A) return "A (block 0)";
-	if (tag == TAG_B) return "B (last block)";
+	if (tag == TAG_B) return "B (high block)";
 	return "??? (neither A nor B)";
 }
 
 int main(int argc, char **argv)
 {
 	const char *arg = NULL;
-	bool destroy = false;
+	bool destroy = false, have_real = false;
 	char whole[64], raw[64], cmd[160];
 	int fd, i;
 	uint32_t bsz = 0;
-	uint64_t bcount = 0, total, last_block;
+	uint64_t bcount = 0, total, last_block, high_block, real_size = 0;
+	const char *high_desc;
 	unsigned char *bufA, *bufB, *rb;
 	uint64_t tag, idx;
 
 	for (i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--destroy")) destroy = true;
+		else if (!strncmp(argv[i], "--real-size=", 12)) {
+			char *end;
+			real_size = strtoull(argv[i] + 12, &end, 0);
+			if (*end != '\0') {
+				fprintf(stderr, "bad --real-size value `%s'\n", argv[i] + 12);
+				return 2;
+			}
+			have_real = true;
+		}
 		else if (argv[i][0] == '-') {
 			fprintf(stderr, "unknown option `%s'\n", argv[i]);
 			return 2;
@@ -173,8 +183,13 @@ int main(int argc, char **argv)
 	}
 	if (!arg) {
 		fprintf(stderr,
-			"usage: sudo %s [--destroy] diskN\n"
-			"  (without --destroy this is a DRY RUN: it prints the plan only)\n",
+			"usage: sudo %s [--destroy] [--real-size=BYTES] diskN\n"
+			"  (without --destroy this is a DRY RUN: it prints the plan only)\n"
+			"  --real-size=BYTES: announced offset at which to write pattern B.\n"
+			"     For a known WRAPAROUND fake, set this to the card's real\n"
+			"     capacity (from f3write/f3read) so the high write aliases onto\n"
+			"     block 0. Default: the last announced block, which often does\n"
+			"     NOT alias onto block 0. Shell tip: --real-size=$((64*1024**3)).\n",
 			argv[0]);
 		return 2;
 	}
@@ -191,8 +206,9 @@ int main(int argc, char **argv)
 			"  1. diskutil unmountDisk %s\n"
 			"  2. open %s with F_NOCACHE\n"
 			"  3. write pattern A to block 0, flush, read block 0 back\n"
-			"  4. write pattern B to the LAST block, flush, read block 0 again\n"
-			"It OVERWRITES block 0 and the last block (DESTRUCTIVE).\n"
+			"  4. write pattern B to the high block (default: last block; or the\n"
+			"     wrap boundary if --real-size=BYTES is given), flush, re-read block 0\n"
+			"It OVERWRITES block 0 and the high block (DESTRUCTIVE).\n"
 			"Re-run as: sudo %s --destroy %s\n", whole, raw, argv[0], arg);
 		/* Still try to open read-only to report the size, best-effort. */
 		fd = open(raw, O_RDONLY);
@@ -227,8 +243,28 @@ int main(int argc, char **argv)
 	last_block = bcount - 1;
 	printf("Geometry: %llu blocks x %u bytes = %llu bytes (%.2f GB announced)\n",
 		(unsigned long long)bcount, bsz, (unsigned long long)total, total / 1e9);
-	printf("Block 0 offset = 0; last block #%llu offset = %llu bytes\n",
-		(unsigned long long)last_block, (unsigned long long)(last_block * (uint64_t)bsz));
+
+	high_block = last_block;
+	high_desc = "the LAST announced block";
+	if (have_real) {
+		if (real_size == 0 || real_size >= total) {
+			fprintf(stderr, "--real-size=%llu must be > 0 and < announced size %llu\n",
+				(unsigned long long)real_size, (unsigned long long)total);
+			close(fd); return 2;
+		}
+		/* The first announced block at/after the real boundary. On a clean
+		 * wraparound fake this physical-aliases onto block 0. */
+		high_block = real_size / bsz;
+		if (high_block == 0 || high_block >= bcount) {
+			fprintf(stderr, "computed high block %llu is out of range\n",
+				(unsigned long long)high_block);
+			close(fd); return 2;
+		}
+		high_desc = "the wrap boundary (first block past real size)";
+	}
+	printf("Block 0 offset = 0; high block #%llu offset = %llu bytes (%s)\n",
+		(unsigned long long)high_block,
+		(unsigned long long)(high_block * (uint64_t)bsz), high_desc);
 
 	/* Page-aligned buffers (spec belt-and-suspenders for raw I/O). */
 	if (posix_memalign((void **)&bufA, (size_t)getpagesize(), bsz) ||
@@ -237,7 +273,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "posix_memalign failed\n"); close(fd); return 1;
 	}
 	fill_pattern(bufA, bsz, TAG_A, 0);
-	fill_pattern(bufB, bsz, TAG_B, last_block);
+	fill_pattern(bufB, bsz, TAG_B, high_block);
 
 	/* Step 3: A -> block 0, flush, read back (must see A). */
 	printf("\n[3] Writing pattern A to block 0 ...\n");
@@ -251,20 +287,24 @@ int main(int argc, char **argv)
 	}
 	printf("    OK: block 0 reads back as pattern A.\n");
 
-	/* Step 4: B -> last block, flush, re-read block 0. */
-	printf("[4] Writing pattern B to last block #%llu ...\n", (unsigned long long)last_block);
-	if (write_block(fd, last_block, bufB, bsz) || flush_dev(fd)) goto io_err;
+	/* Step 4: B -> high block, flush, re-read block 0. */
+	printf("[4] Writing pattern B to %s (#%llu) ...\n",
+		high_desc, (unsigned long long)high_block);
+	if (write_block(fd, high_block, bufB, bsz) || flush_dev(fd)) goto io_err;
 	if (read_block(fd, 0, rb, bsz)) goto io_err;
 	read_record(rb, &tag, &idx);
 	printf("    Block 0 now holds: tag=%s idx=%llu\n", tag_name(tag), (unsigned long long)idx);
 
 	printf("\n================= VERDICT =================\n");
 	if (tag == TAG_A) {
-		printf("NO ALIASING at the last block: block 0 is untouched.\n"
-			"Consistent with a GENUINE device (or a fake whose real size exceeds\n"
-			"the full announced size — f3probe's binary search resolves that).\n");
+		printf("NO ALIASING onto block 0: the high write did not corrupt block 0.\n"
+			"This alone does NOT mean the card is genuine: limbo-type fakes don't\n"
+			"corrupt low blocks, and the wrap boundary may map elsewhere than block 0.\n"
+			"If this is a known WRAPAROUND fake, re-run with --real-size=<real\n"
+			"capacity from f3write/f3read> so B lands on the wrap boundary.\n"
+			"The cross-check below still confirms whether the read path is honest.\n");
 	} else if (tag == TAG_B) {
-		printf("ALIASING DETECTED: writing the LAST block overwrote block 0.\n"
+		printf("ALIASING DETECTED: writing the high block overwrote block 0.\n"
 			"This is the wraparound signature of a FAKE device, and the\n"
 			"in-process unbuffered read SAW it — caches did not hide it.\n");
 	} else {
@@ -273,23 +313,26 @@ int main(int argc, char **argv)
 	}
 	printf("==========================================\n");
 
-	/* Read the last block back too, for the record. */
-	if (!read_block(fd, last_block, rb, bsz)) {
+	/* Read the high block back too, for the record. */
+	if (!read_block(fd, high_block, rb, bsz)) {
 		read_record(rb, &tag, &idx);
-		printf("(For reference, last block #%llu reads back as: tag=%s idx=%llu)\n",
-			(unsigned long long)last_block, tag_name(tag), (unsigned long long)idx);
+		printf("(For reference, high block #%llu reads back as: tag=%s idx=%llu)\n",
+			(unsigned long long)high_block, tag_name(tag), (unsigned long long)idx);
 	}
 
 	close(fd);
 	printf("\n*** PHYSICAL CROSS-CHECK (do this to be sure no cache lied) ***\n"
-		"1. Physically EJECT and RE-SEAT the card now:\n"
-		"     diskutil eject %s     # then unplug, replug\n"
-		"2. Re-read block 0 straight off the media and dump the first record:\n"
+		"1. Eject, then PHYSICALLY power-cycle the card (unplug the reader or pull\n"
+		"   the card out and reinsert) so the reader and card caches are wiped:\n"
+		"     diskutil eject %s     # then physically unplug & replug\n"
+		"2. The card may come back as a DIFFERENT node — re-check with: diskutil list\n"
+		"3. Read block 0 straight off the media and dump the first record\n"
+		"   (use the raw rNODE so the OS cache is bypassed; sudo required):\n"
 		"     sudo dd if=%s bs=%u count=1 2>/dev/null | xxd | head -1\n"
-		"   The first 8 bytes are the tag; 0xAA.. = A (block 0), 0xBB.. = B (last\n"
-		"   block). It MUST match the VERDICT above. If it differs, a cache lied\n"
-		"   on this reader and the port cannot be trusted here (try another reader\n"
-		"   or escalate per the spec).\n", whole, raw, bsz);
+		"   First 8 bytes = the tag: aaaaaaaa.. = A (block 0), bbbbbbbb.. = B (high\n"
+		"   block). It MUST match the VERDICT above. If it differs, a cache lied on\n"
+		"   this reader and the port cannot be trusted here (try another reader or\n"
+		"   escalate per the spec).\n", whole, raw, bsz);
 	return 0;
 
 io_err:
