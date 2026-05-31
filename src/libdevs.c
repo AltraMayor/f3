@@ -469,7 +469,7 @@ static int bdev_read_blocks(struct device *dev, char *buf,
 				(long long)offset, length,
 				(unsigned long long)first_pos, (unsigned long long)last_pos,
 				-rc, strerror(-rc),
-				(unsigned long)((uintptr_t)buf % (uintptr_t)getpagesize()),
+				(unsigned long)((uintptr_t)buf % (uintptr_t)sysconf(_SC_PAGESIZE)),
 				(unsigned long)((uintptr_t)buf & (dev_get_block_size(dev) - 1)));
 #endif
 		return rc;
@@ -499,7 +499,7 @@ static int bdev_write_blocks(struct device *dev, const char *buf,
 			(long long)offset, length,
 			(unsigned long long)first_pos, (unsigned long long)last_pos,
 			rc, strerror(rc),
-			(unsigned long)((uintptr_t)buf % (uintptr_t)getpagesize()),
+			(unsigned long)((uintptr_t)buf % (uintptr_t)sysconf(_SC_PAGESIZE)),
 			(unsigned long)((uintptr_t)buf & (dev_get_block_size(dev) - 1)));
 #endif
 		return rc;
