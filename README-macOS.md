@@ -6,13 +6,16 @@ Linux-only because the device backend used Linux-kernel interfaces
 (`O_DIRECT`, `BLK*` ioctls, `USBDEVFS_RESET`, `libudev`). Only **`f3probe`** is
 ported here; `f3brew` and `f3fix` remain Linux-only (out of scope).
 
-> ⚠️ **Validation status: UNVALIDATED as shipped.** The port was authored on a
-> Linux container with no compiler and no hardware. It has **not** been
-> compiled, and **not** been run against real cards. `f3probe` is a
-> fraud-detection tool — a binary that confidently misreports a fake card is
-> worse than no tool. **Do not trust its verdicts until you complete the
-> validation below and fill in the results table.** See `PORT-LOG.md` for the
-> full chain of reasoning.
+> ⚠️ **Validation status: validated on ONE card + ONE reader; not yet proven
+> beyond that.** The port compiles cleanly on Apple Silicon and, on a known
+> **limbo** counterfeit ("1.95 TB" announced / 122 MB real) through one USB
+> reader, produces a verdict **identical to Linux upstream f3probe** and stable
+> across 5 consecutive runs; the spike's eject/reseat `dd` cross-check confirmed
+> it reads physical media, not cache. It has **NOT** been tested on a genuine
+> device, on other fake archetypes (wraparound/chain/bad), on other readers, or
+> on 4K-logical media. `f3probe` is a fraud-detection tool — treat untested
+> configurations as unproven. See the results table and limits below, and
+> `PORT-LOG.md` for the full chain of evidence.
 
 ## What changed (and what didn't)
 
@@ -74,15 +77,27 @@ sudo build/f3probe /dev/disk4          # pass the WHOLE disk, not a slice (diskN
 4. **Robustness** — determinism, mounted-card handling, no-sudo error, Ctrl-C,
    card-usable-after, 512B vs 4K logical, 2 TB timing.
 
-### Results table (fill this in — do not delete the "not validated" note above)
+### Results table
 
-| Card | Announced | Reader | f3write/f3read | Linux f3probe | macOS f3probe | Match? |
-|------|-----------|--------|----------------|---------------|---------------|--------|
-| _e.g. genuine 32GB_ | | | | | | |
-| _e.g. fake "2TB"_   | | | | | | |
+| Card | Announced | Reader | Linux f3probe (ground truth) | macOS f3probe | Match? |
+|------|-----------|--------|------------------------------|---------------|--------|
+| limbo fake | 1.95 TB (4194304000 × 512) | USB reader (model TBD — fill in) | `limbo`, usable 122.00 MB / 249856 blk, last 249855, module 2^41 | `limbo`, usable 122.00 MB / 249856 blk, last 249855, module 2^41 — **5/5 runs identical** | ✅ |
+| _genuine card_ | | | | _not yet tested_ | — |
+| _other fake archetypes_ | | | | _not yet tested_ | — |
 
-### Honest limits statement (complete after Phase 4)
+Notes: on this card macOS reported cache size 0 (probe ~1.5 min) vs Linux 512 MB
+(~23 min); the verdict was unaffected. The spike's eject/reseat `dd` cross-check
+confirmed the read path reflects physical media. One earlier run returned a
+transient `damaged` (a write error at the extreme announced LBA) that did not
+recur in 5 subsequent runs — a safe-direction intermittency (never a false
+`good`), documented in `PORT-LOG.md`.
 
-> Validated on cards {…} via readers {…}. Passing these does **not** prove
-> general correctness for untested fake archetypes or untested readers.
-> Known-unsupported / untrusted: {…}.
+### Honest limits statement
+
+> **Validated:** one **limbo** counterfeit ("1.95 TB" announced, 122 MB real)
+> via one USB reader, against Linux upstream f3probe — deterministic over 5 runs,
+> and confirmed reading physical media (spike cross-check).
+> **NOT proven:** genuine devices; other fake archetypes (wraparound, chain,
+> bad); other USB readers or the built-in SD slot; 4K-logical-sector devices;
+> behaviour under interrupt/again-after-reformat (Phase 5 leftovers).
+> Treat all of the above as unsupported until tested.
