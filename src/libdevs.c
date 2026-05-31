@@ -479,17 +479,26 @@ static int bdev_write_blocks(struct device *dev, const char *buf,
 	if (rc)
 		return rc;
 #if defined(__APPLE__) && defined(__MACH__)
-	/* Defeat caches on the write side. The raw node was opened with
-	 * F_NOCACHE (OS buffer cache bypassed). F_FULLFSYNC is stronger than
-	 * fsync(2): it tells the drive to flush its own buffers to the media.
-	 * DKIOCSYNCHRONIZECACHE issues a SYNCHRONIZE CACHE down the stack.
-	 * Together these are the macOS analogue of fsync + FADV_DONTNEED.
+	/* Defeat caches on the write side. The raw node (/dev/rdiskN) was opened
+	 * with F_NOCACHE, so the OS buffer cache is already bypassed. NOTE:
+	 * F_FULLFSYNC is NOT valid on a raw device node — it returns ENOTTY. The
+	 * drive's own write cache is flushed with DKIOCSYNCHRONIZECACHE (issues
+	 * SYNCHRONIZE CACHE), the analogue of Linux's fsync on a block device. If
+	 * the reader doesn't implement SYNCHRONIZE CACHE, warn once and continue
+	 * relying on the raw F_NOCACHE write — such a reader must be validated with
+	 * spike.c's eject/reseat cross-check before its verdicts can be trusted.
 	 */
-	if (fcntl(bdev->fd, F_FULLFSYNC) < 0)
-		return errno;
 #ifdef DKIOCSYNCHRONIZECACHE
-	if (ioctl(bdev->fd, DKIOCSYNCHRONIZECACHE) < 0)
-		return errno;
+	if (ioctl(bdev->fd, DKIOCSYNCHRONIZECACHE) < 0) {
+		static int warned_no_sync;
+		if (errno != ENOTTY && errno != ENOTSUP)
+			return errno;
+		if (!warned_no_sync) {
+			warned_no_sync = 1;
+			warnx("reader does not support DKIOCSYNCHRONIZECACHE; relying on raw "
+				"F_NOCACHE I/O — validate with the spike eject/reseat cross-check");
+		}
+	}
 #endif
 	return 0;
 #else

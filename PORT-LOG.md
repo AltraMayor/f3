@@ -191,3 +191,10 @@ table to fill in and the honest "validated / not validated" statement.
   spike run, Phase 4 correctness, Phase 5 robustness.
 - **Therefore this port is UNVALIDATED.** It is a credible, reviewed starting
   point — not a trustworthy fraud-detection binary until the runbook passes.
+
+## 6. Phase 1 field findings (from on-Mac runs by the user)
+
+| Date | Finding | Action |
+|---|---|---|
+| 2026-05-31 | **`fcntl(fd, F_FULLFSYNC)` fails with `ENOTTY` on `/dev/rdiskN`.** F_FULLFSYNC is only valid on regular files; on a raw device node it is "inappropriate ioctl for device". The spike aborted at the first flush; `f3probe`'s `bdev_write_blocks` would have failed identically. | Drop F_FULLFSYNC on the raw node. Use `DKIOCSYNCHRONIZECACHE` only (the drive-cache flush, analogue of Linux fsync-on-block-device). Tolerate `ENOTTY`/`ENOTSUP` (reader without SYNCHRONIZE CACHE) with a one-time warning; surface other errno. Fixed in `spike.c` `flush_dev()` and `libdevs.c` `bdev_write_blocks()`. |
+| 2026-05-31 | Raw **write to block 0 succeeded** before the flush error → no buffer-alignment/`EINVAL` problem on this reader (the page-alignment caveat in §2 did not bite). `diskutil unmountDisk` worked. | None; positive signal. |

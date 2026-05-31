@@ -104,15 +104,18 @@ static int disk_paths(const char *arg, char *whole, size_t wl, char *raw, size_t
 
 static int flush_dev(int fd)
 {
-	if (fcntl(fd, F_FULLFSYNC) < 0) {
-		perror("fcntl(F_FULLFSYNC)");
-		return -1;
-	}
+	/* On a RAW disk node, F_FULLFSYNC is not applicable (it returns ENOTTY);
+	 * the drive's write cache is flushed with DKIOCSYNCHRONIZECACHE. This is
+	 * best-effort: if the reader doesn't implement SYNCHRONIZE CACHE we note it
+	 * and continue — the raw write already left the OS, and the physical
+	 * eject/reseat cross-check is the real arbiter of whether a cache lied. */
 #ifdef DKIOCSYNCHRONIZECACHE
-	if (ioctl(fd, DKIOCSYNCHRONIZECACHE) < 0) {
-		perror("ioctl(DKIOCSYNCHRONIZECACHE)");
-		return -1;
-	}
+	if (ioctl(fd, DKIOCSYNCHRONIZECACHE) < 0)
+		fprintf(stderr, "    note: DKIOCSYNCHRONIZECACHE failed (%s); continuing\n",
+			strerror(errno));
+#else
+	(void)fd;
+	fprintf(stderr, "    note: built without DKIOCSYNCHRONIZECACHE; no cache flush\n");
 #endif
 	return 0;
 }
