@@ -1119,6 +1119,43 @@ static int darwin_disk_paths(const char *arg, char *whole, size_t wlen,
 	return 0;
 }
 
+/* Report whether the media behind @path is write-protected (e.g. an SD card
+ * with its physical lock switch engaged). f3probe needs read-write access, so
+ * such a card must be rejected with a clear message instead of a bare EACCES
+ * or a mid-probe write failure.
+ *
+ * A locked card still permits a read-only open, so query the driver via
+ * DKIOCISWRITABLE on an O_RDONLY fd. Returns 1 only when the media is
+ * definitely write-protected; 0 if writable or undeterminable, so the caller
+ * falls back to its generic handling and we never raise a false alarm.
+ */
+static int darwin_media_is_write_protected(const char *path)
+{
+#ifdef DKIOCISWRITABLE
+	int writable = 0;
+	int fd = open(path, O_RDONLY);
+	if (fd < 0)
+		return 0;	/* Can't even read it; let the caller decide. */
+	if (ioctl(fd, DKIOCISWRITABLE, &writable) < 0)
+		writable = 1;	/* ioctl unsupported: assume writable, don't false-alarm. */
+	assert(!close(fd));
+	return !writable;
+#else
+	(void)path;
+	return 0;
+#endif
+}
+
+static void darwin_warn_write_protected(const char *path)
+{
+	fprintf(stderr,
+		"Device `%s' is write-protected.\n"
+		"If this is an SD card, slide the physical lock switch on the side of\n"
+		"the card (or its adapter) away from LOCK, then retry — f3probe must\n"
+		"open the device read-write.\n",
+		path);
+}
+
 struct device *create_block_device(const char *filename, enum reset_type rt)
 {
 	struct block_device *bdev;
@@ -1164,23 +1201,49 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 
 	bdev->fd = bdev_open(bdev->filename);
 	if (bdev->fd < 0) {
-		if (errno == EACCES && getuid()) {
+		int open_errno = errno;	/* Preserve; the probe below clobbers errno. */
+		if (open_errno == EACCES &&
+				darwin_media_is_write_protected(bdev->filename)) {
+			darwin_warn_write_protected(bdev->filename);
+		} else if (open_errno == EACCES && getuid()) {
 			fprintf(stderr,
 				"Your user doesn't have access to device `%s'.\n"
 				"Try to run this program as root:\n"
 				"  sudo %s %s\n"
 				"In case you don't have access to root, use f3write/f3read.\n",
 				bdev->filename, getprogname(), filename);
-		} else if (errno == EBUSY) {
+		} else if (open_errno == EACCES) {
+			/* Running as root but still EACCES. root bypasses classic UNIX
+			 * permissions, so on macOS this is almost always write-protected
+			 * media (handled above) or a TCC denial on the terminal.
+			 */
+			fprintf(stderr,
+				"Can't open device `%s': permission denied even as root.\n"
+				"On macOS this usually means either:\n"
+				"  - the card is write-protected (check the SD lock switch), or\n"
+				"  - the terminal running f3probe lacks Full Disk Access\n"
+				"    (System Settings > Privacy & Security > Full Disk Access:\n"
+				"    add your terminal app, then fully quit and reopen it).\n",
+				bdev->filename);
+		} else if (open_errno == EBUSY) {
 			fprintf(stderr,
 				"Device `%s' is busy (a volume is probably still mounted).\n"
 				"Unmount the whole disk and retry:\n"
 				"  diskutil unmountDisk %s\n",
 				bdev->filename, whole);
 		} else {
-			err(errno, "Can't open device `%s'", bdev->filename);
+			errno = open_errno;
+			err(open_errno, "Can't open device `%s'", bdev->filename);
 		}
 		goto filename;
+	}
+
+	/* Some bridges let a write-protected card open read-write yet fail every
+	 * write. Reject it now with a clear message instead of deep in the probe.
+	 */
+	if (darwin_media_is_write_protected(bdev->filename)) {
+		darwin_warn_write_protected(bdev->filename);
+		goto fd;
 	}
 
 	/* Total size = block count * logical block size.

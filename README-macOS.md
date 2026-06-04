@@ -59,6 +59,12 @@ sudo build/f3probe /dev/disk4          # pass the WHOLE disk, not a slice (diskN
   to the wrong `/dev/diskN` destroys data.
 - Probing writes only within `(1 MB, announced_end)` and (by default, non
   `--destructive`) restores the blocks it touched.
+- **`Permission denied` even with `sudo`?** Two macOS-specific causes (the tool
+  now names both in the error): (1) the SD card's physical **lock switch** is
+  engaged — `f3probe` needs read-write access, so slide it away from `LOCK`;
+  confirm with `diskutil info /dev/diskN | grep -i read-only`. (2) Your terminal
+  lacks **Full Disk Access** — add it under System Settings › Privacy & Security ›
+  Full Disk Access, then fully quit and reopen the terminal.
 
 ## You MUST validate before trusting it
 
