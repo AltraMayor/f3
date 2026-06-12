@@ -23,6 +23,7 @@
 #define SCSI_SENSE_SIZE		32
 #define MAX_FLASH_IDS		8
 #define MAX_FLASH_ID_SIZE	16
+#define F3_ISSUE_URL		"https://github.com/AltraMayor/f3/issues"
 
 /* Argp's global variables. */
 const char *argp_program_version = "F3 Chip " F3_STR_VERSION;
@@ -281,6 +282,78 @@ static void print_hex_prefix(const unsigned char *buf, size_t buf_len,
 	fprintf(stderr, "\n");
 }
 
+static bool is_printable_ascii(unsigned char ch)
+{
+	return ch >= 0x20 && ch <= 0x7e;
+}
+
+static bool find_printable_token(const unsigned char *buf, size_t buf_len,
+	const char *anchor, char *str, size_t str_size)
+{
+	const size_t anchor_len = strlen(anchor);
+	size_t i, len;
+
+	assert(str_size > 0);
+	str[0] = '\0';
+
+	if (anchor_len > buf_len)
+		return false;
+
+	for (i = 0; i <= buf_len - anchor_len; i++) {
+		if (memcmp(buf + i, anchor, anchor_len))
+			continue;
+
+		for (len = 0; i + len < buf_len && len + 1 < str_size &&
+				is_printable_ascii(buf[i + len]); len++)
+			str[len] = buf[i + len];
+		str[len] = '\0';
+		return len > 0;
+	}
+	return false;
+}
+
+static void format_hex_prefix(char *str, size_t str_size,
+	const unsigned char *buf, size_t buf_len, size_t max_len)
+{
+	static const char hex[] = "0123456789ABCDEF";
+	size_t i, len = buf_len < max_len ? buf_len : max_len;
+	size_t pos = 0;
+
+	assert(str_size > 0);
+	str[0] = '\0';
+
+	if (str_size > 1)
+		str[pos++] = '0';
+	if (str_size > 2)
+		str[pos++] = 'x';
+
+	for (i = 0; i < len && pos + 2 < str_size; i++) {
+		str[pos++] = hex[buf[i] >> 4];
+		str[pos++] = hex[buf[i] & 0x0f];
+	}
+	if (len < buf_len && pos + 3 < str_size) {
+		str[pos++] = '.';
+		str[pos++] = '.';
+		str[pos++] = '.';
+	}
+	str[pos < str_size ? pos : str_size - 1] = '\0';
+}
+
+static void response_variant_id(char *str, size_t str_size,
+	const unsigned char *buf, size_t buf_len, const char *anchor)
+{
+	if (find_printable_token(buf, buf_len, anchor, str, str_size))
+		return;
+
+	format_hex_prefix(str, str_size, buf, buf_len, 16);
+}
+
+static void warn_unknown_variant(const char *driver, const char *variant_id)
+{
+	warnx("Unknown %s variant %s! Please report this to " F3_ISSUE_URL,
+		driver, variant_id);
+}
+
 struct cbm2199_variant {
 	const char	*needle;
 	const char	*controller;
@@ -369,8 +442,14 @@ static int detect_cbm2199(struct scsi_dev *dev, struct chip_result *result)
 			break;
 		}
 	}
-	if (!variant)
+	if (!variant) {
+		char variant_id[64];
+
+		response_variant_id(variant_id, sizeof(variant_id), info,
+			sizeof(info), "ChipsBank");
+		warn_unknown_variant("ChipsBank CBM2199", variant_id);
 		return 0;
+	}
 
 	set_controller(result, variant->controller);
 
@@ -610,25 +689,19 @@ static int detect_fc3379(struct scsi_dev *dev,
 		}
 	}
 
+	{
+		char variant_id[64];
+
+		response_variant_id(variant_id, sizeof(variant_id), info,
+			sizeof(info), "FC");
+		warn_unknown_variant("FirstChip FC3379", variant_id);
+	}
 	if (dev->verbose) {
 		warnx("FC3379 controller-info response was not recognized");
 		fprintf(stderr, "FC3379 controller-info prefix: ");
 		print_hex_prefix(info, sizeof(info), 32);
 	}
 	return 0;
-}
-
-static int alcor_read_flash_id_table(struct scsi_dev *dev,
-	unsigned char *buf, size_t buf_len)
-{
-	static const unsigned char cdb[10] = {
-		0xfa, 0x17, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00,
-		0x01, 0x00
-	};
-
-	memset(buf, 0, buf_len);
-	return sg_io(dev, cdb, sizeof(cdb), buf, buf_len,
-		SG_DXFER_FROM_DEV);
 }
 
 static void alcor_add_flash_id_table(struct chip_result *result,
@@ -655,26 +728,84 @@ static void alcor_add_flash_id_table(struct chip_result *result,
 	}
 }
 
-static int detect_au8910x(struct scsi_dev *dev,
-	struct chip_result *result)
+static int alcor_read_au8910x_flash_id_table(struct scsi_dev *dev,
+	unsigned char *buf, size_t buf_len)
+{
+	static const unsigned char cdb[10] = {
+		0xfa, 0x17, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00,
+		0x01, 0x00
+	};
+
+	memset(buf, 0, buf_len);
+	return sg_io(dev, cdb, sizeof(cdb), buf, buf_len,
+		SG_DXFER_FROM_DEV);
+}
+
+static int alcor_read_au6989_flash_id_table(struct scsi_dev *dev,
+	unsigned char *buf, size_t buf_len)
+{
+	static const unsigned char cdb[8] = {
+		0xfa, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+	};
+
+	memset(buf, 0, buf_len);
+	return sg_io(dev, cdb, sizeof(cdb), buf, buf_len,
+		SG_DXFER_FROM_DEV);
+}
+
+static int alcor_read_au6989_info(struct scsi_dev *dev,
+	unsigned char *buf, size_t buf_len)
+{
+	static const unsigned char cdb[8] = {
+		0xfa, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+	};
+
+	memset(buf, 0, buf_len);
+	return sg_io(dev, cdb, sizeof(cdb), buf, buf_len,
+		SG_DXFER_FROM_DEV);
+}
+
+static bool alcor_au6989_model_id(const unsigned char *info,
+	size_t info_len, unsigned char *model_id)
+{
+	enum {
+		model_offset = 0x14,
+	};
+
+	if (info_len <= model_offset)
+		return false;
+
+	*model_id = info[model_offset];
+	return true;
+}
+
+static const char *alcor_au6989_controller(unsigned char model_id)
+{
+	switch (model_id) {
+	case 0x11:
+		return "Alcor AU6989SN";
+	case 0x22:
+		return "Alcor AU6989SN-GTC";
+	default:
+		return NULL;
+	}
+}
+
+static int detect_au8910x(struct scsi_dev *dev, struct chip_result *result)
 {
 	enum {
 		flash_id_table_len = 0x200,
 	};
-	static const char *const au8910x_variants[] = {
-		"Alcor AU89101",	/* UNTESTED */
-		"Alcor AU89102",	/* UNTESTED */
-		"Alcor AU89103",
-	};
 	unsigned char flash_ids[flash_id_table_len];
 	int rc;
 
-	rc = alcor_read_flash_id_table(dev, flash_ids, sizeof(flash_ids));
+	rc = alcor_read_au8910x_flash_id_table(dev, flash_ids,
+		sizeof(flash_ids));
 	if (rc) {
 		if (fatal_sg_error(rc))
 			return rc;
 		if (dev->verbose)
-			warnx("Alcor flash-ID table probe failed: %s",
+			warnx("AU8910x flash-ID table probe failed: %s",
 				strerror(-rc));
 		return 0;
 	}
@@ -682,22 +813,78 @@ static int detect_au8910x(struct scsi_dev *dev,
 	alcor_add_flash_id_table(result, flash_ids, sizeof(flash_ids));
 	if (!result->n_flash_ids) {
 		if (dev->verbose) {
-			warnx("Alcor flash-ID table did not contain a flash ID");
-			fprintf(stderr, "Alcor flash-ID table prefix: ");
+			warnx("AU8910x flash-ID table did not contain a flash ID");
+			fprintf(stderr, "AU8910x flash-ID table prefix: ");
 			print_hex_prefix(flash_ids, sizeof(flash_ids), 32);
 		}
 		return 0;
 	}
 
-	set_controller(result, au8910x_variants[2]);
+	set_controller(result, "Alcor AU89103");
+	return 1;
+}
+
+static int detect_au6989(struct scsi_dev *dev, struct chip_result *result)
+{
+	enum {
+		info_len = 0x200,
+		flash_id_table_len = 0x200,
+	};
+	unsigned char info[info_len];
+	unsigned char flash_ids[flash_id_table_len];
+	const char *controller = "Alcor AU6989";
+	unsigned char model_id;
+	int rc;
+
+	rc = alcor_read_au6989_info(dev, info, sizeof(info));
+	if (rc) {
+		if (fatal_sg_error(rc))
+			return rc;
+		if (dev->verbose)
+			warnx("AU6989 info probe failed: %s", strerror(-rc));
+	} else if (alcor_au6989_model_id(info, sizeof(info), &model_id)) {
+		controller = alcor_au6989_controller(model_id);
+		if (!controller) {
+			char variant_id[8];
+
+			snprintf(variant_id, sizeof(variant_id), "0x%02X",
+				model_id);
+			warn_unknown_variant("Alcor AU6989", variant_id);
+			controller = "Alcor AU6989";
+		}
+	}
+
+	rc = alcor_read_au6989_flash_id_table(dev, flash_ids,
+		sizeof(flash_ids));
+	if (rc) {
+		if (fatal_sg_error(rc))
+			return rc;
+		if (dev->verbose)
+			warnx("AU6989 flash-ID table probe failed: %s",
+				strerror(-rc));
+		return 0;
+	}
+
+	alcor_add_flash_id_table(result, flash_ids, sizeof(flash_ids));
+	if (!result->n_flash_ids) {
+		if (dev->verbose) {
+			warnx("AU6989 flash-ID table did not contain a flash ID");
+			fprintf(stderr, "AU6989 flash-ID table prefix: ");
+			print_hex_prefix(flash_ids, sizeof(flash_ids), 32);
+		}
+		return 0;
+	}
+
+	set_controller(result, controller);
 	return 1;
 }
 
 static const struct chip_driver chip_drivers[] = {
 	{"ChipsBank CBM2199", detect_cbm2199},
-	{"FirstChip FC2279", detect_fc2279},
 	{"FirstChip FC3379", detect_fc3379},
+	{"FirstChip FC2279", detect_fc2279},
 	{"Alcor AU8910x", detect_au8910x},
+	{"Alcor AU6989", detect_au6989},
 };
 
 static int detect_chip(struct scsi_dev *dev, struct chip_result *result)
