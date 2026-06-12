@@ -58,6 +58,7 @@ struct flash_id {
 
 struct chip_result {
 	const char	*controller;
+	char		controller_name[64];
 	struct flash_id	flash_ids[MAX_FLASH_IDS];
 	unsigned int	n_flash_ids;
 };
@@ -119,6 +120,32 @@ static bool flash_id_equal(const struct flash_id *fid,
 		!memcmp(fid->id, id, len);
 }
 
+static bool flash_id_has_padding_tail(const unsigned char *id, size_t len)
+{
+	return len > 1 &&
+		(is_repeated_byte(id + 1, len - 1, 0x00) ||
+			is_repeated_byte(id + 1, len - 1, 0xff));
+}
+
+static bool flash_id_valid(const unsigned char *id, size_t len)
+{
+	/*
+	 * Some controller tables use slots whose first byte is status-like
+	 * data and whose remaining bytes are padding.  Those are not useful
+	 * NAND IDs.
+	 */
+	return len && !is_repeated_byte(id, len, 0x00) &&
+		!is_repeated_byte(id, len, 0xff) &&
+		!flash_id_has_padding_tail(id, len);
+}
+
+static void set_controller(struct chip_result *result, const char *controller)
+{
+	snprintf(result->controller_name, sizeof(result->controller_name),
+		"%s", controller);
+	result->controller = result->controller_name;
+}
+
 static void add_flash_id(struct chip_result *result,
 	unsigned int channel, const unsigned char *id, size_t len)
 {
@@ -126,8 +153,7 @@ static void add_flash_id(struct chip_result *result,
 
 	assert(len <= MAX_FLASH_ID_SIZE);
 
-	if (!len || is_repeated_byte(id, len, 0x00) ||
-			is_repeated_byte(id, len, 0xff))
+	if (!flash_id_valid(id, len))
 		return;
 
 	for (i = 0; i < result->n_flash_ids; i++)
@@ -346,7 +372,7 @@ static int detect_cbm2199(struct scsi_dev *dev, struct chip_result *result)
 	if (!variant)
 		return 0;
 
-	result->controller = variant->controller;
+	set_controller(result, variant->controller);
 
 	rc = cbm2199_read_flash_blob(dev, flash_blob, sizeof(flash_blob));
 	if (rc)
@@ -362,9 +388,8 @@ static bool fc2279_has_flash_info(const unsigned char *buf, size_t buf_len,
 	if (id_offset + id_len > buf_len)
 		return false;
 
-	return buf[8] == 0x01 && buf[9] == 0x01 && buf[13] == 0xa2 &&
-		!is_repeated_byte(buf + id_offset, id_len, 0x00) &&
-		!is_repeated_byte(buf + id_offset, id_len, 0xff);
+	return buf[8] == 0x01 && buf[9] == 0x01 &&
+		flash_id_valid(buf + id_offset, id_len);
 }
 
 static int fc2279_read_flash_info(struct scsi_dev *dev, unsigned char *buf,
@@ -432,7 +457,7 @@ static int detect_fc2279(struct scsi_dev *dev, struct chip_result *result)
 				strerror(-rc));
 	} else if (fc2279_has_flash_info(flash_info, sizeof(flash_info),
 			flash_id_offset, flash_id_len)) {
-		result->controller = "FirstChip FC2279";
+		set_controller(result, "FirstChip FC2279");
 		add_flash_id(result, 0, flash_info + flash_id_offset,
 			flash_id_len);
 		return 1;
@@ -452,7 +477,7 @@ static int detect_fc2279(struct scsi_dev *dev, struct chip_result *result)
 		return 0;
 	}
 
-	result->controller = "FirstChip FC2279";
+	set_controller(result, "FirstChip FC2279");
 	add_flash_id(result, 0, config + config_flash_id_offset,
 		flash_id_len);
 
@@ -467,9 +492,212 @@ static int detect_fc2279(struct scsi_dev *dev, struct chip_result *result)
 	return 0;
 }
 
+struct fc3379_variant {
+	const char	*needle;
+	const char	*controller;
+};
+
+static const struct fc3379_variant fc3379_variants[] = {
+	{"FC3281C", "FirstChip FC3379"},
+	{"FC3379", "FirstChip FC3379"},		/* UNTESTED */
+};
+
+static int fc3379_read_controller_info(struct scsi_dev *dev,
+	unsigned char *buf, size_t buf_len)
+{
+	static const unsigned char cdb[16] = {
+		0xf1, 0x00, 0x00, 0x40, 0x00, 0x01, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xa0
+	};
+
+	memset(buf, 0, buf_len);
+	return sg_io(dev, cdb, sizeof(cdb), buf, buf_len,
+		SG_DXFER_FROM_DEV);
+}
+
+static int fc3379_read_flash_id_table(struct scsi_dev *dev,
+	unsigned char *buf, size_t buf_len)
+{
+	static const unsigned char cdbs[][16] = {
+		{
+			0xf1, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xa1
+		},
+		{
+			0xf1, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00,
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xa1
+		},
+	};
+	unsigned int i;
+
+	for (i = 0; i < DIM(cdbs); i++) {
+		int rc;
+
+		memset(buf, 0, buf_len);
+		rc = sg_io(dev, cdbs[i], sizeof(cdbs[i]), buf, buf_len,
+			SG_DXFER_FROM_DEV);
+		if (!rc)
+			return 0;
+		if (dev->verbose)
+			warnx("FC3379 flash-ID table command %u failed: %s",
+				i + 1, strerror(-rc));
+	}
+	return - EIO;
+}
+
+static void fc3379_add_flash_id_table(struct chip_result *result,
+	const unsigned char *buf, size_t buf_len)
+{
+	enum {
+		id_count_offset = 8,
+		id_table_offset = 0x10,
+		id_entry_len = 0x10,
+		id_len = 6,
+		max_ids = 8,
+	};
+	unsigned int i, id_count;
+
+	if (buf_len < id_table_offset + id_len ||
+			buf[id_count_offset] > max_ids)
+		return;
+
+	id_count = buf[id_count_offset];
+	for (i = 0; i < id_count && i < max_ids; i++) {
+		const unsigned char *id = buf + id_table_offset +
+			i * id_entry_len;
+
+		if (id + id_entry_len > buf + buf_len)
+			break;
+		add_flash_id(result, i, id, id_len);
+	}
+}
+
+static int detect_fc3379(struct scsi_dev *dev,
+	struct chip_result *result)
+{
+	enum {
+		controller_info_len = 0x200,
+		flash_id_table_len = 0x100,
+	};
+	unsigned char info[controller_info_len];
+	unsigned char flash_ids[flash_id_table_len];
+	unsigned int i;
+	int rc;
+
+	rc = fc3379_read_controller_info(dev, info, sizeof(info));
+	if (rc) {
+		if (fatal_sg_error(rc))
+			return rc;
+		if (dev->verbose)
+			warnx("FC3379 controller-info probe failed: %s",
+				strerror(-rc));
+		return 0;
+	}
+
+	for (i = 0; i < DIM(fc3379_variants); i++) {
+		if (buf_contains(info, sizeof(info),
+			fc3379_variants[i].needle)) {
+			set_controller(result, fc3379_variants[i].controller);
+			rc = fc3379_read_flash_id_table(dev, flash_ids,
+				sizeof(flash_ids));
+			if (!rc)
+				fc3379_add_flash_id_table(result, flash_ids,
+					sizeof(flash_ids));
+			else if (dev->verbose)
+				warnx("FC3379 flash-ID table probe failed: %s",
+					strerror(-rc));
+			return 1;
+		}
+	}
+
+	if (dev->verbose) {
+		warnx("FC3379 controller-info response was not recognized");
+		fprintf(stderr, "FC3379 controller-info prefix: ");
+		print_hex_prefix(info, sizeof(info), 32);
+	}
+	return 0;
+}
+
+static int alcor_read_flash_id_table(struct scsi_dev *dev,
+	unsigned char *buf, size_t buf_len)
+{
+	static const unsigned char cdb[10] = {
+		0xfa, 0x17, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00,
+		0x01, 0x00
+	};
+
+	memset(buf, 0, buf_len);
+	return sg_io(dev, cdb, sizeof(cdb), buf, buf_len,
+		SG_DXFER_FROM_DEV);
+}
+
+static void alcor_add_flash_id_table(struct chip_result *result,
+	const unsigned char *buf, size_t buf_len)
+{
+	enum {
+		id_table_offset = 0x00,
+		id_entry_len = 0x10,
+		id_len = 6,
+		max_ids = 8,
+	};
+	unsigned int i;
+
+	if (buf_len < id_table_offset + id_len)
+		return;
+
+	for (i = 0; i < max_ids; i++) {
+		const unsigned char *id = buf + id_table_offset +
+			i * id_entry_len;
+
+		if (id + id_len > buf + buf_len)
+			break;
+		add_flash_id(result, i, id, id_len);
+	}
+}
+
+static int detect_au8910x(struct scsi_dev *dev,
+	struct chip_result *result)
+{
+	enum {
+		flash_id_table_len = 0x200,
+	};
+	static const char *const au8910x_variants[] = {
+		"Alcor AU89101",	/* UNTESTED */
+		"Alcor AU89102",	/* UNTESTED */
+		"Alcor AU89103",
+	};
+	unsigned char flash_ids[flash_id_table_len];
+	int rc;
+
+	rc = alcor_read_flash_id_table(dev, flash_ids, sizeof(flash_ids));
+	if (rc) {
+		if (fatal_sg_error(rc))
+			return rc;
+		if (dev->verbose)
+			warnx("Alcor flash-ID table probe failed: %s",
+				strerror(-rc));
+		return 0;
+	}
+
+	alcor_add_flash_id_table(result, flash_ids, sizeof(flash_ids));
+	if (!result->n_flash_ids) {
+		if (dev->verbose) {
+			warnx("Alcor flash-ID table did not contain a flash ID");
+			fprintf(stderr, "Alcor flash-ID table prefix: ");
+			print_hex_prefix(flash_ids, sizeof(flash_ids), 32);
+		}
+		return 0;
+	}
+
+	set_controller(result, au8910x_variants[2]);
+	return 1;
+}
+
 static const struct chip_driver chip_drivers[] = {
 	{"ChipsBank CBM2199", detect_cbm2199},
 	{"FirstChip FC2279", detect_fc2279},
+	{"FirstChip FC3379", detect_fc3379},
+	{"Alcor AU8910x", detect_au8910x},
 };
 
 static int detect_chip(struct scsi_dev *dev, struct chip_result *result)
