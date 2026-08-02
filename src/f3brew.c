@@ -519,7 +519,7 @@ static void print_fix_cmd(const char *filename,
 }
 
 /* XXX Properly handle return errors. */
-static void test_read_blocks(struct device *dev,
+static int test_read_blocks(struct device *dev,
 	uint64_t first_block, uint64_t last_block,
 	long max_read_rate, int show_progress, bool fix_cmd)
 {
@@ -544,6 +544,8 @@ static void test_read_blocks(struct device *dev,
 
 	if (fix_cmd)
 		print_fix_cmd(dev_get_filename(dev), &good_range);
+
+	return !!(stats.bad + stats.changed + stats.overwritten);
 }
 
 int main(int argc, char **argv)
@@ -572,6 +574,7 @@ int main(int argc, char **argv)
 	struct device *dev;
 	unsigned int block_order;
 	uint64_t very_last_block;
+	int ret = 0;
 
 	/* Read parameters. */
 	argp_parse(&argp, argc, argv, 0, NULL, &args);
@@ -612,9 +615,9 @@ int main(int argc, char **argv)
 	}
 
 	if (args.test_read)
-		test_read_blocks(dev, args.first_block, args.last_block,
+		ret = test_read_blocks(dev, args.first_block, args.last_block,
 			args.max_read_rate, args.show_progress, args.fix_cmd);
 
 	free_device(dev);
-	return 0;
+	return ret;
 }
