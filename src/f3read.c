@@ -359,7 +359,7 @@ static uint64_t get_total_blocks(const char *path, const uint64_t *files,
 	return total_blocks;
 }
 
-static void iterate_files(const char *path, const uint64_t *files,
+static int iterate_files(const char *path, const uint64_t *files,
 	uint64_t start_at, uint64_t end_at, uint64_t max_read_rate,
 	int progress)
 {
@@ -421,11 +421,14 @@ static void iterate_files(const char *path, const uint64_t *files,
 	print_avg_seq_speed(&fw, "read", true);
 
 	dbuf_free(&dbuf);
+	return !!(tot_stats.bad + tot_stats.changed + tot_stats.overwritten)
+	        || !and_read_all;
 }
 
 int main(int argc, char **argv)
 {
 	const uint64_t *files;
+	int ret;
 
 	struct args args = {
 		/* Defaults. */
@@ -444,8 +447,8 @@ int main(int argc, char **argv)
 
 	files = ls_my_files(args.dev_path, args.start_at, args.end_at);
 
-	iterate_files(args.dev_path, files, args.start_at, args.end_at,
+	ret = iterate_files(args.dev_path, files, args.start_at, args.end_at,
 		args.max_read_rate, args.show_progress);
 	free((void *)files);
-	return 0;
+	return ret;
 }
