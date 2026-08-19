@@ -1,5 +1,8 @@
 #define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
+#ifdef __APPLE__
+#define _DARWIN_C_SOURCE
+#endif
 #define _FILE_OFFSET_BITS 64
 
 #include <stdio.h>
@@ -16,9 +19,13 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#ifdef __APPLE__
+#include <sys/disk.h>
+#else
 #include <linux/fs.h>
 #include <linux/usbdevice_fs.h>
 #include <libudev.h>
+#endif
 
 #include "libutils.h"
 #include "libdevs.h"
@@ -466,13 +473,153 @@ static int bdev_write_blocks(struct device *dev, const char *buf,
 	rc = fsync(bdev->fd);
 	if (rc)
 		return rc;
+#ifdef __APPLE__
+	/* The file descriptor is opened with F_NOCACHE (see bdev_open()),
+	 * so there is no page cache to drop.
+	 */
+	return 0;
+#else
 	return posix_fadvise(bdev->fd, 0, 0, POSIX_FADV_DONTNEED);
+#endif
 }
 
 static inline int bdev_open(const char *filename)
 {
+#ifdef __APPLE__
+	/* macOS has no O_DIRECT; F_NOCACHE turns the page cache off for
+	 * this descriptor, which is what the probe algorithm requires.
+	 * Prefer the raw device (/dev/rdiskN) for unbuffered access.
+	 */
+	int fd = open(filename, O_RDWR);
+	if (fd >= 0 && fcntl(fd, F_NOCACHE, 1))
+		warn("Can't disable caching for device `%s'", filename);
+	return fd;
+#else
 	return open(filename, O_RDWR | O_DIRECT);
+#endif
 }
+
+#ifdef __APPLE__
+
+static void msleep_ms(unsigned int ms)
+{
+	struct timespec ts = { .tv_sec = ms / 1000,
+		.tv_nsec = (long)(ms % 1000) * 1000000L };
+	nanosleep(&ts, NULL);
+}
+
+static int apple_dev_size_byte(int fd, uint64_t *size_byte)
+{
+	uint64_t block_count;
+	uint32_t block_size;
+	if (ioctl(fd, DKIOCGETBLOCKCOUNT, &block_count))
+		return - errno;
+	if (ioctl(fd, DKIOCGETBLOCKSIZE, &block_size))
+		return - errno;
+	*size_byte = block_count * block_size;
+	return 0;
+}
+
+static int apple_dev_block_size(int fd, int *block_size)
+{
+	uint32_t bs;
+	if (ioctl(fd, DKIOCGETBLOCKSIZE, &bs))
+		return - errno;
+	*block_size = bs;
+	return 0;
+}
+
+/* Return true when @filename names a whole disk (e.g. /dev/rdisk5),
+ * false when it names a partition slice (e.g. /dev/rdisk5s2) or
+ * something else entirely.
+ */
+static bool apple_is_whole_disk(const char *filename, char *disk_name,
+	size_t disk_name_len)
+{
+	const char *p = filename;
+	const char *num_start;
+	if (strncmp(p, "/dev/", 5))
+		return false;
+	p += 5;
+	if (*p == 'r')
+		p++;
+	if (strncmp(p, "disk", 4))
+		return false;
+	p += 4;
+	num_start = p;
+	while (*p >= '0' && *p <= '9')
+		p++;
+	if (p == num_start)
+		return false;
+	if (*p == '\0')
+		return true;
+	if (*p == 's') {
+		/* Partition slice; report the whole-disk name. */
+		snprintf(disk_name, disk_name_len, "/dev/rdisk%.*s",
+			(int)(p - num_start), num_start);
+	}
+	return false;
+}
+
+/* Manual reset without libudev: wait for the device node to disappear,
+ * then to reappear with the same size, and reopen it.
+ *
+ * Note that macOS may renumber the disk if other devices enumerate
+ * meanwhile; in that case this call times out and the caller should
+ * run the tool again.
+ */
+static int bdev_manual_usb_reset(struct device *dev)
+{
+	struct block_device *bdev = dev_bdev(dev);
+	uint64_t orig_size = dev_get_size_byte(dev);
+	int waited_ms;
+
+	if (bdev->fd < 0)
+		return - EBADF;
+	assert(!close(bdev->fd));
+	bdev->fd = -1;
+
+	printf("Please unplug and plug back the USB drive. Waiting...");
+	fflush(stdout);
+
+	/* Wait for the device to go away. */
+	while (1) {
+		struct stat st;
+		if (stat(bdev->filename, &st))
+			break;
+		msleep_ms(200);
+	}
+
+	/* Wait up to 60s for it to come back with the same size. */
+	for (waited_ms = 0; waited_ms < 60000; waited_ms += 200) {
+		int fd = bdev_open(bdev->filename);
+		if (fd >= 0) {
+			uint64_t size_byte;
+			if (!apple_dev_size_byte(fd, &size_byte) &&
+				size_byte == orig_size) {
+				bdev->fd = fd;
+				printf(" Thanks\n\n");
+				return 0;
+			}
+			close(fd);
+		}
+		msleep_ms(200);
+	}
+	warnx("Device `%s' did not come back after the reset; "
+		"macOS may have renumbered the disk. Check with "
+		"`diskutil list' and run again.", bdev->filename);
+	return - ENODEV;
+}
+
+static int bdev_usb_reset(struct device *dev)
+{
+	(void)dev;
+	warnx("Software USB reset is not supported on macOS; "
+		"use the manual reset (unplug/replug) instead");
+	return - EOPNOTSUPP;
+}
+
+#else  /* !__APPLE__ */
 
 static struct udev_device *map_dev_to_usb_dev(struct udev_device *dev)
 {
@@ -815,6 +962,9 @@ static int bdev_usb_reset(struct device *dev)
 	return 0;
 }
 
+
+#endif  /* __APPLE__ */
+
 static int bdev_none_reset(struct device *dev)
 {
 	UNUSED(dev);
@@ -834,6 +984,7 @@ static const char *bdev_get_filename(struct device *dev)
 	return dev_bdev(dev)->filename;
 }
 
+#ifndef __APPLE__
 static struct udev_device *map_partition_to_disk(struct udev_device *dev)
 {
 	struct udev_device *disk_dev;
@@ -848,6 +999,7 @@ static struct udev_device *map_partition_to_disk(struct udev_device *dev)
 	 */
 	return udev_device_ref(disk_dev);
 }
+#endif  /* !__APPLE__ */
 
 /* XXX This is borrowing from glibc.
  * A better solution would be to return proper errors,
@@ -858,9 +1010,11 @@ extern const char *__progname;
 struct device *create_block_device(const char *filename, enum reset_type rt)
 {
 	struct block_device *bdev;
+#ifndef __APPLE__
 	struct udev *udev;
 	struct udev_device *fd_dev;
 	const char *s;
+#endif
 	int block_size, block_order;
 
 	bdev = malloc(sizeof(*bdev));
@@ -886,6 +1040,28 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 	}
 
 	/* Make sure that @bdev->fd is a disk, not a partition. */
+#ifdef __APPLE__
+	{
+		char disk_name[32] = "";
+		if (!apple_is_whole_disk(filename, disk_name,
+				sizeof(disk_name))) {
+			if (disk_name[0])
+				fprintf(stderr, "Device `%s' is a partition of disk device `%s'.\n"
+					"You must run %s on the disk device as follows:\n"
+					"%s %s\n",
+					filename, disk_name, __progname,
+					__progname, disk_name);
+			else
+				fprintf(stderr, "Device `%s' is not a whole-disk device.\n"
+					"Expected a name like /dev/rdisk5 (see `diskutil list').\n",
+					filename);
+			goto fd;
+		}
+		if (strncmp(filename, "/dev/rdisk", 10))
+			fprintf(stderr, "NOTE: prefer the raw device (/dev/r%s) for correct operation.\n",
+				filename + 5);
+	}
+#else
 	udev = udev_new();
 	if (!udev) {
 		warnx("Can't load library udev");
@@ -931,6 +1107,7 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 	}
 	udev_device_unref(fd_dev);
 	assert(!udev_unref(udev));
+#endif
 
 	switch (rt) {
 	case RT_MANUAL_USB:
@@ -946,9 +1123,14 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 		assert(0);
 	}
 
+#ifdef __APPLE__
+	assert(!apple_dev_size_byte(bdev->fd, &bdev->dev.size_byte));
+	assert(!apple_dev_block_size(bdev->fd, &block_size));
+#else
 	assert(!ioctl(bdev->fd, BLKGETSIZE64, &bdev->dev.size_byte));
 
 	assert(!ioctl(bdev->fd, BLKSSZGET, &block_size));
+#endif
 	block_order = ilog2(block_size);
 	assert(block_size == (1 << block_order));
 	bdev->dev.block_order = block_order;
@@ -960,10 +1142,12 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 
 	return &bdev->dev;
 
+#ifndef __APPLE__
 fd_dev:
 	udev_device_unref(fd_dev);
 udev:
 	assert(!udev_unref(udev));
+#endif
 fd:
 	assert(!close(bdev->fd));
 filename:
