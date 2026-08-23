@@ -52,6 +52,12 @@ user::
 
 .. warning:: This will destroy any previously stored data on your disk!
 
+On Mac, use the raw whole-disk device (e.g. /dev/rdiskN, not /dev/diskNs1),
+and unmount the disk right before probing since macOS remounts it
+automatically::
+
+    $ diskutil unmountDisk /dev/diskN && sudo build/f3probe --destructive --time-ops /dev/rdiskN
+
 Correcting capacity to actual size with f3fix
 ---------------------------------------------
 
@@ -128,10 +134,10 @@ If you want to install f3write and f3read, run the following command::
 Compile stable software on Apple Mac
 ------------------------------------
 
-f3write and f3read can be installed on Mac, but currently f3probe, f3fix, and
-f3brew `require Linux <#the-extra-applications-for-linux>`__.  To use them on
-Mac, use the `Docker Installation <#docker>`__.  For f3write and f3read, read
-on.
+f3write, f3read, f3probe, and f3brew can be built on Mac, but f3fix
+`requires Linux <#the-extra-applications-for-linux>`__ because it depends on
+libparted.  Note that the `Docker Installation <#docker>`__ does not help on
+Mac since Docker Desktop cannot expose the host's block devices to containers.
 
 Using HomeBrew
 ~~~~~~~~~~~~~~
@@ -199,6 +205,14 @@ for details.
    installed argp-standalone::
 
        make ARGP=/opt/local
+
+5) Optionally, build f3probe and f3brew::
+
+       make extra
+
+   On Mac, f3probe and f3brew do not support resetting USB devices, so
+   f3brew must be run with :code:`--reset-type=2`.  f3fix is not built
+   because it depends on libparted.
 
 Docker
 ------
@@ -329,7 +343,8 @@ Compile the extra applications
 
 .. note::
    - The extra applications are only compiled and tested on Linux
-     platform.
+     platform, except that f3probe and f3brew also build on
+     `Mac <#compile-stable-software-on-apple-mac>`__.
    - Please do not e-mail me saying that you want the extra
      applications to run on your platform; I already know that.
    - If you want the extra applications to run on your platform, help
