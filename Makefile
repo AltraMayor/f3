@@ -15,11 +15,16 @@ UNLINK = unlink
 ifndef OS
 	OS = $(shell uname -s)
 endif
-ifneq ($(OS), Linux)
+ifeq ($(OS), Linux)
+	UDEV_LIB = -ludev
+else
 	ARGP = /usr/local
 	ifeq ($(OS), Darwin)
+		# f3fix needs libparted, which is not available on macOS.
+		EXTRA_TARGETS = $(BUILD_DIR)/f3probe $(BUILD_DIR)/f3brew
 		ifneq ($(shell command -v brew),)
-			ARGP = $(shell brew --prefix)
+			# argp-standalone is keg-only, so it isn't linked into the prefix.
+			ARGP = $(shell brew --prefix argp-standalone)
 		endif
 	endif
 	CFLAGS += -I$(ARGP)/include
@@ -64,10 +69,10 @@ $(BUILD_DIR)/f3read: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/libfile.o $(BUILD_DIR)
 	$(CC) -o $@ $^ $(LDFLAGS) -lm
 
 $(BUILD_DIR)/f3probe: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/libflow.o $(BUILD_DIR)/libdevs.o $(BUILD_DIR)/libprobe.o $(BUILD_DIR)/f3probe.o
-	$(CC) -o $@ $^ $(LDFLAGS) -lm -ludev
+	$(CC) -o $@ $^ $(LDFLAGS) -lm $(UDEV_LIB)
 
 $(BUILD_DIR)/f3brew: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/libflow.o $(BUILD_DIR)/libdevs.o $(BUILD_DIR)/f3brew.o
-	$(CC) -o $@ $^ $(LDFLAGS) -lm -ludev
+	$(CC) -o $@ $^ $(LDFLAGS) -lm $(UDEV_LIB)
 
 $(BUILD_DIR)/f3fix: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/f3fix.o
 	$(CC) -o $@ $^ $(LDFLAGS) -lparted
