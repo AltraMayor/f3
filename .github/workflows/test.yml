@@ -97,7 +97,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - run: brew install argp-standalone
-      - run: make
+      - run: make all extra
 
       - if: matrix.volume == 'relative-path'
         run: mkdir relative-path
@@ -113,6 +113,25 @@ jobs:
       - run: build/f3read -V
       - run: build/f3read --help
       - run: ${{ matrix.asroot.sudo }}build/f3read -s 2 -e 4 -r 50000 ${{ matrix.volume }}
+
+      - run: build/f3probe -V
+      - run: build/f3probe --help
+      - run: build/f3brew -V
+      - run: build/f3brew --help
+
+      - name: Create RAM disk for f3probe and f3brew tests
+        id: ramdisk
+        run: echo "dev=$(hdiutil attach -nomount ram://20480 | tr -d '[:space:]' | sed 's|^/dev/||')" >> $GITHUB_OUTPUT
+
+      - run: sudo build/f3probe /dev/r${{ steps.ramdisk.outputs.dev }}
+      - run: sudo build/f3brew --reset-type=2 -h 0 -e 4 /dev/r${{ steps.ramdisk.outputs.dev }}
+
+      - name: Cleanup RAM disk
+        if: always()
+        run: |
+          if [ -n "${{ steps.ramdisk.outputs.dev }}" ]; then
+            hdiutil detach ${{ steps.ramdisk.outputs.dev }}
+          fi
 
   OpenBSD:
     strategy:
