@@ -403,8 +403,30 @@ personalize F3 to your specific needs:
 
   Use example: ``scripts/log-f3wr log-filename /media/michel/5EBD-5C80/``.
 
+- ``scripts/f3-drive-test-macos.sh`` - macOS-only script that erases a drive,
+  fills it with f3write, optionally waits or asks you to replug it, and then
+  runs one or more f3read passes, logging everything to ``~/f3-logs/``.
+
+  It takes a disk identifier rather than a mount point, refuses internal
+  disks and partitions, and requires you to confirm before erasing anything.
+  Along with each run it records the drive's USB location ID and serial
+  number, so the physical drive, the volume, and the port it was plugged
+  into all match up in the log afterwards.
+
+  The cooldown and repeat-read options are there for drives that pass a
+  write but fail a read under sustained I/O: running the same drive with
+  and without a pause between the passes tells you whether the failure
+  depends on how warm the drive is.
+
+  Use example: ``sudo scripts/f3-drive-test-macos.sh disk8 DRIVE4``.
+
+  Use example: ``sudo scripts/f3-drive-test-macos.sh disk8 DRIVE4 --cooldown 1800 --reads 3``.
+
 Please notice that all scripts and use examples above assume that
 f3write, f3read, and the scripts are in the same folder.
+``scripts/f3-drive-test-macos.sh`` is the exception: it looks for f3write
+and f3read in your ``PATH`` first, and falls back to the ``build/``
+directory of this repository.
 
 Flakyflash
 ----------
