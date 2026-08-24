@@ -26,6 +26,16 @@ ifneq ($(OS), Linux)
 	LDFLAGS += -L$(ARGP)/lib -largp
 endif
 
+ifeq ($(OS), Darwin)
+	LDLIBS_UDEV =
+	F3FIX_OBJS = $(BUILD_DIR)/libutils.o $(BUILD_DIR)/f3fix_darwin.o
+	LDLIBS_F3FIX =
+else
+	LDLIBS_UDEV = -ludev
+	F3FIX_OBJS = $(BUILD_DIR)/libutils.o $(BUILD_DIR)/f3fix.o
+	LDLIBS_F3FIX = -lparted
+endif
+
 all: $(TARGETS)
 extra: $(EXTRA_TARGETS)
 
@@ -64,13 +74,13 @@ $(BUILD_DIR)/f3read: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/libfile.o $(BUILD_DIR)
 	$(CC) -o $@ $^ $(LDFLAGS) -lm
 
 $(BUILD_DIR)/f3probe: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/libflow.o $(BUILD_DIR)/libdevs.o $(BUILD_DIR)/libprobe.o $(BUILD_DIR)/f3probe.o
-	$(CC) -o $@ $^ $(LDFLAGS) -lm -ludev
+	$(CC) -o $@ $^ $(LDFLAGS) -lm $(LDLIBS_UDEV)
 
 $(BUILD_DIR)/f3brew: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/libflow.o $(BUILD_DIR)/libdevs.o $(BUILD_DIR)/f3brew.o
-	$(CC) -o $@ $^ $(LDFLAGS) -lm -ludev
+	$(CC) -o $@ $^ $(LDFLAGS) -lm $(LDLIBS_UDEV)
 
-$(BUILD_DIR)/f3fix: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/f3fix.o
-	$(CC) -o $@ $^ $(LDFLAGS) -lparted
+$(BUILD_DIR)/f3fix: $(F3FIX_OBJS)
+	$(CC) -o $@ $^ $(LDFLAGS) $(LDLIBS_F3FIX)
 
 -include $(BUILD_DIR)/*.d
 
