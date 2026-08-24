@@ -2,6 +2,16 @@
 #define _POSIX_C_SOURCE 200809L
 #define _FILE_OFFSET_BITS 64
 
+/* On macOS, defining _POSIX_C_SOURCE hides BSD extensions we need here:
+ * F_NOCACHE / F_FULLFSYNC (<fcntl.h>), the DKIOC* ioctls (<sys/disk.h>),
+ * and getprogname() (<stdlib.h>). _DARWIN_C_SOURCE re-enables them.
+ * __APPLE__/__MACH__ are compiler built-ins, so this is safe before any
+ * header is included.
+ */
+#if defined(__APPLE__) && defined(__MACH__)
+#define _DARWIN_C_SOURCE
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
@@ -16,9 +26,14 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <linux/fs.h>
-#include <linux/usbdevice_fs.h>
-#include <libudev.h>
+#ifdef __linux__
+#include <linux/fs.h>		/* BLKGETSIZE64, BLKSSZGET.		*/
+#include <linux/usbdevice_fs.h>	/* USBDEVFS_RESET (f3brew only).	*/
+#include <libudev.h>		/* Device enumeration (f3brew/Linux).	*/
+#endif
+#if defined(__APPLE__) && defined(__MACH__)
+#include <sys/disk.h>		/* DKIOCGETBLOCKCOUNT/SIZE, SYNCHRONIZECACHE. */
+#endif
 
 #include "libutils.h"
 #include "libdevs.h"
@@ -445,7 +460,20 @@ static int bdev_read_blocks(struct device *dev, char *buf,
 	if (off_ret < 0)
 		return - errno;
 	assert(off_ret == offset);
-	return read_all(bdev->fd, buf, length);
+	{
+		int rc = read_all(bdev->fd, buf, length);
+#if defined(__APPLE__) && defined(__MACH__)
+		if (rc)
+			warnx("raw read failed: off=%lld len=%zu blocks=[%llu,%llu] "
+				"errno=%d (%s); buf%%pagesize=%lu buf%%blocksize=%lu",
+				(long long)offset, length,
+				(unsigned long long)first_pos, (unsigned long long)last_pos,
+				-rc, strerror(-rc),
+				(unsigned long)((uintptr_t)buf % (uintptr_t)sysconf(_SC_PAGESIZE)),
+				(unsigned long)((uintptr_t)buf & (dev_get_block_size(dev) - 1)));
+#endif
+		return rc;
+	}
 }
 
 static int bdev_write_blocks(struct device *dev, const char *buf,
@@ -461,19 +489,82 @@ static int bdev_write_blocks(struct device *dev, const char *buf,
 		return - errno;
 	assert(off_ret == offset);
 	rc = write_all(bdev->fd, buf, length);
-	if (rc)
+	if (rc) {
+#if defined(__APPLE__) && defined(__MACH__)
+		/* Darwin diagnostic: the non-verbose probe hides I/O errors behind a
+		 * silenced callback, so surface the offset / errno / buffer alignment
+		 * of a raw write failure here. */
+		warnx("raw write failed: off=%lld len=%zu blocks=[%llu,%llu] "
+			"errno=%d (%s); buf%%pagesize=%lu buf%%blocksize=%lu",
+			(long long)offset, length,
+			(unsigned long long)first_pos, (unsigned long long)last_pos,
+			rc, strerror(rc),
+			(unsigned long)((uintptr_t)buf % (uintptr_t)sysconf(_SC_PAGESIZE)),
+			(unsigned long)((uintptr_t)buf & (dev_get_block_size(dev) - 1)));
+#endif
 		return rc;
+	}
+#if defined(__APPLE__) && defined(__MACH__)
+	/* Defeat caches on the write side. The raw node (/dev/rdiskN) was opened
+	 * with F_NOCACHE, so the OS buffer cache is already bypassed. NOTE:
+	 * F_FULLFSYNC is NOT valid on a raw device node — it returns ENOTTY. The
+	 * drive's own write cache is flushed with DKIOCSYNCHRONIZECACHE (issues
+	 * SYNCHRONIZE CACHE), the analogue of Linux's fsync on a block device. If
+	 * the reader doesn't implement SYNCHRONIZE CACHE, warn once and continue
+	 * relying on the raw F_NOCACHE write — such a reader must be validated with
+	 * spike.c's eject/reseat cross-check before its verdicts can be trusted.
+	 */
+#ifdef DKIOCSYNCHRONIZECACHE
+	if (ioctl(bdev->fd, DKIOCSYNCHRONIZECACHE) < 0) {
+		static int warned_no_sync;
+		if (errno != ENOTTY && errno != ENOTSUP)
+			return errno;
+		if (!warned_no_sync) {
+			warned_no_sync = 1;
+			warnx("reader does not support DKIOCSYNCHRONIZECACHE; relying on raw "
+				"F_NOCACHE I/O — validate with the spike eject/reseat cross-check");
+		}
+	}
+#endif
+	return 0;
+#else
 	rc = fsync(bdev->fd);
 	if (rc)
 		return rc;
 	return posix_fadvise(bdev->fd, 0, 0, POSIX_FADV_DONTNEED);
+#endif
 }
 
 static inline int bdev_open(const char *filename)
 {
+#ifdef __linux__
+	/* O_DIRECT bypasses the OS page cache. */
 	return open(filename, O_RDWR | O_DIRECT);
+#elif defined(__APPLE__) && defined(__MACH__)
+	/* macOS has no O_DIRECT. The caller passes the *raw* node
+	 * (/dev/rdiskN), which is already unbuffered at the character-device
+	 * layer; F_NOCACHE is belt-and-suspenders so any stray buffered access
+	 * also skips the unified buffer cache.
+	 */
+	int fd = open(filename, O_RDWR);
+	if (fd >= 0 && fcntl(fd, F_NOCACHE, 1) < 0) {
+		int saved_errno = errno;
+		assert(!close(fd));
+		errno = saved_errno;
+		return -1;
+	}
+	return fd;
+#else
+	return open(filename, O_RDWR);
+#endif
 }
 
+#ifdef __linux__
+/* Everything from here to the matching #endif is the Linux udev / USBDEVFS
+ * machinery. f3probe always uses RT_NONE (it never resets), so none of this is
+ * needed by the macOS port; it is retained for Linux and for f3brew's USB
+ * reset. macOS provides its own create_block_device() further below.
+ */
 static struct udev_device *map_dev_to_usb_dev(struct udev_device *dev)
 {
 	struct udev_device *usb_dev;
@@ -814,6 +905,7 @@ static int bdev_usb_reset(struct device *dev)
 	}
 	return 0;
 }
+#endif	/* __linux__ : udev / USBDEVFS machinery */
 
 static int bdev_none_reset(struct device *dev)
 {
@@ -834,6 +926,7 @@ static const char *bdev_get_filename(struct device *dev)
 	return dev_bdev(dev)->filename;
 }
 
+#ifdef __linux__	/* Linux create_block_device() + its udev disk/partition checks. */
 static struct udev_device *map_partition_to_disk(struct udev_device *dev)
 {
 	struct udev_device *disk_dev;
@@ -973,6 +1066,227 @@ bdev:
 error:
 	return NULL;
 }
+#endif	/* __linux__ : Linux create_block_device() */
+
+#if defined(__APPLE__) && defined(__MACH__)
+/* Derive macOS node paths from a user-supplied device argument.
+ *
+ * macOS exposes block storage as /dev/diskN (buffered) and /dev/rdiskN (raw,
+ * unbuffered). Probing must use the *raw* node; unmounting acts on the
+ * whole-disk node. This accepts "/dev/diskN", "/dev/rdiskN", "diskN" or
+ * "rdiskN" and rejects partitions/slices (diskNsM), which must not be probed.
+ *
+ * Returns 0 on success and fills @whole ("/dev/diskN") and @raw ("/dev/rdiskN").
+ */
+static int darwin_disk_paths(const char *arg, char *whole, size_t wlen,
+	char *raw, size_t rlen)
+{
+	const char *p = arg;
+	const char *q;
+
+	if (!strncmp(p, "/dev/", 5))
+		p += 5;
+	/* Tolerate the raw prefix: "rdiskN" -> "diskN". */
+	if (p[0] == 'r' && !strncmp(p + 1, "disk", 4))
+		p++;
+
+	if (strncmp(p, "disk", 4)) {
+		warnx("`%s' is not a macOS disk device; expected something like /dev/disk4",
+			arg);
+		return -1;
+	}
+
+	/* Require "disk" followed by digits and nothing else (reject diskNsM). */
+	q = p + 4;
+	if (*q < '0' || *q > '9') {
+		warnx("`%s' has no disk number; expected something like /dev/disk4", arg);
+		return -1;
+	}
+	while (*q >= '0' && *q <= '9')
+		q++;
+	if (*q != '\0') {
+		warnx("`%s' looks like a partition/slice. Probe the WHOLE disk instead,\n"
+			"e.g. `/dev/disk4', not `/dev/disk4s1'. Use `diskutil list' to confirm.",
+			arg);
+		return -1;
+	}
+
+	if ((size_t)snprintf(whole, wlen, "/dev/%s", p) >= wlen ||
+			(size_t)snprintf(raw, rlen, "/dev/r%s", p) >= rlen) {
+		warnx("Device path `%s' is too long", arg);
+		return -1;
+	}
+	return 0;
+}
+
+/* Report whether the media behind @path is write-protected (e.g. an SD card
+ * with its physical lock switch engaged). f3probe needs read-write access, so
+ * such a card must be rejected with a clear message instead of a bare EACCES
+ * or a mid-probe write failure.
+ *
+ * A locked card still permits a read-only open, so query the driver via
+ * DKIOCISWRITABLE on an O_RDONLY fd. Returns 1 only when the media is
+ * definitely write-protected; 0 if writable or undeterminable, so the caller
+ * falls back to its generic handling and we never raise a false alarm.
+ */
+static int darwin_media_is_write_protected(const char *path)
+{
+#ifdef DKIOCISWRITABLE
+	int writable = 0;
+	int fd = open(path, O_RDONLY);
+	if (fd < 0)
+		return 0;	/* Can't even read it; let the caller decide. */
+	if (ioctl(fd, DKIOCISWRITABLE, &writable) < 0)
+		writable = 1;	/* ioctl unsupported: assume writable, don't false-alarm. */
+	assert(!close(fd));
+	return !writable;
+#else
+	(void)path;
+	return 0;
+#endif
+}
+
+static void darwin_warn_write_protected(const char *path)
+{
+	fprintf(stderr,
+		"Device `%s' is write-protected.\n"
+		"If this is an SD card, slide the physical lock switch on the side of\n"
+		"the card (or its adapter) away from LOCK, then retry — f3probe must\n"
+		"open the device read-write.\n",
+		path);
+}
+
+struct device *create_block_device(const char *filename, enum reset_type rt)
+{
+	struct block_device *bdev;
+	char whole[64], raw[64], cmd[128];
+	uint64_t block_count = 0;
+	uint32_t block_size = 0;
+	int block_order, status;
+
+	if (rt != RT_NONE) {
+		/* The USB-reset strategies depend on libudev/USBDEVFS and are
+		 * only used by f3brew, which is out of scope on macOS. f3probe
+		 * always passes RT_NONE.
+		 */
+		warnx("Device reset is not supported on macOS (only f3probe, which "
+			"never resets, is supported here; f3brew is out of scope).");
+		return NULL;
+	}
+
+	if (darwin_disk_paths(filename, whole, sizeof(whole), raw, sizeof(raw)))
+		goto error;
+
+	bdev = malloc(sizeof(*bdev));
+	if (!bdev)
+		goto error;
+
+	bdev->filename = strdup(raw);
+	if (!bdev->filename)
+		goto bdev;
+
+	/* macOS auto-mounts removable media; the raw node can't be opened for
+	 * writing while a volume of the disk is mounted. Unmount the WHOLE disk
+	 * (not a single volume) first. diskutil exits 0 if nothing was mounted.
+	 */
+	if ((size_t)snprintf(cmd, sizeof(cmd), "diskutil unmountDisk %s", whole)
+			>= sizeof(cmd)) {
+		warnx("Internal error: unmount command truncated");
+		goto filename;
+	}
+	status = system(cmd);
+	if (status != 0)
+		warnx("`%s' exited with status %d; if a volume is still mounted the "
+			"open below will fail with EBUSY.", cmd, status);
+
+	bdev->fd = bdev_open(bdev->filename);
+	if (bdev->fd < 0) {
+		int open_errno = errno;	/* Preserve; the probe below clobbers errno. */
+		if (open_errno == EACCES &&
+				darwin_media_is_write_protected(bdev->filename)) {
+			darwin_warn_write_protected(bdev->filename);
+		} else if (open_errno == EACCES && getuid()) {
+			fprintf(stderr,
+				"Your user doesn't have access to device `%s'.\n"
+				"Try to run this program as root:\n"
+				"  sudo %s %s\n"
+				"In case you don't have access to root, use f3write/f3read.\n",
+				bdev->filename, getprogname(), filename);
+		} else if (open_errno == EACCES) {
+			/* Running as root but still EACCES. root bypasses classic UNIX
+			 * permissions, so on macOS this is almost always write-protected
+			 * media (handled above) or a TCC denial on the terminal.
+			 */
+			fprintf(stderr,
+				"Can't open device `%s': permission denied even as root.\n"
+				"On macOS this usually means either:\n"
+				"  - the card is write-protected (check the SD lock switch), or\n"
+				"  - the terminal running f3probe lacks Full Disk Access\n"
+				"    (System Settings > Privacy & Security > Full Disk Access:\n"
+				"    add your terminal app, then fully quit and reopen it).\n",
+				bdev->filename);
+		} else if (open_errno == EBUSY) {
+			fprintf(stderr,
+				"Device `%s' is busy (a volume is probably still mounted).\n"
+				"Unmount the whole disk and retry:\n"
+				"  diskutil unmountDisk %s\n",
+				bdev->filename, whole);
+		} else {
+			errno = open_errno;
+			err(open_errno, "Can't open device `%s'", bdev->filename);
+		}
+		goto filename;
+	}
+
+	/* Some bridges let a write-protected card open read-write yet fail every
+	 * write. Reject it now with a clear message instead of deep in the probe.
+	 */
+	if (darwin_media_is_write_protected(bdev->filename)) {
+		darwin_warn_write_protected(bdev->filename);
+		goto fd;
+	}
+
+	/* Total size = block count * logical block size.
+	 * (Linux uses BLKGETSIZE64 + BLKSSZGET; this is the Darwin analogue.)
+	 */
+	if (ioctl(bdev->fd, DKIOCGETBLOCKCOUNT, &block_count) < 0) {
+		warn("ioctl(DKIOCGETBLOCKCOUNT) failed on `%s'", bdev->filename);
+		goto fd;
+	}
+	if (ioctl(bdev->fd, DKIOCGETBLOCKSIZE, &block_size) < 0) {
+		warn("ioctl(DKIOCGETBLOCKSIZE) failed on `%s'", bdev->filename);
+		goto fd;
+	}
+	if (block_size == 0 || !is_power_of_2(block_size)) {
+		warnx("Device `%s' reported an invalid block size of %" PRIu32 " bytes",
+			bdev->filename, block_size);
+		goto fd;
+	}
+
+	bdev->dev.size_byte = block_count * (uint64_t)block_size;
+	block_order = ilog2(block_size);
+	assert(block_size == (1U << block_order));
+	bdev->dev.block_order = block_order;
+
+	/* f3probe never resets; keep the no-op reset for interface parity. */
+	bdev->dev.reset = bdev_none_reset;
+	bdev->dev.read_blocks = bdev_read_blocks;
+	bdev->dev.write_blocks = bdev_write_blocks;
+	bdev->dev.free = bdev_free;
+	bdev->dev.get_filename = bdev_get_filename;
+
+	return &bdev->dev;
+
+fd:
+	assert(!close(bdev->fd));
+filename:
+	free((void *)bdev->filename);
+bdev:
+	free(bdev);
+error:
+	return NULL;
+}
+#endif	/* __APPLE__ && __MACH__ : macOS create_block_device() */
 
 struct perf_device {
 	/* This must be the first field. See dev_pdev() for details. */
