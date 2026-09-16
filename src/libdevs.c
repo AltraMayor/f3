@@ -1110,7 +1110,7 @@ void perf_device_sample(struct device *dev,
 		*preset_time_ns = pdev->reset_time_ns;
 }
 
-#define SDEV_BITMAP_WORD		long
+#define SDEV_BITMAP_WORD		unsigned long
 #define SDEV_BITMAP_BITS_PER_WORD	(8*sizeof(SDEV_BITMAP_WORD))
 struct safe_device {
 	/* This must be the first field. See dev_sdev() for details. */
