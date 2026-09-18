@@ -1,6 +1,9 @@
 #define _GNU_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #define _FILE_OFFSET_BITS 64
+#ifdef __APPLE__
+#define _DARWIN_C_SOURCE	/* For F_NOCACHE and F_FULLFSYNC. */
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,9 +19,13 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#ifdef __APPLE__
+#include <sys/disk.h>
+#else
 #include <linux/fs.h>
 #include <linux/usbdevice_fs.h>
 #include <libudev.h>
+#endif
 
 #include "libutils.h"
 #include "libdevs.h"
@@ -463,16 +470,53 @@ static int bdev_write_blocks(struct device *dev, const char *buf,
 	rc = write_all(bdev->fd, buf, length);
 	if (rc)
 		return rc;
+#ifdef __APPLE__
+	/* F_FULLFSYNC asks the drive to flush its own cache too;
+	 * plain fsync() does not on macOS.  Neither is guaranteed to be
+	 * supported on a device node (e.g. /dev/rdiskN), so treat
+	 * "not supported" as success; F_NOCACHE already bypasses the
+	 * page cache and the writes were synchronous.
+	 */
+	if (fcntl(bdev->fd, F_FULLFSYNC) == 0)
+		return 0;
+	if (errno == ENOTSUP || errno == ENOTTY || errno == EINVAL ||
+			errno == ENODEV) {
+		if (fsync(bdev->fd) == 0 || errno == ENOTSUP ||
+				errno == ENOTTY || errno == EINVAL)
+			return 0;
+	}
+	return - errno;
+#else
 	rc = fsync(bdev->fd);
 	if (rc)
 		return rc;
 	return posix_fadvise(bdev->fd, 0, 0, POSIX_FADV_DONTNEED);
+#endif
 }
 
+#ifdef __APPLE__
+static inline int bdev_open(const char *filename)
+{
+	int fd = open(filename, O_RDWR);
+	if (fd < 0)
+		return fd;
+	/* macOS has no O_DIRECT; F_NOCACHE is the closest equivalent. */
+	if (fcntl(fd, F_NOCACHE, 1) < 0) {
+		int saved = errno;
+		close(fd);
+		errno = saved;
+		return -1;
+	}
+	return fd;
+}
+#else
 static inline int bdev_open(const char *filename)
 {
 	return open(filename, O_RDWR | O_DIRECT);
 }
+#endif
+
+#ifndef __APPLE__
 
 static struct udev_device *map_dev_to_usb_dev(struct udev_device *dev)
 {
@@ -815,6 +859,8 @@ static int bdev_usb_reset(struct device *dev)
 	return 0;
 }
 
+#endif /* !__APPLE__ */
+
 static int bdev_none_reset(struct device *dev)
 {
 	UNUSED(dev);
@@ -834,6 +880,7 @@ static const char *bdev_get_filename(struct device *dev)
 	return dev_bdev(dev)->filename;
 }
 
+#ifndef __APPLE__
 static struct udev_device *map_partition_to_disk(struct udev_device *dev)
 {
 	struct udev_device *disk_dev;
@@ -849,6 +896,25 @@ static struct udev_device *map_partition_to_disk(struct udev_device *dev)
 	return udev_device_ref(disk_dev);
 }
 
+#else
+/* Return true if @filename is of the form /dev/[r]disk<N>s<M>[...]. */
+static bool darwin_is_partition_name(const char *filename)
+{
+	const char *p = strrchr(filename, '/');
+	p = p ? p + 1 : filename;
+	if (*p == 'r')
+		p++;
+	if (strncmp(p, "disk", 4))
+		return false;
+	p += 4;
+	if (*p < '0' || *p > '9')
+		return false;
+	while (*p >= '0' && *p <= '9')
+		p++;
+	return *p == 's' && p[1] >= '0' && p[1] <= '9';
+}
+#endif /* !__APPLE__ */
+
 /* XXX This is borrowing from glibc.
  * A better solution would be to return proper errors,
  * so callers write their own messages.
@@ -858,9 +924,11 @@ extern const char *__progname;
 struct device *create_block_device(const char *filename, enum reset_type rt)
 {
 	struct block_device *bdev;
+#ifndef __APPLE__
 	struct udev *udev;
 	struct udev_device *fd_dev;
 	const char *s;
+#endif
 	int block_size, block_order;
 
 	bdev = malloc(sizeof(*bdev));
@@ -870,6 +938,19 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 	bdev->filename = strdup(filename);
 	if (!bdev->filename)
 		goto bdev;
+
+#ifdef __APPLE__
+	/* macOS has no udev, so rely on the device naming convention to
+	 * make sure that @filename is a whole disk, not a partition:
+	 * /dev/diskN and /dev/rdiskN are disks, /dev/diskNsM are partitions.
+	 */
+	if (darwin_is_partition_name(filename)) {
+		fprintf(stderr, "Device `%s' looks like a partition.\n"
+			"You must run %s on the whole disk device, "
+			"for example /dev/rdiskN\n", filename, __progname);
+		goto filename;
+	}
+#endif
 
 	bdev->fd = bdev_open(filename);
 	if (bdev->fd < 0) {
@@ -885,6 +966,25 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 		goto filename;
 	}
 
+#ifdef __APPLE__
+	/* Resets need Linux's USBDEVFS_RESET, so only RT_NONE is supported. */
+	if (rt != RT_NONE) {
+		fprintf(stderr, "Device resets are not supported on macOS.\n"
+			"You must disable reset, run %s as follows:\n"
+			"%s --reset-type=%i %s\n",
+			__progname, __progname, RT_NONE, filename);
+		goto fd;
+	}
+	bdev->dev.reset = bdev_none_reset;
+	{
+		uint64_t block_count;
+		uint32_t bsize;
+		assert(!ioctl(bdev->fd, DKIOCGETBLOCKCOUNT, &block_count));
+		assert(!ioctl(bdev->fd, DKIOCGETBLOCKSIZE, &bsize));
+		block_size = bsize;
+		bdev->dev.size_byte = block_count * bsize;
+	}
+#else
 	/* Make sure that @bdev->fd is a disk, not a partition. */
 	udev = udev_new();
 	if (!udev) {
@@ -949,6 +1049,7 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 	assert(!ioctl(bdev->fd, BLKGETSIZE64, &bdev->dev.size_byte));
 
 	assert(!ioctl(bdev->fd, BLKSSZGET, &block_size));
+#endif
 	block_order = ilog2(block_size);
 	assert(block_size == (1 << block_order));
 	bdev->dev.block_order = block_order;
@@ -960,10 +1061,12 @@ struct device *create_block_device(const char *filename, enum reset_type rt)
 
 	return &bdev->dev;
 
+#ifndef __APPLE__
 fd_dev:
 	udev_device_unref(fd_dev);
 udev:
 	assert(!udev_unref(udev));
+#endif
 fd:
 	assert(!close(bdev->fd));
 filename:
