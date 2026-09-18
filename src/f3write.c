@@ -301,6 +301,9 @@ static int create_and_fill_file(struct flow *fw, struct dynamic_buffer *dbuf,
 	if (saved_errno == EIO && !*phas_suggested_max_write_rate) {
 		*phas_suggested_max_write_rate = true;
 		printf("\nWARNING:\nThe write error above may be due to your memory card overheating\nunder constant, maximum write rate. You can test this hypothesis\ntouching your memory card. If it is hot, you can try f3write\nagain, once your card has cooled down, using parameter --max-write-rate=2048\nto limit the maximum write rate to 2MB/s, or another suitable rate.\n\n");
+	} if (saved_errno == ENODEV) {
+		printf("Drive removed. Stopping f3write\n");
+		return true;
 	}
 	return false;
 }
