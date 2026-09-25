@@ -5,7 +5,8 @@ BUILD_DIR = build
 SRC_DIR = src
 
 TARGETS = $(BUILD_DIR)/f3write $(BUILD_DIR)/f3read
-EXTRA_TARGETS = $(BUILD_DIR)/f3probe $(BUILD_DIR)/f3brew $(BUILD_DIR)/f3fix
+EXTRA_TARGETS = $(BUILD_DIR)/f3probe $(BUILD_DIR)/f3brew $(BUILD_DIR)/f3fix \
+	$(BUILD_DIR)/f3chip
 
 PREFIX = /usr/local
 INSTALL = install
@@ -71,6 +72,9 @@ $(BUILD_DIR)/f3brew: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/libflow.o $(BUILD_DIR)
 
 $(BUILD_DIR)/f3fix: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/f3fix.o
 	$(CC) -o $@ $^ $(LDFLAGS) -lparted
+
+$(BUILD_DIR)/f3chip: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/f3chip.o
+	$(CC) -o $@ $^ $(LDFLAGS)
 
 -include $(BUILD_DIR)/*.d
 
