@@ -12,7 +12,6 @@
 #include <limits.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <sys/statvfs.h>
 #include <sys/types.h>
 #include <errno.h>
 #include <unistd.h>
