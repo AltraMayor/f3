@@ -26,10 +26,12 @@
 		return a < b ? a : b;			\
 	}
 
+GEN_MIN(ui, unsigned int)
 GEN_MIN(ul, unsigned long)
 GEN_MIN(ull, unsigned long long)
 
 #define MIN(a, b) _Generic(1 ? (a) : (b),	\
+	unsigned int: ui_min,			\
 	unsigned long: ul_min,			\
 	unsigned long long: ull_min		\
 	)(a, b)
