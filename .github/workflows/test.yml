@@ -92,7 +92,7 @@ jobs:
             sudo: 'sudo '
 
     name: MacOS ${{ matrix.volume }}${{ matrix.asroot.name }}
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - uses: actions/checkout@v3
