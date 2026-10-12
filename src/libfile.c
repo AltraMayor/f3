@@ -20,7 +20,23 @@
 #include <errno.h>
 #include <err.h>
 #include <unistd.h>
+
+#if (__APPLE__ && __MACH__) || defined(__FreeBSD__) || defined(__OpenBSD__)
+/*
+ * macOS and BSD-based systems have a statvfs(3) wrapper bug where fs.f_bfree
+ * is returned in units of 512-byte sectors while fs.f_frsize is returned
+ * in allocation block units (e.g. 4KB). This mismatch inflates remaining time
+ * and ETA calculations by up to 8x. See issue #277.
+ * Calling native statfs(2) directly bypasses this buggy conversion wrapper and
+ * returns consistent allocation units.
+ */
+#define USE_STATFS 1
+#include <sys/param.h>
+#include <sys/mount.h>
+#else
+#define USE_STATFS 0
 #include <sys/statvfs.h>
+#endif
 
 #include "libfile.h"
 #include "libutils.h"
@@ -41,20 +57,44 @@ void adjust_dev_path(const char **dev_path)
 
 unsigned int get_block_order(const char *path)
 {
-	struct statvfs fs;
 	unsigned int block_size;
-
+#if USE_STATFS
+	struct statfs fs;
+	assert(!statfs(path, &fs));
+	/*
+	 * On Apple/BSD systems, statfs.f_bsize provides the optimal transfer
+	 * block size.
+	 */
+	block_size = fs.f_bsize;
+#else
+	struct statvfs fs;
 	assert(!statvfs(path, &fs));
+	/*
+	 * On POSIX compliant systems (Linux/Cygwin), statvfs.f_frsize provides
+	 * the fundamental block size.
+	 */
 	block_size = fs.f_frsize;
+#endif
 	assert(is_power_of_2(block_size));
 	return ilog2(block_size);
 }
 
 uint64_t get_free_blocks(const char *path)
 {
+#if USE_STATFS
+	struct statfs fs;
+	assert(!statfs(path, &fs));
+	/*
+	 * Native statfs returns f_bfree in units of f_bsize,
+	 * avoiding the buggy unit conversion wrapper of statvfs.
+	 */
+	return fs.f_bfree;
+#else
 	struct statvfs fs;
 	assert(!statvfs(path, &fs));
+	/* Standard POSIX statvfs returns f_bfree in units of f_frsize. */
 	return fs.f_bfree;
+#endif
 }
 
 int is_my_file(const char *filename)
