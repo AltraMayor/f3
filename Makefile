@@ -19,11 +19,23 @@ ifneq ($(OS), Linux)
 	ARGP = /usr/local
 	ifeq ($(OS), Darwin)
 		ifneq ($(shell command -v brew),)
-			ARGP = $(shell brew --prefix)
+			# argp-standalone is keg-only, so its headers are not
+			# linked into $(shell brew --prefix).
+			ARGP = $(shell brew --prefix argp-standalone 2>/dev/null \
+				|| brew --prefix)
 		endif
 	endif
 	CFLAGS += -I$(ARGP)/include
 	LDFLAGS += -L$(ARGP)/lib -largp
+endif
+
+ifeq ($(OS), Darwin)
+	LDLIBS_UDEV =
+	# Only f3probe is ported to macOS so far; f3brew and f3fix
+	# follow in their own patches.
+	EXTRA_TARGETS = $(BUILD_DIR)/f3probe
+else
+	LDLIBS_UDEV = -ludev
 endif
 
 all: $(TARGETS)
@@ -64,13 +76,15 @@ $(BUILD_DIR)/f3read: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/libfile.o $(BUILD_DIR)
 	$(CC) -o $@ $^ $(LDFLAGS) -lm
 
 $(BUILD_DIR)/f3probe: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/libflow.o $(BUILD_DIR)/libdevs.o $(BUILD_DIR)/libprobe.o $(BUILD_DIR)/f3probe.o
-	$(CC) -o $@ $^ $(LDFLAGS) -lm -ludev
+	$(CC) -o $@ $^ $(LDFLAGS) -lm $(LDLIBS_UDEV)
 
 $(BUILD_DIR)/f3brew: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/libflow.o $(BUILD_DIR)/libdevs.o $(BUILD_DIR)/f3brew.o
-	$(CC) -o $@ $^ $(LDFLAGS) -lm -ludev
+	$(CC) -o $@ $^ $(LDFLAGS) -lm $(LDLIBS_UDEV)
 
 $(BUILD_DIR)/f3fix: $(BUILD_DIR)/libutils.o $(BUILD_DIR)/f3fix.o
 	$(CC) -o $@ $^ $(LDFLAGS) -lparted
+
+$(BUILD_DIR)/libdevs.o: $(SRC_DIR)/linux_libdevs.c $(SRC_DIR)/darwin_libdevs.c
 
 -include $(BUILD_DIR)/*.d
 
