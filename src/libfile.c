@@ -75,7 +75,11 @@ uint64_t get_free_blocks(const char *path)
 
 	assert(!statvfs(path, &fs));
 #endif
-	return fs.f_bfree;
+	/* Field f_bfree includes blocks reserved for root, whereas
+	 * field f_bavail is the number of blocks available to
+	 * unprivileged users.
+	 */
+	return geteuid() != 0 ? fs.f_bavail : fs.f_bfree;
 }
 
 int is_my_file(const char *filename)
