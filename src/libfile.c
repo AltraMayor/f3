@@ -1,10 +1,17 @@
 #define _GNU_SOURCE
+#define _FILE_OFFSET_BITS 64
 
 #if __APPLE__ && __MACH__
 
 #define _DARWIN_C_SOURCE
 
-#include <fcntl.h>	/* For fcntl().	*/
+#include <fcntl.h>	/* For fcntl().		*/
+#include <sys/param.h>
+#include <sys/mount.h>	/* For statfs().	*/
+
+#else
+
+#include <sys/statvfs.h>
 
 #endif	/* Apple Macintosh */
 
@@ -20,7 +27,6 @@
 #include <errno.h>
 #include <err.h>
 #include <unistd.h>
-#include <sys/statvfs.h>
 
 #include "libfile.h"
 #include "libutils.h"
@@ -41,19 +47,34 @@ void adjust_dev_path(const char **dev_path)
 
 unsigned int get_block_order(const char *path)
 {
+#if __APPLE__ && __MACH__
+	struct statfs fs;
+	unsigned int block_size;
+
+	assert(!statfs(path, &fs));
+	block_size = fs.f_bsize;
+#else
 	struct statvfs fs;
 	unsigned int block_size;
 
 	assert(!statvfs(path, &fs));
 	block_size = fs.f_frsize;
+#endif
 	assert(is_power_of_2(block_size));
 	return ilog2(block_size);
 }
 
 uint64_t get_free_blocks(const char *path)
 {
+#if __APPLE__ && __MACH__
+	struct statfs fs;
+
+	assert(!statfs(path, &fs));
+#else
 	struct statvfs fs;
+
 	assert(!statvfs(path, &fs));
+#endif
 	return fs.f_bfree;
 }
 
